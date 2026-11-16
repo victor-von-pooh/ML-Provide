@@ -11,16 +11,38 @@ const SAVE_CONFIRM =
   '一式の外れ方の記録を, この実績で測り直したものに書き換えます (登録した場所の inference.yaml を書き換えます. 一式の画面で作ったときの記録に戻せます). 書き戻しますか?'
 
 /** 外れ方の確かめ (この実績で, 一式の外れ方の記録が当たっているか) と書き戻し */
-export function RemeasureCard({ result, bundleAlive }: { result: Result; bundleAlive: boolean }) {
+export function RemeasureCard({
+  result,
+  bundleAlive,
+  forecastable,
+}: {
+  result: Result
+  bundleAlive: boolean
+  forecastable: boolean
+}) {
   const client = useQueryClient()
   // 最後に終わった確かめか書き戻しの結果
   const [shown, setShown] = useState<Remeasure | null>(null)
+  // 何段も先の外れ方 (何段も先まで予測できる一式だけ. 空なら測らない)
+  const columns = result.columns ?? []
+  const [horizon, setHorizon] = useState('')
+  const [time, setTime] = useState(() => columns.find((c) => /date|日付|time/i.test(c)) ?? '')
+  const steps = horizon.normalize('NFKC').trim()
+  const stepCount = steps === '' ? undefined : Number(steps)
+  const stepProblem =
+    stepCount !== undefined && (!Number.isInteger(stepCount) || stepCount < 2)
+      ? '「何段先まで」は 2 以上の整数にしてください'
+      : stepCount !== undefined && !time
+        ? '何段も先の外れ方には, 時刻の列を選んでください'
+        : null
+  const args = (write: boolean) =>
+    api.remeasure(result.id, write, stepCount, stepCount !== undefined ? time : undefined)
   const check = useMutation({
-    mutationFn: () => api.remeasure(result.id, false),
+    mutationFn: () => args(false),
     onSuccess: setShown,
   })
   const save = useMutation({
-    mutationFn: () => api.remeasure(result.id, true),
+    mutationFn: () => args(true),
     onSuccess: (next) => {
       setShown(next)
       // 一式の説明 (外れ方の記録) を読み直す
@@ -36,7 +58,7 @@ export function RemeasureCard({ result, bundleAlive }: { result: Result; bundleA
       title="外れ方の確かめ (この実績で記録が当たっているか)"
       actions={
         <>
-          <Button icon={Ruler} disabled={busy} onClick={() => check.mutate()}>
+          <Button icon={Ruler} disabled={busy || !!stepProblem} onClick={() => check.mutate()}>
             {check.isPending ? '確かめています…' : '確かめる'}
           </Button>
           {shown && !shown.written && (
@@ -52,6 +74,48 @@ export function RemeasureCard({ result, bundleAlive }: { result: Result; bundleA
         </>
       }
     >
+      {forecastable && (
+        <div className="mb-3 flex flex-wrap items-end gap-3 text-sm">
+          <div>
+            <label htmlFor={`steps-${result.id}`} className="mb-1 block text-xs text-ink-2">
+              何段先まで (任意. 何段も先の予測で量を決めるなら, 段ごとの外れ方も測る)
+            </label>
+            <input
+              id={`steps-${result.id}`}
+              inputMode="numeric"
+              value={horizon}
+              onChange={(event) => {
+                setHorizon(event.target.value)
+                setShown(null)
+              }}
+              className="h-8 w-24 rounded-lg border border-line bg-surface px-2"
+            />
+          </div>
+          <div>
+            <label htmlFor={`time-${result.id}`} className="mb-1 block text-xs text-ink-2">
+              予測を始める時刻の列
+            </label>
+            <select
+              id={`time-${result.id}`}
+              value={time}
+              onChange={(event) => setTime(event.target.value)}
+              className="h-8 rounded-lg border border-line bg-surface px-2"
+            >
+              <option value="">選ぶ</option>
+              {columns.map((column) => (
+                <option key={column} value={column}>
+                  {column}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+      {stepProblem && (
+        <p role="alert" className="mb-2 text-xs text-critical-text">
+          {stepProblem}
+        </p>
+      )}
       {error && <ErrorBox error={error} />}
       {!shown && !error && (
         <p className="text-sm text-ink-3">

@@ -137,3 +137,25 @@ test('解約の見本の過去のデータで, 外れ方を確かめて一式に
   await expect(page.getByText(/検証用の分割 の [\d,]+ 行で測った/)).toBeVisible({ timeout: 30_000 })
   await expect(page.getByRole('button', { name: '外れ方を作ったときの記録に戻す' })).toHaveCount(0)
 })
+
+test('日々の売上の見本の過去のデータで, 7 段先までの外れ方を確かめる', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('link', { name: '見本: 日々の売上の予測 (時系列, 先の予測)' }).click()
+  await page.getByRole('button', { name: /見本の過去のデータ/ }).click()
+  await page.getByRole('button', { name: '推論する' }).click()
+  await expect(page.getByRole('heading', { name: /外れ方の確かめ/ })).toBeVisible({
+    timeout: 30_000,
+  })
+
+  // 段の数だけ書いて時刻の列を外すと, 確かめられない
+  await page.getByLabel(/何段先まで/).fill('7')
+  await expect(page.getByLabel('予測を始める時刻の列')).toHaveValue('date')
+  await page.getByLabel('予測を始める時刻の列').selectOption('')
+  await expect(page.getByRole('alert')).toContainText('時刻の列を選んで')
+  await page.getByLabel('予測を始める時刻の列').selectOption('date')
+  await page.getByRole('button', { name: '確かめる' }).click()
+  await expect(page.getByRole('list', { name: '外れ方の確かめの結果' })).toContainText(
+    /何段も先の外れ方 \(予測を始める時刻 \d+ 個\): 80 % の幅は 1 段目/,
+    { timeout: 60_000 },
+  )
+})

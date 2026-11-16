@@ -88,6 +88,8 @@ class DecideRequest(BaseModel):
 
 class RemeasureRequest(BaseModel):
     write: bool = False
+    horizon: Optional[int] = None
+    time: Optional[str] = None
 
 
 def get_store(request: Request) -> Store:
@@ -1306,7 +1308,8 @@ def remeasure_result(
     result_id: str
         結果の id
     body: RemeasureRequest
-        write (一式に書き戻すか)
+        write (一式に書き戻すか), horizon (何段も先の外れ方も測る段の
+        数), time (予測を始める時刻の列)
 
     Returns
     ----------
@@ -1335,7 +1338,8 @@ def remeasure_result(
         try:
             measured = ml_inference.remeasure(
                 str(entry["path"]), Path(source),
-                options=meta.get("options"), write=body.write
+                options=meta.get("options"), write=body.write,
+                horizon=body.horizon, time=body.time or None
             )
         except (OSError, *USER_ERRORS) as error:
             raise user_error(error) from error

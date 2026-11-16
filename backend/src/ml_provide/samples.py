@@ -16,7 +16,7 @@ from torch import nn, optim
 STEPS = 300
 
 # 見本の作り方の版 (作り方を変えたら上げ, 置き場の古い見本を作り直す)
-SAMPLES_VERSION = 2
+SAMPLES_VERSION = 3
 
 # 推論を試す新しいデータと, たどり直しを試す過去のデータの行の数
 FRESH_ROWS = 50
@@ -191,7 +191,7 @@ def daily_fresh(rng: np.random.Generator, count: int) -> pd.DataFrame:
 
 def daily_past(rng: np.random.Generator, count: int) -> pd.DataFrame:
     """
-    日々の売上の見本の, 売上の分かる過去の 60 日の表を作る関数
+    日々の売上の見本の, 売上の分かる過去の 120 日の表を作る関数
 
     Parameters
     ----------
@@ -206,11 +206,11 @@ def daily_past(rng: np.random.Generator, count: int) -> pd.DataFrame:
         date, shop, sales の表 (学習のデータの日付の続き. 値は別に作った
         系列)
     """
-    # 学習のデータの日付の続きの 60 日
-    whole = daily_frame(rng, DAILY_DAYS + 60)
+    # 学習のデータの日付の続きの 120 日 (何段も先の外れ方を段ごとに測れる長さ)
+    whole = daily_frame(rng, DAILY_DAYS + 120)
     days = pd.to_datetime(whole["date"])
     frame: pd.DataFrame = whole[
-        days > days.max() - pd.Timedelta(days=60)
+        days > days.max() - pd.Timedelta(days=120)
     ].reset_index(drop=True)
 
     return frame

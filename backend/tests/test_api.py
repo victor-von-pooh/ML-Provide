@@ -536,6 +536,20 @@ def test_remeasure(client: TestClient) -> None:
     again = client.post(f"/api/bundles/{shop['id']}/restore-uncertainty")
     assert again.status_code == 400
 
+    # 日々の売上の見本の過去のデータで, 7 段先までの外れ方
+    daily = next(b for b in added if "日々の売上" in b["name"])
+    past = client.post(
+        f"/api/bundles/{daily['id']}/predict",
+        json={"source": daily["sample_past"], "decision": {}},
+    ).json()
+    steps = client.post(f"/api/results/{past['id']}/remeasure",
+                        json={"write": False, "horizon": 7,
+                              "time": "date"}).json()
+    assert any("何段も先の外れ方" in s for s in steps["sentences"])
+    no_time = client.post(f"/api/results/{past['id']}/remeasure",
+                          json={"write": False, "horizon": 7})
+    assert no_time.status_code == 400
+
     # 目的の列の無い入力の結果は測り直せない
     fresh = client.post(
         f"/api/bundles/{shop['id']}/predict",
