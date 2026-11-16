@@ -1,4 +1,4 @@
-import { fromForm, toForm } from './rules'
+import { fromForm, toForm, withCleared } from './rules'
 
 describe('結論の決め方の編集', () => {
   it('分類の決め方を行き来できる', () => {
@@ -6,9 +6,28 @@ describe('結論の決め方の編集', () => {
     expect(fromForm(toForm(rules), 'classification')).toEqual({ rules, problems: [] })
   })
 
+  it('陽性は 2 クラスの分類だけで送る', () => {
+    const form = { ...toForm({}), positive: '悪い', threshold: '0.3' }
+    expect(fromForm(form, 'classification', ['悪い', '良い']).rules).toEqual({
+      positive: '悪い',
+      threshold: 0.3,
+    })
+    expect(fromForm(form, 'classification', ['a', 'b', 'c']).rules).toEqual({})
+  })
+
+  it('消した既定値は null で送る', () => {
+    expect(withCleared({ group_by: 'x' })).toEqual({
+      min_confidence: null,
+      positive: null,
+      threshold: null,
+      bands: null,
+      group_by: 'x',
+    })
+  })
+
   it('陽性のクラスと確信の下限の組み合わせは誤り', () => {
     const form = { ...toForm({}), positive: '悪い', threshold: '0.3', minConfidence: '0.6' }
-    const { problems } = fromForm(form, 'classification')
+    const { problems } = fromForm(form, 'classification', ['悪い', '良い'])
     expect(problems).toContain('陽性のクラスと確信の下限は一緒に使えません')
   })
 

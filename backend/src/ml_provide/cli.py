@@ -62,7 +62,13 @@ def main() -> None:
 
     # 起動ごとのトークン付きの URL の表示
     # 全てのアドレスで待ち受ける場合も, 手元のブラウザで開ける URL を表示
-    app = create_app(token=get_token(None))
+    # 外から接続するホストの名前も受け付ける (全てのアドレスなら全ての名前)
+    hosts = ["127.0.0.1", "localhost"]
+    if args.host in ("0.0.0.0", "::"):
+        hosts = ["*"]
+    elif args.host not in hosts:
+        hosts.append(args.host)
+    app = create_app(token=get_token(None), allowed_hosts=hosts)
     shown = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
     print(
         "ML-Provide を開く: "

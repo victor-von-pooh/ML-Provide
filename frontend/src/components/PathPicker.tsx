@@ -35,6 +35,7 @@ export function PathPicker({
     placeholderData: keepPreviousData,
   })
   const [picked, setPicked] = useState<string | null>(null)
+  const [missing, setMissing] = useState('')
   return (
     <Dialog title={title} onClose={onClose}>
       {description && <p className="mb-3 text-xs text-ink-2">{description}</p>}
@@ -45,9 +46,13 @@ export function PathPicker({
           // ディレクトリなら開き, ファイルならそれを選ぶ
           const value = typed.trim()
           if (!value) return
+          setMissing('')
           api.browse(value).then(
             () => setDir(value),
-            () => pickFiles && setPicked(value),
+            () =>
+              pickFiles
+                ? setPicked(value)
+                : setMissing(`${value} はディレクトリではないか, 開けません`),
           )
         }}
       >
@@ -63,6 +68,11 @@ export function PathPicker({
         />
         <Button type="submit">移動</Button>
       </form>
+      {missing && (
+        <p role="alert" className="mb-2 text-xs text-critical-text">
+          {missing}
+        </p>
+      )}
       <div className="mb-2 flex items-center gap-2 text-xs text-ink-3">
         <Button
           variant="ghost"

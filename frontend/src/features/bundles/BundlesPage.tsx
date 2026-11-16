@@ -60,6 +60,7 @@ export function BundlesPage() {
         subtitle="学習したモデル, 前処理, 重みをまとめたもの. 選んで新しいデータを推論します"
         actions={actions}
       />
+      {register.isPending && <Spinner label="一式を確かめています" />}
       {register.error && (
         <div className="mb-4">
           <ErrorBox error={register.error} />

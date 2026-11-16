@@ -35,7 +35,11 @@ function parseNumber(value: string): number | null {
  *
  * 細かな確認 (クラスの有無など) はライブラリが行い, 誤りの文を返す
  */
-export function fromForm(form: RulesForm, task: string): { rules: Rules; problems: string[] } {
+export function fromForm(
+  form: RulesForm,
+  task: string,
+  classes: string[] = [],
+): { rules: Rules; problems: string[] } {
   const rules: Rules = {}
   const problems: string[] = []
   const classify = task === 'classification'
@@ -46,7 +50,8 @@ export function fromForm(form: RulesForm, task: string): { rules: Rules; problem
         problems.push('確信の下限は 0 から 1 の数にしてください')
       rules.min_confidence = floor
     }
-    if (form.positive) {
+    // 陽性は 2 クラスの分類だけ
+    if (form.positive && classes.length === 2) {
       const threshold = parseNumber(form.threshold)
       if (threshold === null || Number.isNaN(threshold) || threshold < 0 || threshold > 1)
         problems.push('陽性とする確率は 0 から 1 の数にしてください')
@@ -66,8 +71,27 @@ export function fromForm(form: RulesForm, task: string): { rules: Rules; problem
     const uppers = bands.slice(0, -1).map((band) => band.upper ?? Number.NaN)
     if (uppers.some((value, index) => index > 0 && value <= uppers[index - 1]!))
       problems.push('帯は上限の小さい順に並べてください')
+    if (bands.length < 2) problems.push('帯は 2 つ以上にしてください')
+    const labels = bands.map((band) => band.label)
+    if (new Set(labels).size !== labels.length) problems.push('帯の名前が重なっています')
     rules.bands = bands
   }
-  if (form.groupBy) rules.group_by = form.groupBy
-  return { rules, problems }
+  if (form.groupBy.trim()) rules.group_by = form.groupBy.trim()
+  return { rules, problems: [...new Set(problems)] }
+}
+
+/**
+ * 推論のときに送る決め方 (一式の既定値を消した項目は null で送る)
+ *
+ * ライブラリは一式の既定値に送った決め方を重ね, null の項目を消す
+ */
+export function withCleared(rules: Rules): Rules {
+  return {
+    min_confidence: null,
+    positive: null,
+    threshold: null,
+    bands: null,
+    group_by: null,
+    ...rules,
+  }
 }

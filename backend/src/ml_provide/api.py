@@ -1,5 +1,8 @@
 import json
+import os
+import shutil
 import threading
+import uuid
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Optional
@@ -19,9 +22,14 @@ router = APIRouter(prefix="/api")
 # 推論を 1 つずつにする鍵 (大きなモデルでメモリを使い切らないように)
 PREDICT_LOCK = threading.Lock()
 
+# 結果の書き換えを 1 つずつにする鍵
+RESULT_LOCK = threading.Lock()
+
 # 読み込んだ一式を覚えておく数と, 場所ごとの (更新時刻, 一式)
 BUNDLE_CACHE_SIZE = 4
-BUNDLES: OrderedDict[str, tuple[float, ml_inference.Bundle]] = OrderedDict()
+BUNDLES: OrderedDict[str, tuple[tuple[float, ...], ml_inference.Bundle]] = (
+    OrderedDict()
+)
 BUNDLES_LOCK = threading.Lock()
 
 # 画面に書いた文として受け付ける上限
@@ -34,7 +42,9 @@ MAX_ROWS = 500
 MAX_NAME = 80
 
 # 推論の誤りとして画面に返す例外
-USER_ERRORS = (ValueError, FileNotFoundError, KeyError, TypeError)
+USER_ERRORS = (
+    ValueError, FileNotFoundError, KeyError, TypeError, yaml.YAMLError
+)
 
 
 class BundleRegister(BaseModel):
@@ -120,14 +130,16 @@ def open_bundle(path: str) -> ml_inference.Bundle:
     bundle: ml_inference.Bundle
         一式
     """
-    # 更新時刻で覚えたものが古くないかを確かめる
-    stamp = (Path(path) / "inference.yaml").stat().st_mtime
+    # inference.yaml と重みの更新時刻と大きさで, 覚えたものが古くないか
+    # を確かめる (写さない重みは, 学習し直すと実験の中で変わる)
+    stamp = file_stamp(Path(path) / "inference.yaml")
     with BUNDLES_LOCK:
         cached = BUNDLES.get(path)
         if cached is not None and cached[0] == stamp:
             BUNDLES.move_to_end(path)
             return cached[1]
     bundle = ml_inference.load_bundle(path)
+    stamp = stamp + file_stamp(bundle.weights_path)
     with BUNDLES_LOCK:
         BUNDLES[path] = (stamp, bundle)
         BUNDLES.move_to_end(path)
@@ -135,6 +147,30 @@ def open_bundle(path: str) -> ml_inference.Bundle:
             BUNDLES.popitem(last=False)
 
     return bundle
+
+
+def file_stamp(path: Path) -> tuple[float, ...]:
+    """
+    ファイルの更新時刻と大きさを返す関数
+
+    Parameters
+    ----------
+    path: Path
+        ファイル
+
+    Returns
+    ----------
+    stamp: tuple[float, ...]
+        更新時刻と大きさ (無ければ空)
+    """
+    # 消えたファイルは空 (読み込みで誤りになる)
+    try:
+        status = path.stat()
+    except OSError:
+        return ()
+    stamp = (status.st_mtime, float(status.st_size))
+
+    return stamp
 
 
 def find_bundle(request: Request, bundle_id: str) -> dict[str, Any]:
@@ -511,11 +547,61 @@ def predict(
         source=described, bundle_id=bundle_id, task=bundle.task,
         classes=bundle.classes
     )
+    # 書いた表を読み直して結論を出し直す (出し直しと同じ型の値でまとめ,
+    # 日時のような列のまとめの名前が, 後の出し直しで変わらないように)
     result_id, place = get_store(request).new_result_dir()
     ml_inference.write_result(result, place)
+    meta = {k: v for k, v in result.items() if k != "frame"}
+    with RESULT_LOCK:
+        conclude_into(place, meta, meta.get("rules") or {})
     view = result_view(result_id, place)
 
     return view
+
+
+def conclude_into(
+    place: Path, meta: dict[str, Any], rules: dict[str, Any]
+) -> None:
+    """
+    保存した予測から結論を出し直し, 結果を書き換える関数
+
+    Parameters
+    ----------
+    place: Path
+        結果のディレクトリ
+    meta: dict[str, Any]
+        result.yaml の中身
+    rules: dict[str, Any]
+        結論の決め方
+
+    Returns
+    ----------
+    None
+
+    Raises
+    ----------
+    ValueError
+        決め方に誤りがある場合
+    """
+    # 判断の列を除いた予測から出し直す
+    frame = read_frame(place, meta).drop(columns=["decision"], errors="ignore")
+    conclusion = ml_inference.conclude(
+        frame, str(meta.get("task")), list(meta.get("classes") or []), rules
+    )
+    meta = {
+        **meta, "summary": conclusion["summary"],
+        "sentences": conclusion["sentences"], "rules": conclusion["rules"],
+        "frame": conclusion["frame"],
+    }
+
+    # 隣に書いてから置き換え (読んでいる途中で壊れた表を見せないように)
+    temporary = place / f".writing-{uuid.uuid4().hex[:8]}"
+    try:
+        ml_inference.write_result(meta, temporary)
+        for name in ("predictions.csv", "result.yaml"):
+            os.replace(temporary / name, place / name)
+    finally:
+        shutil.rmtree(temporary, ignore_errors=True)
 
 
 def read_meta(place: Path) -> dict[str, Any]:
@@ -532,9 +618,9 @@ def read_meta(place: Path) -> dict[str, Any]:
     meta: dict[str, Any]
         result.yaml の中身
     """
-    meta: dict[str, Any] = yaml.safe_load(
-        (place / "result.yaml").read_text(encoding="utf-8")
-    )
+    meta = yaml.safe_load((place / "result.yaml").read_text(encoding="utf-8"))
+    if not isinstance(meta, dict):
+        raise ValueError(f"{place.name} の result.yaml が壊れています")
 
     return meta
 
@@ -631,6 +717,10 @@ def find_result(request: Request, result_id: str) -> Path:
     place = get_store(request).result_dir(result_id)
     if place is None:
         raise HTTPException(404, "結果が見つかりません")
+    try:
+        read_meta(place)
+    except (ValueError, yaml.YAMLError) as error:
+        raise HTTPException(500, str(error)) from error
 
     return place
 
@@ -661,7 +751,7 @@ def list_results(
         place = store.results_dir / result_id
         try:
             meta = read_meta(place)
-        except (OSError, yaml.YAMLError):
+        except (OSError, ValueError, yaml.YAMLError):
             continue
         if bundle is not None and meta.get("bundle_id") != bundle:
             continue
@@ -732,8 +822,11 @@ def get_rows(
         付き)
     """
     # 絞ってから切り出す
+    # 行の位置の列 (同じ名前の元の列は名前を変えて残す)
     place = find_result(request, result_id)
     frame = read_frame(place, read_meta(place))
+    if "index" in frame.columns:
+        frame = frame.rename(columns={"index": "index (入力)"})
     frame.insert(0, "index", range(len(frame)))
     if status:
         frame = frame[frame["status"] == status]
@@ -777,23 +870,16 @@ def conclude_again(
     HTTPException
         決め方に誤りがある場合は 400
     """
-    # 判断の列を除いた予測から出し直す
+    # 消した項目を除く (陽性のクラスを消したら, しきい値も消す)
     place = find_result(request, result_id)
-    meta = read_meta(place)
-    frame = read_frame(place, meta).drop(columns=["decision"], errors="ignore")
     rules = {k: v for k, v in body.rules.items() if v is not None}
-    try:
-        conclusion = ml_inference.conclude(
-            frame, str(meta.get("task")), list(meta.get("classes") or []),
-            rules
-        )
-    except ValueError as error:
-        raise user_error(error) from error
-    meta.update(
-        summary=conclusion["summary"], sentences=conclusion["sentences"],
-        rules=conclusion["rules"], frame=conclusion["frame"]
-    )
-    ml_inference.write_result(meta, place)
+    if "positive" not in rules:
+        rules.pop("threshold", None)
+    with RESULT_LOCK:
+        try:
+            conclude_into(place, read_meta(place), rules)
+        except ValueError as error:
+            raise user_error(error) from error
     view = result_view(result_id, place)
 
     return view
@@ -842,10 +928,9 @@ def delete_result(request: Request, result_id: str) -> Response:
     response: Response
         204
     """
-    import shutil
-
     place = find_result(request, result_id)
-    shutil.rmtree(place)
+    with RESULT_LOCK:
+        shutil.rmtree(place)
     response = Response(status_code=204)
 
     return response

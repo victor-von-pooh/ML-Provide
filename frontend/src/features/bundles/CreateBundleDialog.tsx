@@ -53,7 +53,17 @@ export function CreateBundleDialog({
     },
     onSuccess: onCreated,
   })
-  const ready = name.trim() && spec.trim() && dataset.trim() && weights.trim()
+  // 片方だけの欄と数でない値は, 送る前に知らせる
+  const problems: string[] = []
+  const ids = prepend.split(/[\s,]+/).filter(Boolean)
+  if (ids.some((value) => !Number.isInteger(Number(value))))
+    problems.push('足した番号は整数で書いてください')
+  if (!!inputName.trim() !== ids.length > 0)
+    problems.push('先頭に番号を足した入力は, 入力の名前と番号の両方を書いてください')
+  if (!!center.trim() !== !!scale.trim()) problems.push('目的の値の中心と幅は両方を書いてください')
+  if (scale.trim() && !(Number(scale) > 0)) problems.push('幅は正の数にしてください')
+  const ready =
+    name.trim() && spec.trim() && dataset.trim() && weights.trim() && problems.length === 0
   return (
     <Dialog title="学習の結果から一式を作る" onClose={onClose}>
       <form
@@ -175,6 +185,11 @@ export function CreateBundleDialog({
           />
           重みを一式に写す (外すと実験の重みを指す. 実験を消すと推論できなくなる)
         </label>
+        {problems.map((problem) => (
+          <p key={problem} className="text-xs text-critical-text">
+            {problem}
+          </p>
+        ))}
         {create.error && <ErrorBox error={create.error} />}
         <div className="flex justify-end">
           <Button type="submit" variant="primary" disabled={!ready || create.isPending}>

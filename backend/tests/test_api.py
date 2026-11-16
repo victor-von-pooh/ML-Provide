@@ -321,3 +321,46 @@ def test_errors_are_explained(tmp_path: Path, client: TestClient) -> None:
     response = client.post(url, json={"source": str(tmp_path / "lack.csv")})
     assert response.status_code == 400 and "a" in response.json()["detail"]
     assert client.get("/api/results/..%2Fx").status_code == 404
+
+
+def test_index_column_and_stable_groups(
+    tmp_path: Path, client: TestClient
+) -> None:
+    """
+    index の列を持つ入力と, 出し直しでまとめの名前が変わらないことを
+    確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    client: TestClient
+        クライアント
+
+    Returns
+    ----------
+    None
+    """
+    # index と日付の列を足した入力
+    paths = write_project(tmp_path / "project")
+    bundle = create(client, paths)
+    frame = pd.read_csv(paths["csv"])
+    frame["index"] = range(100, 100 + len(frame))
+    frame["day"] = ["2024-01-01", "2024-01-02"] * (len(frame) // 2)
+    source = tmp_path / "new.csv"
+    frame.to_csv(source, index=False)
+    result = client.post(
+        f"/api/bundles/{bundle['id']}/predict",
+        json={"source": str(source), "rules": {"group_by": "day"}},
+    ).json()
+    rows = client.get(f"/api/results/{result['id']}/rows?limit=2").json()
+    assert rows["rows"][1]["index"] == 1
+    assert rows["rows"][1]["index (入力)"] == 101
+
+    # 推論の直後と出し直しで, まとめの名前が同じ
+    groups = [g["group"] for g in result["summary"]["groups"]]
+    again = client.post(
+        f"/api/results/{result['id']}/conclude",
+        json={"rules": {"group_by": "day"}},
+    ).json()
+    assert [g["group"] for g in again["summary"]["groups"]] == groups

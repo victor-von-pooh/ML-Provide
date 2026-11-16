@@ -31,7 +31,8 @@ export function Dialog({
   return (
     <dialog
       ref={ref}
-      onClose={onClose}
+      // 中の対話 (ファイルを選ぶなど) の閉じる知らせは, 外の枠を閉じない
+      onClose={(event) => event.target === ref.current && onClose()}
       onClick={(event) => event.target === ref.current && onClose()}
       aria-label={title}
       className="m-auto w-[min(48rem,92vw)] rounded-lg border border-line bg-surface p-0 text-ink backdrop:bg-black/40"

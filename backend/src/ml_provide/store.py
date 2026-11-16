@@ -12,8 +12,9 @@ BUNDLES_FILE = "bundles.json"
 
 class Store:
     def __init__(self, home: Path):
-        # 置き場を保存
-        self.home = home
+        # 置き場を保存 (消すときの置き場の中かの確認を, リンクを辿った
+        # 場所でそろえる)
+        self.home = home.expanduser().resolve()
         self.lock = threading.Lock()
 
     @property

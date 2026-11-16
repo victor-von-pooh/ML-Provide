@@ -8,7 +8,7 @@ import type { Bundle, Description } from '../../api/types'
 import { PathField } from '../../components/PathPicker'
 import { Button, Card, ErrorBox, PageHeader, Spinner } from '../../components/ui'
 import { formatNumber, KIND_LABELS, TASK_LABELS } from '../../lib/format'
-import { fromForm, toForm, type RulesForm } from '../../lib/rules'
+import { fromForm, toForm, withCleared, type RulesForm } from '../../lib/rules'
 import { ResultList } from '../results/ResultList'
 import { RulesEditor } from '../results/RulesEditor'
 
@@ -92,12 +92,14 @@ function PredictCard({ bundle, description }: { bundle: Bundle; description: Des
   const [source, setSource] = useState('')
   const [texts, setTexts] = useState('')
   const [form, setForm] = useState<RulesForm>(() => toForm(description.conclusion))
-  const { rules, problems } = fromForm(form, description.task)
+  const { rules, problems } = fromForm(form, description.task, description.classes)
   const predict = useMutation({
     mutationFn: () =>
       api.predict(
         bundle.id,
-        mode === 'texts' ? { texts: texts.split('\n'), rules } : { source: source.trim(), rules },
+        mode === 'texts'
+          ? { texts: texts.split('\n'), rules: withCleared(rules) }
+          : { source: source.trim(), rules: withCleared(rules) },
       ),
     onSuccess: (result) => {
       client.invalidateQueries({ queryKey: ['results'] })
@@ -158,6 +160,10 @@ function PredictCard({ bundle, description }: { bundle: Bundle; description: Des
             task={description.task}
             classes={description.classes}
             columns={[]}
+            suggestions={[
+              ...(description.text_column ? [description.text_column] : []),
+              ...description.features,
+            ]}
             idBase="predict"
           />
           {problems.map((problem) => (
@@ -192,7 +198,9 @@ export function BundlePage() {
   const remove = useMutation({
     mutationFn: () => api.deleteBundle(id),
     onSuccess: () => {
-      client.invalidateQueries({ queryKey: ['bundles'] })
+      // 消した一式は取り直さずに外し, 一覧だけを読み直す
+      client.removeQueries({ queryKey: ['bundles', id] })
+      client.invalidateQueries({ queryKey: ['bundles'], exact: true })
       navigate('/')
     },
   })

@@ -261,13 +261,17 @@ function ConcludeCard({ result }: { result: Result }) {
   const client = useQueryClient()
   const task = result.task ?? ''
   const [form, setForm] = useState<RulesForm>(() => toForm(result.rules))
-  const { rules, problems } = fromForm(form, task)
+  const { rules, problems } = fromForm(form, task, result.classes ?? [])
   const conclude = useMutation({
     mutationFn: () => api.conclude(result.id, rules),
     onSuccess: (next) => {
+      // この結果は返った値に置き換え, 表と一覧 (この結果を除く) を読み直す
       client.setQueryData(['results', 'one', result.id], next)
       client.invalidateQueries({ queryKey: ['rows', result.id] })
-      client.invalidateQueries({ queryKey: ['results'], exact: false })
+      client.invalidateQueries({
+        queryKey: ['results'],
+        predicate: (query) => query.queryKey[1] !== 'one',
+      })
     },
   })
   const columns = (result.columns ?? []).filter((name) => !OWN.has(name) && !name.startsWith('p:'))
@@ -313,11 +317,19 @@ export function ResultPage() {
   const navigate = useNavigate()
   const client = useQueryClient()
   const result = useQuery({ queryKey: ['results', 'one', id], queryFn: () => api.result(id) })
+  // 一式を消しても結果は残るので, 一式があるときだけ一式へ戻る
+  const bundles = useQuery({ queryKey: ['bundles'], queryFn: api.bundles })
+  const bundleAlive = !!bundles.data?.some((bundle) => bundle.id === result.data?.bundle_id)
   const remove = useMutation({
     mutationFn: () => api.deleteResult(id),
     onSuccess: () => {
-      client.invalidateQueries({ queryKey: ['results'] })
-      navigate(result.data?.bundle_id ? `/bundles/${result.data.bundle_id}` : '/results')
+      // 消した結果は取り直さずに外し, 一覧だけを読み直す
+      client.removeQueries({ queryKey: ['results', 'one', id] })
+      client.invalidateQueries({
+        queryKey: ['results'],
+        predicate: (query) => query.queryKey[1] !== 'one',
+      })
+      navigate(bundleAlive ? `/bundles/${result.data?.bundle_id}` : '/results')
     },
   })
   if (result.isPending) return <Spinner />
@@ -338,7 +350,7 @@ export function ResultPage() {
           </span>
         }
         breadcrumb={
-          data.bundle_id ? (
+          bundleAlive ? (
             <Link to={`/bundles/${data.bundle_id}`}>{data.bundle?.name ?? '一式'}</Link>
           ) : (
             <Link to="/results">結果</Link>
@@ -403,7 +415,8 @@ export function ResultPage() {
         {/* 出し直した後は, 使った決め方で編集を作り直す */}
         <ConcludeCard key={JSON.stringify(data.rules ?? {})} result={data} />
         <GroupTable result={data} />
-        <RowsTable result={data} />
+        {/* 出し直した後は, 絞り込みとページを初めに戻す */}
+        <RowsTable key={JSON.stringify(data.rules ?? {})} result={data} />
       </div>
     </>
   )

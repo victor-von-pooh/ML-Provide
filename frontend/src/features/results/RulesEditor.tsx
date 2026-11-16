@@ -12,6 +12,7 @@ export function RulesEditor({
   task,
   classes,
   columns,
+  suggestions = [],
   idBase,
 }: {
   form: RulesForm
@@ -19,6 +20,7 @@ export function RulesEditor({
   task: string
   classes: string[]
   columns: string[]
+  suggestions?: string[]
   idBase: string
 }) {
   const set = (patch: Partial<RulesForm>) => onChange({ ...form, ...patch })
@@ -58,7 +60,14 @@ export function RulesEditor({
                 <select
                   id={`${idBase}-positive`}
                   value={form.positive}
-                  onChange={(event) => set({ positive: event.target.value })}
+                  onChange={(event) =>
+                    // 陽性を選んだら確率の既定 0.5 と, 一緒に使えない下限を外す
+                    set({
+                      positive: event.target.value,
+                      threshold: form.threshold || '0.5',
+                      minConfidence: event.target.value ? '' : form.minConfidence,
+                    })
+                  }
                   className={field}
                 >
                   <option value="">使わない (確率の最大)</option>
@@ -184,13 +193,21 @@ export function RulesEditor({
             ))}
           </select>
         ) : (
-          <input
-            id={`${idBase}-group`}
-            value={form.groupBy}
-            placeholder="列の名前 (空ならまとめない)"
-            onChange={(event) => set({ groupBy: event.target.value })}
-            className={`${field} w-56`}
-          />
+          <>
+            <input
+              id={`${idBase}-group`}
+              value={form.groupBy}
+              list={`${idBase}-group-list`}
+              placeholder="列の名前 (空ならまとめない)"
+              onChange={(event) => set({ groupBy: event.target.value })}
+              className={`${field} w-56`}
+            />
+            <datalist id={`${idBase}-group-list`}>
+              {suggestions.map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
+          </>
         )}
       </div>
     </div>
