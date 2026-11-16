@@ -1,4 +1,13 @@
-import type { Bundle, BundleCreateBody, Decision, Listing, Result, Rows, Rules } from './types'
+import type {
+  Bundle,
+  BundleCreateBody,
+  Decision,
+  Listing,
+  Remeasure,
+  Result,
+  Rows,
+  Rules,
+} from './types'
 
 /** API がエラーを返したときの例外 */
 export class ApiError extends Error {
@@ -53,6 +62,8 @@ export const api = {
   createBundle: (body: BundleCreateBody) =>
     request<Bundle>('/api/bundles/create', json('POST', body)),
   addSamples: () => request<Bundle[]>('/api/samples', json('POST', {})),
+  restoreUncertainty: (id: string) =>
+    request<Bundle>(`/api/bundles/${id}/restore-uncertainty`, json('POST', {})),
   deleteBundle: (id: string) => request<void>(`/api/bundles/${id}`, { method: 'DELETE' }),
   predict: (
     id: string,
@@ -82,6 +93,8 @@ export const api = {
   decide: (id: string, decision: Decision | null) =>
     request<Result>(`/api/results/${id}/decide`, json('POST', { decision })),
   backtest: (id: string) => request<Result>(`/api/results/${id}/backtest`, json('POST', {})),
+  remeasure: (id: string, write: boolean) =>
+    request<Remeasure>(`/api/results/${id}/remeasure`, json('POST', { write })),
   explain: (id: string) => request<Result>(`/api/results/${id}/explain`, json('POST', {})),
   downloadUrl: (id: string) => `/api/results/${id}/download`,
   deleteResult: (id: string) => request<void>(`/api/results/${id}`, { method: 'DELETE' }),

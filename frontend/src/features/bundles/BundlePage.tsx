@@ -1,10 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Play, Trash2 } from 'lucide-react'
+import { Play, Trash2, Undo2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 
 import { api } from '../../api/client'
-import type { Bundle, Description } from '../../api/types'
+import type { Bundle, Description, UncertaintySummary } from '../../api/types'
 import { PathField } from '../../components/PathPicker'
 import { Button, Card, ErrorBox, PageHeader, Spinner } from '../../components/ui'
 import { formatNumber, KIND_LABELS, TASK_LABELS } from '../../lib/format'
@@ -93,6 +93,11 @@ function DescriptionView({ description }: { description: Description }) {
               )
             </>
           )}
+        </Row>
+      )}
+      {description.uncertainty && (
+        <Row label="外れ方の記録">
+          <UncertaintyText summary={description.uncertainty} />
         </Row>
       )}
       {description.notes.map((note) => (
@@ -348,6 +353,7 @@ export function BundlePage() {
             <PredictCard bundle={data} description={data.description} />
             <Card title="一式の説明">
               <DescriptionView description={data.description} />
+              {data.description.uncertainty?.restorable && <RestoreButton bundle={data} />}
             </Card>
           </div>
           <Card title="この一式の結果">
@@ -358,5 +364,52 @@ export function BundlePage() {
         </div>
       )}
     </>
+  )
+}
+
+/** 分割の名前 (recent は測り直した実績) */
+const SPLIT_LABELS: Record<string, string> = {
+  valid: '検証用の分割',
+  train: '学習用の分割',
+  recent: '測り直した実績',
+}
+
+/** 外れ方の記録の要約の文 */
+function UncertaintyText({ summary }: { summary: UncertaintySummary }) {
+  const where = SPLIT_LABELS[summary.split ?? ''] ?? summary.split ?? '–'
+  const when = summary.measured_at ? ` (${summary.measured_at.slice(0, 16).replace('T', ' ')})` : ''
+  return (
+    <>
+      {where}
+      {when}
+      {summary.rows != null && ` の ${summary.rows.toLocaleString()} 行`}で測った
+      {summary.kind && `. ${summary.kind === 'relative' ? '比' : '差'}の形`}
+      {summary.coverage &&
+        `. 80 % の幅がテスト用の分割を覆った割合 ${(summary.coverage['80'] * 100).toFixed(1)} %`}
+      {summary.ece != null && `. 確率のずれ ${(summary.ece * 100).toFixed(1)} ポイント`}
+    </>
+  )
+}
+
+/** 測り直した外れ方を, 一式を作ったときの記録に戻すボタン */
+function RestoreButton({ bundle }: { bundle: Bundle }) {
+  const client = useQueryClient()
+  const restore = useMutation({
+    mutationFn: () => api.restoreUncertainty(bundle.id),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['bundles'] }),
+  })
+  return (
+    <div className="mt-2">
+      <Button
+        icon={Undo2}
+        disabled={restore.isPending}
+        onClick={() =>
+          window.confirm('外れ方の記録を, 一式を作ったときの記録に戻しますか?') && restore.mutate()
+        }
+      >
+        {restore.isPending ? '戻しています…' : '外れ方を作ったときの記録に戻す'}
+      </Button>
+      {restore.error && <ErrorBox error={restore.error} />}
+    </div>
   )
 }

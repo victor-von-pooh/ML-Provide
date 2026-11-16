@@ -488,3 +488,59 @@ def test_decision_flow(client: TestClient) -> None:
     off = client.post(f"/api/results/{result['id']}/decide",
                       json={"decision": None}).json()
     assert off["decision"] is None
+
+
+def test_remeasure(client: TestClient) -> None:
+    """
+    過去のデータの結果で外れ方を確かめ, 一式に書き戻せることを確かめる
+    関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+
+    Returns
+    ----------
+    None
+    """
+    # 来店数の見本の過去のデータ (目的の列あり) を推論
+    added = client.post("/api/samples").json()
+    shop = next(b for b in added if "来店数" in b["name"])
+    result = client.post(
+        f"/api/bundles/{shop['id']}/predict",
+        json={"source": shop["sample_past"], "decision": {}},
+    ).json()
+
+    # 確かめるだけでは一式は変わらない
+    checked = client.post(f"/api/results/{result['id']}/remeasure",
+                          json={"write": False}).json()
+    assert checked["written"] is False and checked["rows"] > 0
+    assert "80" in checked["before"]["coverage"]
+    described = client.get(f"/api/bundles/{shop['id']}").json()
+    assert described["description"]["uncertainty"]["split"] != "recent"
+
+    # 書き戻すと, 一式の説明の外れ方が実績の分割になる
+    saved = client.post(f"/api/results/{result['id']}/remeasure",
+                        json={"write": True}).json()
+    assert saved["written"] is True
+    described = client.get(f"/api/bundles/{shop['id']}").json()
+    assert described["description"]["uncertainty"]["split"] == "recent"
+    assert described["description"]["uncertainty"]["restorable"] is True
+
+    # 作ったときの記録に戻すと, もう戻せない
+    back = client.post(
+        f"/api/bundles/{shop['id']}/restore-uncertainty"
+    ).json()
+    assert back["description"]["uncertainty"]["split"] != "recent"
+    again = client.post(f"/api/bundles/{shop['id']}/restore-uncertainty")
+    assert again.status_code == 400
+
+    # 目的の列の無い入力の結果は測り直せない
+    fresh = client.post(
+        f"/api/bundles/{shop['id']}/predict",
+        json={"source": shop["sample_input"], "decision": {}},
+    ).json()
+    bad = client.post(f"/api/results/{fresh['id']}/remeasure",
+                      json={"write": False})
+    assert bad.status_code == 400

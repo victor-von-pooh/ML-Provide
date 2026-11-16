@@ -73,7 +73,21 @@ export interface Description {
   /** 目的の列の過去の値を使う回帰と予測の一式か (何段も先まで予測できるか) */
   forecastable?: boolean
   check: RunCheck | null
+  /** 外れ方の記録の要約 (意思決定の前提) */
+  uncertainty?: UncertaintySummary | null
   notes: string[]
+}
+
+/** 外れ方の記録の要約 (split は valid, train, recent (渡した実績)) */
+export interface UncertaintySummary {
+  split: string | null
+  rows: number | null
+  kind: string | null
+  measured_at: string | null
+  coverage: Record<'80' | '90', number> | null
+  ece: number | null
+  /** 一式を作ったときの記録に戻せるか */
+  restorable?: boolean
 }
 
 /** 検証用の分割を一式で推論した評価と, 実験の記録との比べ */
@@ -205,4 +219,12 @@ export interface BundleCreateBody {
   target_scale?: { center: number; scale: number } | 'train' | null
   conclusion?: Rules | null
   copy_weights: boolean
+}
+
+/** 外れ方の測り直し (確かめるだけか, 一式に書き戻したか) */
+export interface Remeasure {
+  rows: number
+  before: { coverage?: Record<'80' | '90', number>; ece?: number }
+  sentences: string[]
+  written: boolean
 }
