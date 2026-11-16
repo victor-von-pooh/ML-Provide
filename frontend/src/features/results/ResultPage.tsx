@@ -319,8 +319,14 @@ export function ResultPage() {
   const client = useQueryClient()
   const result = useQuery({ queryKey: ['results', 'one', id], queryFn: () => api.result(id) })
   // 一式を消しても結果は残るので, 一式があるときだけ一式へ戻る
-  const bundles = useQuery({ queryKey: ['bundles'], queryFn: api.bundles })
-  const bundleAlive = !!bundles.data?.some((bundle) => bundle.id === result.data?.bundle_id)
+  const bundleId = result.data?.bundle_id ?? ''
+  const bundle = useQuery({
+    queryKey: ['bundles', bundleId],
+    queryFn: () => api.bundle(bundleId),
+    enabled: !!bundleId,
+    retry: false,
+  })
+  const bundleAlive = bundle.isSuccess
   const remove = useMutation({
     mutationFn: () => api.deleteResult(id),
     onSuccess: () => {
@@ -417,7 +423,7 @@ export function ResultPage() {
         {/* 出し直した後は, 使った決め方で編集を作り直す */}
         <ConcludeCard key={`conclude:${JSON.stringify(data.rules ?? {})}`} result={data} />
         <GroupTable result={data} />
-        <ExplainCard result={data} />
+        <ExplainCard result={data} bundleAlive={bundleAlive} />
         {/* 出し直した後は, 絞り込みとページを初めに戻す */}
         <RowsTable key={`rows:${JSON.stringify(data.rules ?? {})}`} result={data} />
       </div>
