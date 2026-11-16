@@ -32,6 +32,12 @@ test('見本の一式を入れ, 見本の新しいデータを推論して結論
   // 判断で絞った表
   await page.getByLabel('判断で絞る').selectOption('保留')
   await expect(page.getByRole('table', { name: '予測と判断の表' })).toContainText('保留')
+
+  // 列の効き (前処理で落とす id は 0)
+  await page.getByRole('button', { name: '求める' }).click()
+  const effects = page.getByRole('list', { name: '列の効き' })
+  await expect(effects).toContainText('months', { timeout: 30_000 })
+  await expect(effects.getByRole('listitem').last()).toContainText('id')
 })
 
 test('文の見本に文を書いて推論する', async ({ page }) => {

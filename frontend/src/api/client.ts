@@ -71,6 +71,7 @@ export const api = {
   },
   conclude: (id: string, rules: Rules) =>
     request<Result>(`/api/results/${id}/conclude`, json('POST', { rules })),
+  explain: (id: string) => request<Result>(`/api/results/${id}/explain`, json('POST', {})),
   downloadUrl: (id: string) => `/api/results/${id}/download`,
   deleteResult: (id: string) => request<void>(`/api/results/${id}`, { method: 'DELETE' }),
 }

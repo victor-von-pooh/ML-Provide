@@ -602,7 +602,8 @@ def predict(
             raise user_error(error) from error
     result.update(
         source=described, bundle_id=bundle_id, task=bundle.task,
-        classes=bundle.classes
+        classes=bundle.classes, kind=bundle.kind,
+        source_path=str(source) if isinstance(source, Path) else None
     )
     # 書いた表を読み直して結論を出し直す (出し直しと同じ型の値でまとめ,
     # 日時のような列のまとめの名前が, 後の出し直しで変わらないように)
@@ -745,6 +746,8 @@ def result_view(result_id: str, place: Path) -> dict[str, Any]:
         "summary": meta.get("summary"),
         "sentences": meta.get("sentences") or [],
         "columns": columns,
+        "kind": meta.get("kind"),
+        "explanation": meta.get("explanation"),
     }
 
     return view
@@ -937,6 +940,62 @@ def conclude_again(
             conclude_into(place, read_meta(place), rules)
         except ValueError as error:
             raise user_error(error) from error
+    view = result_view(result_id, place)
+
+    return view
+
+
+@router.post("/results/{result_id}/explain")
+def explain_result(request: Request, result_id: str) -> dict[str, Any]:
+    """
+    結果の入力の列ごとの効きを求めて結果に残す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    result_id: str
+        結果の id
+
+    Returns
+    ----------
+    view: dict[str, Any]
+        列の効き (explanation) を足した結果のまとめ
+
+    Raises
+    ----------
+    HTTPException
+        一式か入力のファイルが無い場合と, 求められない場合は 400
+    """
+    # 結果の一式と入力のファイル
+    place = find_result(request, result_id)
+    meta = read_meta(place)
+    entry = get_store(request).find(str(meta.get("bundle_id")))
+    if entry is None:
+        raise HTTPException(400, "一式が登録されていないので求められません")
+    source = meta.get("source_path")
+    if not source or not Path(source).exists():
+        raise HTTPException(
+            400, "入力のファイルが無いので求められません (書いた文の結果は"
+            "求めない)"
+        )
+
+    # 推論を繰り返すので, 推論と同じく 1 つずつ
+    with PREDICT_LOCK:
+        try:
+            bundle = open_bundle(str(entry["path"]))
+            explanation = ml_inference.explain(bundle, Path(source))
+        except (OSError, *USER_ERRORS) as error:
+            raise user_error(error) from error
+    with RESULT_LOCK:
+        meta = read_meta(place)
+        meta["explanation"] = explanation
+        temporary = place / f".result-{uuid.uuid4().hex[:8]}.yaml"
+        temporary.write_text(
+            yaml.safe_dump(meta, allow_unicode=True, sort_keys=False),
+            encoding="utf-8"
+        )
+        os.replace(temporary, place / "result.yaml")
     view = result_view(result_id, place)
 
     return view
