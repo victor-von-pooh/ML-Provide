@@ -475,6 +475,11 @@ def test_decision_flow(client: TestClient) -> None:
                         json={"decision": triage}).json()
     assert again["decision"]["decision"]["type"] == "triage"
     assert again["backtest"] is None
+    # 振り分けの列だけが残り, 選ぶ型の列は消える
+    columns = client.get(
+        f"/api/results/{result['id']}/rows?limit=5"
+    ).json()["columns"]
+    assert "expected_cost" in columns and "gain_if_acted" not in columns
     bad = client.post(f"/api/results/{result['id']}/decide",
                       json={"decision": {"type": "quantity"}})
     assert bad.status_code == 400

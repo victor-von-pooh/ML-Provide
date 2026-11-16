@@ -272,7 +272,7 @@ function PredictCard({ bundle, description }: { bundle: Bundle; description: Des
             idBase="predict"
           />
           {problems.map((problem) => (
-            <p key={problem} className="mt-1 text-xs text-critical-text">
+            <p key={problem} role="alert" className="mt-1 text-xs text-critical-text">
               {problem}
             </p>
           ))}

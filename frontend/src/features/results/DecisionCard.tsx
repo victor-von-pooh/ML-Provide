@@ -32,14 +32,18 @@ export function DecisionCard({ result, bundleAlive }: { result: Result; bundleAl
       actions={
         <>
           {canReplay && (
-            <Button icon={History} disabled={replay.isPending} onClick={() => replay.mutate()}>
+            <Button
+              icon={History}
+              disabled={replay.isPending || decide.isPending}
+              onClick={() => replay.mutate()}
+            >
               {replay.isPending ? 'たどり直しています…' : '過去のデータでたどり直す'}
             </Button>
           )}
           <Button
             variant="primary"
             icon={RefreshCw}
-            disabled={problems.length > 0 || decide.isPending || !bundleAlive}
+            disabled={problems.length > 0 || decide.isPending || replay.isPending || !bundleAlive}
             onClick={() => decide.mutate()}
           >
             {decide.isPending ? '決めています…' : '決め直す'}
@@ -75,7 +79,9 @@ export function DecisionCard({ result, bundleAlive }: { result: Result; bundleAl
             過去のデータでたどり直した結果 ({result.backtest.rows.toLocaleString()} 行)
           </h3>
           <table className="mb-2 text-sm">
-            <caption className="sr-only">方針ごとの実際の得と損</caption>
+            <caption className="sr-only">
+              方針ごとの得と損 (選ぶ型の得は効果の仮定のもとでの値)
+            </caption>
             <tbody>
               {Object.entries(result.backtest.policies).map(([name, value]) => (
                 <tr key={name}>
@@ -105,7 +111,7 @@ export function DecisionCard({ result, bundleAlive }: { result: Result; bundleAl
         idBase="decide"
       />
       {problems.map((problem) => (
-        <p key={problem} className="mt-1 text-xs text-critical-text">
+        <p key={problem} role="alert" className="mt-1 text-xs text-critical-text">
           {problem}
         </p>
       ))}

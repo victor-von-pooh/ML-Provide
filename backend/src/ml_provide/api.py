@@ -13,7 +13,6 @@ import yaml
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 from ml_inference.conclude import RULE_KEYS
-from ml_inference.decision import DECISION_COLUMNS
 from pydantic import BaseModel, Field
 
 from ml_provide.samples import write_samples
@@ -612,9 +611,12 @@ def predict(
     result.update(
         source=described, bundle_id=bundle_id, task=bundle.task,
         classes=bundle.classes, kind=bundle.kind, forecast=body.forecast,
-        has_target=str(bundle.dataset.info.get("target")) in result[
-            "frame"
-        ].columns,
+        has_target=bool(
+            str(bundle.dataset.info.get("target")) in result["frame"].columns
+            and result["frame"][str(bundle.dataset.info.get("target"))]
+            .notna().any()
+        ),
+        options=body.options,
         source_path=str(source) if isinstance(source, Path) else None
     )
     # 書いた表を読み直して結論を出し直す (出し直しと同じ型の値でまとめ,
@@ -674,6 +676,35 @@ def conclude_into(
         shutil.rmtree(temporary, ignore_errors=True)
 
 
+# 意思決定の型ごとに, 予測の表に足す列 (決め直すときに, この列だけを除く)
+TYPE_COLUMNS = {
+    "quantity": ["action", "level", "expected_cost", "point_expected_cost"],
+    "select": ["action", "gain_if_acted", "expected_gain"],
+    "triage": ["action", "expected_cost"],
+}
+
+
+def decision_columns(meta: dict[str, Any]) -> list[str]:
+    """
+    結果の意思決定が予測の表に足した列を返す関数
+
+    Parameters
+    ----------
+    meta: dict[str, Any]
+        result.yaml の中身
+
+    Returns
+    ----------
+    columns: list[str]
+        足した列 (意思決定の無い結果は空. 入力の同じ名前の列は残す)
+    """
+    # 前の決め方の型の列だけ
+    decided = (meta.get("decision") or {}).get("decision") or {}
+    columns = list(TYPE_COLUMNS.get(str(decided.get("type")), []))
+
+    return columns
+
+
 def write_meta(place: Path, meta: dict[str, Any]) -> None:
     """
     結果の result.yaml を, 隣に書いてから置き換える関数
@@ -725,9 +756,10 @@ def decide_into(
     ValueError
         決め方に誤りがある場合
     """
-    # 前の行動の列を除いた予測から決め直す (たどり直しの結果は古くなる)
+    # 前の意思決定が足した列を除いた予測から決め直す (たどり直しの結果は
+    # 古くなる)
     frame = read_frame(place, meta).drop(
-        columns=list(DECISION_COLUMNS), errors="ignore"
+        columns=decision_columns(meta), errors="ignore"
     )
     meta = {**meta, "backtest": None}
     if decision:
@@ -1200,13 +1232,21 @@ def backtest_result(request: Request, result_id: str) -> dict[str, Any]:
     with PREDICT_LOCK:
         try:
             replay = ml_inference.backtest(
-                bundle, Path(source), decided["decision"]
+                bundle, Path(source), decided["decision"],
+                options=meta.get("options")
             )
         except (OSError, *USER_ERRORS) as error:
             raise user_error(error) from error
     replay.pop("decision", None)
+    # たどり直している間に決め直していたら, 古い方針の結果は書かない
     with RESULT_LOCK:
         meta = read_meta(place)
+        now = (meta.get("decision") or {}).get("decision")
+        if now != decided["decision"]:
+            raise HTTPException(
+                409, "たどり直している間に意思決定が変わりました. もう一度"
+                "たどり直してください"
+            )
         meta["backtest"] = replay
         write_meta(place, meta)
     view = result_view(result_id, place)

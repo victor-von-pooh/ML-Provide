@@ -1,5 +1,5 @@
 import type { DecisionForm } from '../../lib/decision'
-import { DECISION_TYPES } from '../../lib/decision'
+import { DECISION_TYPES, NUMBER_ONLY } from '../../lib/decision'
 
 const field = 'h-8 rounded-lg border border-line bg-surface px-2 text-sm'
 
@@ -87,6 +87,7 @@ export function DecisionEditor({
               </label>
               <input
                 id={`${idBase}-${item.key}`}
+                inputMode={NUMBER_ONLY.has(item.key) ? 'decimal' : undefined}
                 value={form.values[item.key] ?? ''}
                 onChange={(event) =>
                   onChange({ ...form, values: { ...form.values, [item.key]: event.target.value } })

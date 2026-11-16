@@ -54,14 +54,18 @@ export function toDecisionForm(decision: Decision | null | undefined): DecisionF
   return { type: decision.type, positive: String(decision.positive ?? ''), values }
 }
 
-/** 数なら数, それ以外は列の名前として渡す */
+/** 数なら数, それ以外は列の名前として渡す (全角の数字やカンマもそろえる) */
 function parseValue(text: string): number | string {
-  const value = Number(text)
-  return text.trim() !== '' && Number.isFinite(value) ? value : text.trim()
+  const normal = text.normalize('NFKC').trim()
+  const value = Number(normal.replace(/,/g, ''))
+  return normal !== '' && Number.isFinite(value) ? value : normal
 }
 
 /** 列の名前を書けない欄 (件数と刻みと上限) */
-const NUMBER_ONLY = new Set(['step', 'budget', 'budget_cost', 'capacity'])
+export const NUMBER_ONLY = new Set(['step', 'budget', 'budget_cost', 'capacity'])
+
+/** 整数だけの欄 (件数) */
+const INTEGER_ONLY = new Set(['budget', 'capacity'])
 
 /** 列の名前だけを書く欄 */
 const COLUMN_ONLY = new Set(['current'])
@@ -91,6 +95,13 @@ export function fromDecisionForm(
     const value = COLUMN_ONLY.has(field.key) ? text : parseValue(text)
     if (NUMBER_ONLY.has(field.key) && typeof value !== 'number')
       problems.push(`「${field.label}」は数で書いてください`)
+    if (typeof value === 'number') {
+      if (value < 0) problems.push(`「${field.label}」は 0 以上にしてください`)
+      if (field.key === 'effect' && value > 1)
+        problems.push(`「${field.label}」は 0 から 1 にしてください`)
+      if (INTEGER_ONLY.has(field.key) && !Number.isInteger(value))
+        problems.push(`「${field.label}」は件数なので整数にしてください`)
+    }
     decision[field.key] = value
   }
   return { decision, problems }
