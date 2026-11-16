@@ -8,7 +8,9 @@ import type { Bundle, Description } from '../../api/types'
 import { PathField } from '../../components/PathPicker'
 import { Button, Card, ErrorBox, PageHeader, Spinner } from '../../components/ui'
 import { formatNumber, KIND_LABELS, TASK_LABELS } from '../../lib/format'
+import { fromDecisionForm, toDecisionForm, type DecisionForm } from '../../lib/decision'
 import { fromForm, toForm, withCleared, type RulesForm } from '../../lib/rules'
+import { DecisionEditor } from '../results/DecisionEditor'
 import { ResultList } from '../results/ResultList'
 import { RulesEditor } from '../results/RulesEditor'
 
@@ -114,14 +116,28 @@ function PredictCard({ bundle, description }: { bundle: Bundle; description: Des
   const canForecast = !!description.forecastable
   const [ahead, setAhead] = useState(false)
   const [form, setForm] = useState<RulesForm>(() => toForm(description.conclusion))
-  const { rules, problems } = fromForm(form, description.task, description.classes)
+  const { rules, problems: ruleProblems } = fromForm(form, description.task, description.classes)
+  const [decisionForm, setDecisionForm] = useState<DecisionForm>(() =>
+    toDecisionForm(description.decision),
+  )
+  const { decision, problems: decisionProblems } = fromDecisionForm(
+    decisionForm,
+    description.classes,
+  )
+  const problems = [...ruleProblems, ...decisionProblems]
   const predict = useMutation({
     mutationFn: () =>
       api.predict(
         bundle.id,
         mode === 'texts'
-          ? { texts: texts.split('\n'), rules: withCleared(rules) }
-          : { source: source.trim(), rules: withCleared(rules), forecast: canForecast && ahead },
+          ? { texts: texts.split('\n'), rules: withCleared(rules), decision: decision ?? {} }
+          : {
+              source: source.trim(),
+              rules: withCleared(rules),
+              forecast: canForecast && ahead,
+              // 意思決定しない場合は空 (省くと一式の既定値になる)
+              decision: decision ?? {},
+            },
       ),
     onSuccess: (result) => {
       client.invalidateQueries({ queryKey: ['results'] })
@@ -159,7 +175,7 @@ function PredictCard({ bundle, description }: { bundle: Bundle; description: Des
               onChange={setSource}
               hint="目的の列は有っても無くてもかまいません. 学習のときと同じ読み込みで読みます"
             />
-            {bundle.sample_input && source !== bundle.sample_input && (
+            {bundle.sample_input && (
               <p className="mt-1 text-xs text-ink-2">
                 見本の一式です.{' '}
                 <button
@@ -173,6 +189,23 @@ function PredictCard({ bundle, description }: { bundle: Bundle; description: Des
                 >
                   見本の新しいデータ (目的の列の無い表) を使う
                 </button>
+                {bundle.sample_past && (
+                  <>
+                    {' '}
+                    ·{' '}
+                    <button
+                      type="button"
+                      className="text-accent-text underline"
+                      onClick={() => {
+                        // 過去のデータは目的の列があるので, 1 つ先の予測でたどり直せる
+                        setSource(bundle.sample_past ?? '')
+                        setAhead(false)
+                      }}
+                    >
+                      見本の過去のデータ (目的の列あり. たどり直せる) を使う
+                    </button>
+                  </>
+                )}
               </p>
             )}
           </div>
@@ -210,6 +243,18 @@ function PredictCard({ bundle, description }: { bundle: Bundle; description: Des
             </div>
           </div>
         )}
+        <section aria-label="意思決定">
+          <h3 className="mb-2 text-xs font-semibold text-ink-2">
+            意思決定 (任意. だから何をするか. 結果の画面で変えて決め直せます)
+          </h3>
+          <DecisionEditor
+            form={decisionForm}
+            onChange={setDecisionForm}
+            task={description.task}
+            classes={description.classes}
+            idBase="predict-decision"
+          />
+        </section>
         <section aria-label="結論の決め方">
           <h3 className="mb-2 text-xs font-semibold text-ink-2">
             結論の決め方 (結果の画面で変えて出し直せます)

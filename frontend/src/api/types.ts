@@ -68,6 +68,8 @@ export interface Description {
   }
   run: RunInfo | null
   conclusion: Rules
+  /** 意思決定の決め方の既定値 */
+  decision?: Decision | null
   /** 目的の列の過去の値を使う回帰と予測の一式か (何段も先まで予測できるか) */
   forecastable?: boolean
   check: RunCheck | null
@@ -93,6 +95,8 @@ export interface Bundle {
   added_at: string
   /** 見本の一式の, 推論を試す新しいデータ */
   sample_input?: string
+  /** 見本の一式の, たどり直しを試す目的の列のある過去のデータ */
+  sample_past?: string
   ok: boolean
   error: string | null
   description: Description | null
@@ -132,7 +136,38 @@ export interface Result {
   kind?: string | null
   /** 何段も先の予測の結果か (表は先の行だけ) */
   forecast?: boolean
+  /** 意思決定 (決め方を選んだ場合) */
+  decision?: DecisionResult | null
+  /** 過去のデータでのたどり直し */
+  backtest?: Backtest | null
+  /** 入力に目的の列があったか (たどり直せるか) */
+  has_target?: boolean
   explanation?: Explanation | null
+}
+
+/** 意思決定の決め方 (値は数か, 予測の表の列の名前) */
+export interface Decision {
+  type: 'quantity' | 'select' | 'triage'
+  [key: string]: unknown
+}
+
+/** 意思決定の結果 */
+export interface DecisionResult {
+  decision: Decision
+  summary: Record<string, unknown> & {
+    rows: number
+    acting: number
+    baselines?: Record<string, number>
+  }
+  sentences: string[]
+  notes: string[]
+}
+
+/** たどり直し (方針ごとの実際の得 (正) と損 (負)) */
+export interface Backtest {
+  rows: number
+  policies: Record<string, number>
+  sentences: string[]
 }
 
 /** 列ごとの効き (並べ替えの重要度) */

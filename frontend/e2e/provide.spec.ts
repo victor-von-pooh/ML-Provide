@@ -37,7 +37,7 @@ test('見本の一式を入れ, 見本の新しいデータを推論して結論
   await page.getByRole('button', { name: '求める' }).click()
   const effects = page.getByRole('list', { name: '列の効き' })
   await expect(effects).toContainText('months', { timeout: 30_000 })
-  await expect(effects.getByRole('listitem').last()).toContainText('id')
+  await expect(effects.getByRole('listitem').filter({ hasText: /^id/ })).toContainText('0.000')
 })
 
 test('文の見本に文を書いて推論する', async ({ page }) => {
@@ -73,4 +73,30 @@ test('時系列の見本で何段も先まで予測する', async ({ page }) => 
   await expect(page.getByText(/何段も先の予測/)).toBeVisible()
   const table = page.getByRole('table', { name: '予測と判断の表' })
   await expect(table.getByRole('columnheader', { name: 'step' })).toBeVisible()
+})
+
+test('解約の見本で, 過去のデータを既定の意思決定で推論しかたどり直す', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('link', { name: '見本: 解約の予測 (表の分類)' }).click()
+  // 既定の意思決定 (対象を選ぶ) が入っている
+  await expect(page.getByLabel('型', { exact: true })).toHaveValue('select')
+  await page.getByRole('button', { name: /見本の過去のデータ/ }).click()
+  await page.getByRole('button', { name: '推論する' }).click()
+  await expect(page.getByText(/300 件のうち 10 件/)).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText(/効果が当たりの確率に比例することは仮定/)).toBeVisible()
+
+  // たどり直すと, 方針ごとの実際の得が出る
+  await page.getByRole('button', { name: '過去のデータでたどり直す' }).click()
+  await expect(page.getByRole('region', { name: 'たどり直し' })).toContainText('この方針', {
+    timeout: 30_000,
+  })
+
+  // 振り分けに決め直すと, たどり直しは消える
+  await page.getByLabel('型', { exact: true }).selectOption('triage')
+  await page.getByLabel('当たりのクラス (行動の対象)').selectOption('解約')
+  await page.getByLabel('当たりを見逃す損').fill('9')
+  await page.getByLabel('外れを回す損 (空振り)').fill('1')
+  await page.getByRole('button', { name: '決め直す' }).click()
+  await expect(page.getByText(/以上を回すこと/)).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('region', { name: 'たどり直し' })).toHaveCount(0)
 })
