@@ -151,11 +151,24 @@ test('日々の売上の見本の過去のデータで, 7 段先までの外れ�
   await page.getByLabel(/何段先まで/).fill('7')
   await expect(page.getByLabel('予測を始める時刻の列')).toHaveValue('date')
   await page.getByLabel('予測を始める時刻の列').selectOption('')
-  await expect(page.getByRole('alert')).toContainText('時刻の列を選んで')
+  await expect(page.getByText('何段も先の外れ方には, 時刻の列を選んでください')).toBeVisible()
   await page.getByLabel('予測を始める時刻の列').selectOption('date')
   await page.getByRole('button', { name: '確かめる' }).click()
   await expect(page.getByRole('list', { name: '外れ方の確かめの結果' })).toContainText(
     /何段も先の外れ方 \(予測を始める時刻 \d+ 個\): 80 % の幅は 1 段目/,
+    { timeout: 60_000 },
+  )
+
+  // 時刻の列を変えると前の結果は消え, 書き戻せない. 日時に読めない列は誤り
+  await page.getByLabel('予測を始める時刻の列').selectOption('shop')
+  await expect(page.getByRole('list', { name: '外れ方の確かめの結果' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '一式に書き戻す' })).toHaveCount(0)
+  await page.getByRole('button', { name: '確かめる' }).click()
+  await expect(page.getByText(/日時として読めません/)).toBeVisible({ timeout: 60_000 })
+  await page.getByLabel('予測を始める時刻の列').selectOption('date')
+  await page.getByRole('button', { name: '確かめる' }).click()
+  await expect(page.getByRole('list', { name: '外れ方の確かめの結果' })).toContainText(
+    '何段も先の外れ方',
     { timeout: 60_000 },
   )
 

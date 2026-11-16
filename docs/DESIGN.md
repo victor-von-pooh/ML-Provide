@@ -59,7 +59,7 @@ ML-Provide の設計の方針をまとめる.
 | `POST /api/results/{id}/explain` | 入力の列ごとの効き (ML-Inference の `explain`) を求めて結果に残す (表と時系列のファイルの結果だけ) |
 | `POST /api/results/{id}/decide` | 意思決定の決め方を変えて決め直す (推論はし直さない. 空で外す) |
 | `POST /api/results/{id}/backtest` | 結果の入力 (目的の列を持つファイル) で, 意思決定の方針と素朴なやり方の実際の得と損を比べる |
-| `POST /api/results/{id}/remeasure` | 結果の入力 (目的の列を持つファイル) で一式の予測の外れ方を測り直す (ML-Inference の `remeasure`). `write` が偽なら確かめるだけ, 真なら一式に書き戻す. `horizon` と `time` で何段も先の外れ方も段ごとに測る (目的の列の過去の値を使う一式だけ) (置き場の外の一式なら, 登録した場所のファイルを書き換える). 結果には残さない |
+| `POST /api/results/{id}/remeasure` | 結果の入力 (目的の列を持つファイル) で一式の予測の外れ方を測り直す (ML-Inference の `remeasure`). `write` が偽なら確かめるだけ, 真なら一式に書き戻す (置き場の外の一式なら, 登録した場所のファイルを書き換える). `horizon` と `time` で何段も先の外れ方も段ごとに測る (目的の列の過去の値を使う一式だけ. 画面は確かめたときの段の数と時刻の列で書き戻す). 結果には残さない |
 | `GET /api/results/{id}/download` | 予測と判断の CSV |
 | `DELETE /api/results/{id}` | 結果を消す |
 

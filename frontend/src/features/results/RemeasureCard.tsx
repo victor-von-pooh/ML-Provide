@@ -10,6 +10,12 @@ import { Button, Card, ErrorBox } from '../../components/ui'
 const SAVE_CONFIRM =
   '一式の外れ方の記録を, この実績で測り直したものに書き換えます (登録した場所の inference.yaml を書き換えます. 一式の画面で作ったときの記録に戻せます). 書き戻しますか?'
 
+/** 測り直しの入力 (何段先までと時刻の列. 段ごとに測らなければ空) */
+interface Inputs {
+  horizon?: number
+  time?: string
+}
+
 /** 外れ方の確かめ (この実績で, 一式の外れ方の記録が当たっているか) と書き戻し */
 export function RemeasureCard({
   result,
@@ -21,8 +27,9 @@ export function RemeasureCard({
   forecastable: boolean
 }) {
   const client = useQueryClient()
-  // 最後に終わった確かめか書き戻しの結果
-  const [shown, setShown] = useState<Remeasure | null>(null)
+  // 最後に終わった確かめか書き戻しの結果と, そのときの段の数と時刻の列
+  // (書き戻しは確かめたときの入力で行う)
+  const [shown, setShown] = useState<{ view: Remeasure; inputs: Inputs } | null>(null)
   // 何段も先の外れ方 (何段も先まで予測できる一式だけ. 空なら測らない)
   const columns = result.columns ?? []
   const [horizon, setHorizon] = useState('')
@@ -35,38 +42,51 @@ export function RemeasureCard({
       : stepCount !== undefined && !time
         ? '何段も先の外れ方には, 時刻の列を選んでください'
         : null
-  const args = (write: boolean) =>
-    api.remeasure(result.id, write, stepCount, stepCount !== undefined ? time : undefined)
+  const current: Inputs = {
+    horizon: stepCount,
+    time: stepCount !== undefined ? time : undefined,
+  }
   const check = useMutation({
-    mutationFn: () => args(false),
-    onSuccess: setShown,
+    mutationFn: (inputs: Inputs) => api.remeasure(result.id, false, inputs.horizon, inputs.time),
+    onSuccess: (view, inputs) => setShown({ view, inputs }),
   })
   const save = useMutation({
-    mutationFn: () => args(true),
-    onSuccess: (next) => {
-      setShown(next)
+    mutationFn: (inputs: Inputs) => api.remeasure(result.id, true, inputs.horizon, inputs.time),
+    onSuccess: (view, inputs) => {
+      setShown({ view, inputs })
       // 一式の説明 (外れ方の記録) を読み直す
       client.invalidateQueries({ queryKey: ['bundles'] })
     },
   })
+  // 入力を変えたら, 前の結果と誤りを消す
+  const changed = () => {
+    setShown(null)
+    check.reset()
+    save.reset()
+  }
   // 目的の列のある入力のファイルの結果だけ (何段も先の予測は除く)
   if (!result.has_target || result.forecast || !bundleAlive) return null
   const busy = check.isPending || save.isPending
   const error = check.error ?? save.error
+  const view = shown?.view
   return (
     <Card
       title="外れ方の確かめ (この実績で記録が当たっているか)"
       actions={
         <>
-          <Button icon={Ruler} disabled={busy || !!stepProblem} onClick={() => check.mutate()}>
+          <Button
+            icon={Ruler}
+            disabled={busy || !!stepProblem}
+            onClick={() => check.mutate(current)}
+          >
             {check.isPending ? '確かめています…' : '確かめる'}
           </Button>
-          {shown && !shown.written && (
+          {shown && !shown.view.written && (
             <Button
               variant="primary"
               icon={Save}
               disabled={busy}
-              onClick={() => window.confirm(SAVE_CONFIRM) && save.mutate()}
+              onClick={() => window.confirm(SAVE_CONFIRM) && save.mutate(shown.inputs)}
             >
               {save.isPending ? '書き戻しています…' : '一式に書き戻す'}
             </Button>
@@ -84,9 +104,12 @@ export function RemeasureCard({
               id={`steps-${result.id}`}
               inputMode="numeric"
               value={horizon}
+              disabled={busy}
+              aria-invalid={!!stepProblem}
+              aria-describedby={stepProblem ? `steps-problem-${result.id}` : undefined}
               onChange={(event) => {
                 setHorizon(event.target.value)
-                setShown(null)
+                changed()
               }}
               className="h-8 w-24 rounded-lg border border-line bg-surface px-2"
             />
@@ -98,7 +121,11 @@ export function RemeasureCard({
             <select
               id={`time-${result.id}`}
               value={time}
-              onChange={(event) => setTime(event.target.value)}
+              disabled={busy}
+              onChange={(event) => {
+                setTime(event.target.value)
+                changed()
+              }}
               className="h-8 rounded-lg border border-line bg-surface px-2"
             >
               <option value="">選ぶ</option>
@@ -112,7 +139,7 @@ export function RemeasureCard({
         </div>
       )}
       {stepProblem && (
-        <p role="alert" className="mb-2 text-xs text-critical-text">
+        <p id={`steps-problem-${result.id}`} className="mb-2 text-xs text-critical-text">
           {stepProblem}
         </p>
       )}
@@ -124,17 +151,17 @@ export function RemeasureCard({
           外れていれば測り直して一式に書き戻せます.
         </p>
       )}
-      {shown && (
+      {view && (
         <ul aria-label="外れ方の確かめの結果" className="flex flex-col gap-1 text-sm">
-          {shown.sentences.map((sentence) => (
+          {view.sentences.map((sentence) => (
             <li key={sentence}>{sentence}</li>
           ))}
         </ul>
       )}
       {/* 読み上げのため, 知らせの場所は常に置き, 中身だけを替える */}
       <p role="status" aria-label="外れ方の確かめの状態" className="mt-2 text-xs text-ink-3">
-        {shown &&
-          (shown.written
+        {view &&
+          (view.written
             ? '一式に書き戻しました. これからの推論と決め直しで使います (この結果の意思決定は決め直すと変わります. 一式の画面で作ったときの記録に戻せます).'
             : '確かめただけで, 一式は変えていません. 測った実績で方針をたどり直すと良く見えすぎるので, 書き戻した後は別の期間の実績で確かめてください.')}
       </p>
