@@ -68,6 +68,8 @@ export interface Description {
   }
   run: RunInfo | null
   conclusion: Rules
+  /** 目的の列の過去の値を使う回帰と予測の一式か (何段も先まで予測できるか) */
+  forecastable?: boolean
   check: RunCheck | null
   notes: string[]
 }

@@ -381,7 +381,9 @@ def test_samples(client: TestClient) -> None:
     """
     # 3 つの見本 (2 回目は登録し直さない)
     added = client.post("/api/samples").json()
-    assert [b["name"] for b in added][0] == "見本: レビューの分類 (文)"
+    assert [b["name"] for b in added][0] == (
+        "見本: 日々の売上の予測 (時系列, 先の予測)"
+    )
     assert len(added) == 4 and all(b["ok"] for b in added)
     assert client.post("/api/samples").json() == []
 
