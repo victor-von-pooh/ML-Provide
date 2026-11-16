@@ -1,0 +1,3 @@
+[submodule "ML-Inference"]
+	path = ML-Inference
+	url = https://github.com/victor-von-pooh/ML-Inference.git
