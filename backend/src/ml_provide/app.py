@@ -282,9 +282,12 @@ def create_app(
     app: FastAPI
         アプリ
     """
+    # 手元のファイルを読めるので, 仕様の画面はトークン無しで見せない
+    # (仕様の書き出しは cli の --openapi)
     app = FastAPI(
         title="ML-Provide", version="0.1.0",
-        generate_unique_id_function=route_id
+        generate_unique_id_function=route_id, docs_url=None,
+        redoc_url=None, openapi_url=None
     )
 
     # 登録した一式と推論の結果の置き場をアプリに保存

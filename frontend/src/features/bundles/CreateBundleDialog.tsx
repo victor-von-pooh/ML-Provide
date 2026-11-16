@@ -26,6 +26,7 @@ export function CreateBundleDialog({
   const [output, setOutput] = useState('')
   const [center, setCenter] = useState('')
   const [scale, setScale] = useState('')
+  const [trainScale, setTrainScale] = useState(false)
   const [copyWeights, setCopyWeights] = useState(true)
   const create = useMutation({
     mutationFn: () => {
@@ -38,8 +39,11 @@ export function CreateBundleDialog({
         inputName.trim() && ids.length > 0
           ? { [inputName.trim()]: { source: 'items', prepend: ids } }
           : null
-      const targetScale =
-        center.trim() && scale.trim() ? { center: Number(center), scale: Number(scale) } : null
+      const targetScale = trainScale
+        ? ('train' as const)
+        : center.trim() && scale.trim()
+          ? { center: Number(center), scale: Number(scale) }
+          : null
       return api.createBundle({
         name: name.trim(),
         spec: spec.trim(),
@@ -60,8 +64,9 @@ export function CreateBundleDialog({
     problems.push('足した番号は整数で書いてください')
   if (!!inputName.trim() !== ids.length > 0)
     problems.push('先頭に番号を足した入力は, 入力の名前と番号の両方を書いてください')
-  if (!!center.trim() !== !!scale.trim()) problems.push('目的の値の中心と幅は両方を書いてください')
-  if (scale.trim() && !(Number(scale) > 0)) problems.push('幅は正の数にしてください')
+  if (!trainScale && !!center.trim() !== !!scale.trim())
+    problems.push('目的の値の中心と幅は両方を書いてください')
+  if (!trainScale && scale.trim() && !(Number(scale) > 0)) problems.push('幅は正の数にしてください')
   const ready =
     name.trim() && spec.trim() && dataset.trim() && weights.trim() && problems.length === 0
   return (
@@ -74,9 +79,9 @@ export function CreateBundleDialog({
         }}
       >
         <p className="text-xs text-ink-2">
-          モデルの定義, ML-EDA で書き出したデータセット, ML-Found の実験 (か重みのファイル)
-          を選びます. 学習用の見本を推論できることを確かめてから, このアプリの置き場に作ります
-          (元のファイルは変えません).
+          モデルの定義, ML-EDA (ML-Fathom の画面) で書き出したデータセット, ML-Found の実験
+          (か重みのファイル) を選びます. 学習用の見本を推論できることを確かめてから,
+          このアプリの置き場に作ります (元のファイルは変えません).
         </p>
         <div>
           <label htmlFor="bundle-name" className="mb-1 block text-xs font-medium text-ink-2">
@@ -152,15 +157,25 @@ export function CreateBundleDialog({
                 className={`${field} w-full font-mono`}
               />
             </div>
-            <fieldset>
+            <fieldset className="md:col-span-2">
               <legend className="mb-1 text-xs text-ink-2">
-                目的の値を (y - 中心) / 幅 にして学習した場合の中心と幅
+                目的の値を標準化して学習した場合 (回帰と予測)
               </legend>
-              <div className="flex gap-2">
+              <label className="mb-2 flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={trainScale}
+                  onChange={(event) => setTrainScale(event.target.checked)}
+                />
+                学習用の分割の平均と標準偏差で標準化した (中心と幅を求める)
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-ink-3">または (y - 中心) / 幅 の</span>
                 <input
                   aria-label="中心"
                   type="number"
                   value={center}
+                  disabled={trainScale}
                   placeholder="中心"
                   onChange={(event) => setCenter(event.target.value)}
                   className={`${field} w-28`}
@@ -169,6 +184,7 @@ export function CreateBundleDialog({
                   aria-label="幅"
                   type="number"
                   value={scale}
+                  disabled={trainScale}
                   placeholder="幅"
                   onChange={(event) => setScale(event.target.value)}
                   className={`${field} w-28`}

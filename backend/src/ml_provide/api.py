@@ -5,7 +5,7 @@ import threading
 import uuid
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import ml_inference
 import pandas as pd
@@ -30,7 +30,7 @@ RESULT_LOCK = threading.Lock()
 SAMPLES_LOCK = threading.Lock()
 
 # 読み込んだ一式を覚えておく数と, 場所ごとの (更新時刻, 一式)
-BUNDLE_CACHE_SIZE = 4
+BUNDLE_CACHE_SIZE = 64
 BUNDLES: OrderedDict[str, tuple[tuple[float, ...], ml_inference.Bundle]] = (
     OrderedDict()
 )
@@ -64,7 +64,7 @@ class BundleCreate(BaseModel):
     inputs: Optional[dict[str, Any]] = None
     output: Optional[str] = None
     kind: Optional[str] = None
-    target_scale: Optional[dict[str, float]] = None
+    target_scale: Union[dict[str, float], str, None] = None
     conclusion: Optional[dict[str, Any]] = None
     copy_weights: bool = True
 

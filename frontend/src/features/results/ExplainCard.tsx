@@ -7,7 +7,7 @@ import { Button, Card, ErrorBox } from '../../components/ui'
 import { formatValue } from '../../lib/format'
 
 /** 列ごとの効き (どの列が予測を動かしているか) */
-export function ExplainCard({ result }: { result: Result }) {
+export function ExplainCard({ result, bundleAlive }: { result: Result; bundleAlive: boolean }) {
   const client = useQueryClient()
   const explain = useMutation({
     mutationFn: () => api.explain(result.id),
@@ -17,6 +17,8 @@ export function ExplainCard({ result }: { result: Result }) {
   if (result.kind && !['table', 'timeseries'].includes(result.kind)) return null
   // 何段も先の予測の結果には出さない (並べ替えて推論し直すのは 1 つ先の予測のため)
   if (result.forecast) return null
+  // 一式が登録されていない (消した) 結果は, 求めた効きだけを見せる
+  if (!bundleAlive && !result.explanation) return null
   const explanation = result.explanation
   const most = Math.max(...(explanation?.columns.map((item) => item.effect ?? 0) ?? [0]), 1e-12)
   const unit = explanation?.measure === 'probability' ? '確率' : '値'
@@ -24,7 +26,11 @@ export function ExplainCard({ result }: { result: Result }) {
     <Card
       title="列の効き (どの列が予測を動かしているか)"
       actions={
-        <Button icon={Sigma} disabled={explain.isPending} onClick={() => explain.mutate()}>
+        <Button
+          icon={Sigma}
+          disabled={explain.isPending || !bundleAlive}
+          onClick={() => explain.mutate()}
+        >
           {explain.isPending ? '求めています…' : explanation ? '求め直す' : '求める'}
         </Button>
       }

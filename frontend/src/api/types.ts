@@ -166,7 +166,8 @@ export interface BundleCreateBody {
   inputs?: Record<string, { source: string; prepend: number[] }> | null
   output?: string | null
   kind?: string | null
-  target_scale?: { center: number; scale: number } | null
+  /** 中心と幅か, 学習用の分割の平均と標準偏差 (train) */
+  target_scale?: { center: number; scale: number } | 'train' | null
   conclusion?: Rules | null
   copy_weights: boolean
 }

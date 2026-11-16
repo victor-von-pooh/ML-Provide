@@ -15,7 +15,11 @@ function bundleSummary(bundle: Bundle): string {
   const description = bundle.description
   if (!description) return ''
   const kind = KIND_LABELS[description.kind] ?? description.kind
-  const task = TASK_LABELS[description.task] ?? description.task
+  // 予測 (時系列) は種類と重なるので, 種類の後は「予測」だけ
+  const task =
+    description.task === 'forecasting'
+      ? '予測'
+      : (TASK_LABELS[description.task] ?? description.task)
   const classes = description.classes.length > 0 ? ` (${description.classes.join(', ')})` : ''
   return `${kind}の${task}${classes}`
 }
@@ -91,7 +95,8 @@ export function BundlesPage() {
         <EmptyState icon={Package} title="一式がありません">
           学習のスクリプトが作った一式 (inference.yaml を持つディレクトリ) を場所で登録するか,
           モデルの定義, データセット, 実験から作ります. 試すだけなら「見本の一式を入れる」で,
-          小さな見本のデータで学習した一式 (表の分類, 表の回帰, 文の分類) を入れられます.
+          小さな見本のデータで学習した一式 (表の分類, 表の回帰, 時系列の先の予測, 文の分類)
+          を入れられます.
         </EmptyState>
       )}
       {bundles.data && bundles.data.length > 0 && (

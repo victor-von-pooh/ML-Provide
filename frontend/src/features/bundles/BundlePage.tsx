@@ -165,7 +165,11 @@ function PredictCard({ bundle, description }: { bundle: Bundle; description: Des
                 <button
                   type="button"
                   className="text-accent-text underline"
-                  onClick={() => setSource(bundle.sample_input ?? '')}
+                  onClick={() => {
+                    // 時系列の見本は先の行を持つので, 先まで予測するのが既定
+                    setSource(bundle.sample_input ?? '')
+                    if (canForecast) setAhead(true)
+                  }}
                 >
                   見本の新しいデータ (目的の列の無い表) を使う
                 </button>
