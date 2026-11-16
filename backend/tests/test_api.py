@@ -368,8 +368,7 @@ def test_index_column_and_stable_groups(
 
 def test_samples(client: TestClient) -> None:
     """
-    見本の一式を作って登録し, 見本の新しいデータを推論できることを確かめる
-    関数
+    見本の一式を作り, 見本の新しいデータを推論できることを確かめる関数
 
     Parameters
     ----------

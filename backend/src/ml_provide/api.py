@@ -439,16 +439,25 @@ def add_samples(request: Request) -> list[dict[str, Any]]:
             raise HTTPException(
                 500, f"見本を作れませんでした: {error}"
             ) from error
-        registered = {item.get("path") for item in store.read()}
+        # 同じ場所か同じ名前の見本の登録は, 登録し直さない (置き場を移した
+        # 場合も重ねない)
+        entries = store.read()
+        registered = {item.get("path") for item in entries} | {
+            item.get("name") for item in entries if item.get("sample_input")
+        }
         bundles = []
         # 一覧は新しいものが先なので, 最初の見本が先頭に来るように後ろから
+        # の登録
         for name, (place, fresh) in reversed(samples.items()):
-            if str(place.resolve()) in registered:
+            if str(place.resolve()) in registered or name in registered:
                 continue
-            entry = store.add(
-                place, name, managed=False,
-                extra={"sample_input": str(fresh.resolve())}
-            )
+            try:
+                entry = store.add(
+                    place, name, managed=False,
+                    extra={"sample_input": str(fresh.resolve())}
+                )
+            except ValueError:
+                continue
             bundles.append(bundle_view(entry))
 
     return bundles

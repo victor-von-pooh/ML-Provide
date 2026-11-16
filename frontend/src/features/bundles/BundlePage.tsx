@@ -164,7 +164,7 @@ function PredictCard({ bundle, description }: { bundle: Bundle; description: Des
                   className="text-accent-text underline"
                   onClick={() => setSource(bundle.sample_input ?? '')}
                 >
-                  見本の新しいデータ (目的の列の無い 50 行) を使う
+                  見本の新しいデータ (目的の列の無い表) を使う
                 </button>
               </p>
             )}

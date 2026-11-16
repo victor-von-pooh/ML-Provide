@@ -37,6 +37,8 @@ export function BundlesPage() {
     mutationFn: api.addSamples,
     onSuccess: () => client.invalidateQueries({ queryKey: ['bundles'] }),
   })
+  // 全て登録済みで何も足さなかった場合の知らせ
+  const nothingAdded = samples.isSuccess && samples.data.length === 0
   const opened = (bundle: Bundle) => {
     setDialog(null)
     client.invalidateQueries({ queryKey: ['bundles'] })
@@ -68,6 +70,11 @@ export function BundlesPage() {
         actions={actions}
       />
       {register.isPending && <Spinner label="一式を確かめています" />}
+      {nothingAdded && (
+        <p role="status" className="mb-4 text-sm text-ink-2">
+          見本の一式は既に入っています.
+        </p>
+      )}
       {samples.error && (
         <div className="mb-4">
           <ErrorBox error={samples.error} />

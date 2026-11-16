@@ -7,12 +7,19 @@ import ml_inference
 import numpy as np
 import pandas as pd
 import torch
-from ml_eda import export_dataset, load_data, load_dataset
+import yaml
+from ml_eda import Dataset, export_dataset, load_data, load_dataset
 from ml_modelcontrol import build_model
-from torch import nn
+from torch import nn, optim
 
 # 見本ごとの学習の回数 (全ての行を 1 度に使う)
 STEPS = 300
+
+# 見本の作り方の版 (作り方を変えたら上げ, 置き場の古い見本を作り直す)
+SAMPLES_VERSION = 1
+
+# 推論を試す新しいデータの行の数
+FRESH_ROWS = 50
 
 
 def churn_frame(rng: np.random.Generator, count: int) -> pd.DataFrame:
@@ -31,7 +38,7 @@ def churn_frame(rng: np.random.Generator, count: int) -> pd.DataFrame:
     frame: pd.DataFrame
         id, plan, months, calls, fee, label (解約 か 継続) の表
     """
-    # 月ごとの契約, 短い利用, 多い問い合わせほど解約しやすい
+    # 月ごとの契約, 短い利用, 多い問い合わせで高まる解約の点数
     plan = rng.choice(["月ごと", "年ごと"], size=count, p=[0.6, 0.4])
     months = rng.integers(1, 60, size=count)
     calls = rng.poisson(2, size=count)
@@ -153,13 +160,13 @@ SAMPLES: dict[str, tuple[Callable[..., pd.DataFrame], dict[str, Any]]] = {
 }
 
 
-def model_spec(dataset: Any, outputs: int) -> dict[str, Any]:
+def model_spec(dataset: Dataset, outputs: int) -> dict[str, Any]:
     """
     見本のデータセットに合わせた小さなモデルの定義を返す関数
 
     Parameters
     ----------
-    dataset: Any
+    dataset: Dataset
         ML-EDA のデータセット
     outputs: int
         出力の幅 (分類はクラスの数, 回帰は 1)
@@ -208,7 +215,7 @@ def model_spec(dataset: Any, outputs: int) -> dict[str, Any]:
 
 
 def train(
-    spec: dict[str, Any], dataset: Any
+    spec: dict[str, Any], dataset: Dataset
 ) -> tuple[nn.Module, dict[str, float]]:
     """
     見本のモデルを学習用の分割で学習する関数
@@ -217,7 +224,7 @@ def train(
     ----------
     spec: dict[str, Any]
         モデルの定義
-    dataset: Any
+    dataset: Dataset
         ML-EDA のデータセット
 
     Returns
@@ -225,8 +232,7 @@ def train(
     result: tuple[nn.Module, dict[str, float]]
         学習したモデルと, 目的の値の中心と幅 (回帰. 分類は空)
     """
-    # 回帰は目的の値を標準化して学ぶ (一式の target_scale で戻す)
-    torch.manual_seed(0)
+    # 回帰の目的の値の標準化 (一式の target_scale で戻す)
     model = build_model(spec, seed=0)
     x, y = dataset.tensors("train")
     scale: dict[str, float] = {}
@@ -236,7 +242,7 @@ def train(
         scale = {"center": y.mean().item(), "scale": y.std().item()}
         y = ((y - scale["center"]) / scale["scale"]).unsqueeze(1)
         loss_fn = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.02)
+    optimizer = optim.Adam(model.parameters(), lr=0.02)
     model.train()
     for _ in range(STEPS):
         optimizer.zero_grad()
@@ -253,8 +259,7 @@ def write_sample(
     root: Path, name: str, number: int, seed: int
 ) -> tuple[Path, Path]:
     """
-    見本の 1 つ (データ, データセット, 学習した一式, 新しいデータ) を書く
-    関数
+    見本の 1 つ (データ, データセット, 一式, 新しいデータ) を書く関数
 
     Parameters
     ----------
@@ -279,7 +284,7 @@ def write_sample(
     place.mkdir(parents=True)
     rng = np.random.default_rng(seed + number)
     maker(rng, 600).to_csv(place / "train.csv", index=False)
-    fresh = maker(rng, 50).drop(columns=[settings["target"]])
+    fresh = maker(rng, FRESH_ROWS).drop(columns=[settings["target"]])
     fresh.to_csv(place / "new.csv", index=False)
 
     # 前処理して書き出し, 小さなモデルを学習して一式に
@@ -301,9 +306,47 @@ def write_sample(
         target_scale=scale or None, conclusion=settings["conclusion"],
         name=name
     )
+    (place / "sample.yaml").write_text(
+        yaml.safe_dump({"version": SAMPLES_VERSION, "name": name},
+                       allow_unicode=True),
+        encoding="utf-8"
+    )
     paths = (place / "bundle", place / "new.csv")
 
     return paths
+
+
+def current(place: Path, name: str) -> bool:
+    """
+    置き場の見本が, 今の作り方で作り終えたものかを確かめる関数
+
+    Parameters
+    ----------
+    place: Path
+        見本のディレクトリ
+    name: str
+        見本の名前
+
+    Returns
+    ----------
+    ready: bool
+        印のファイルの版と名前が今と同じで, 一式と新しいデータがあるか
+    """
+    # 印のファイル, 一式, 新しいデータ
+    try:
+        mark = yaml.safe_load(
+            (place / "sample.yaml").read_text(encoding="utf-8")
+        )
+    except (OSError, yaml.YAMLError):
+        return False
+    ready = (
+        isinstance(mark, dict) and mark.get("version") == SAMPLES_VERSION
+        and mark.get("name") == name
+        and (place / "bundle" / "inference.yaml").is_file()
+        and (place / "new.csv").is_file()
+    )
+
+    return ready
 
 
 def write_samples(root: Path, seed: int = 0) -> dict[str, tuple[Path, Path]]:
@@ -322,12 +365,12 @@ def write_samples(root: Path, seed: int = 0) -> dict[str, tuple[Path, Path]]:
     samples: dict[str, tuple[Path, Path]]
         見本の名前から, 一式のディレクトリと新しいデータのファイル
     """
-    # 既にある見本は作り直さない
+    # 同じ版で作り終えた見本の再利用 (印のファイルは最後に書く)
     samples = {}
     for number, name in enumerate(SAMPLES):
         place = root / f"sample{number}"
         bundle, fresh = place / "bundle", place / "new.csv"
-        if not (bundle / "inference.yaml").is_file() or not fresh.is_file():
+        if not current(place, name):
             bundle, fresh = write_sample(root, name, number, seed)
         samples[name] = (bundle, fresh)
 

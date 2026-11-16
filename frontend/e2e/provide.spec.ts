@@ -3,10 +3,12 @@ import { expect, test } from '@playwright/test'
 test.describe.configure({ mode: 'serial' })
 
 test('見本の一式を入れ, 見本の新しいデータを推論して結論を出し直す', async ({ page }) => {
+  // 見本はその場で学習するので, 遅い CI でも足りるように長めに待つ
+  test.setTimeout(150_000)
   await page.goto('/')
   await page.getByRole('button', { name: '見本の一式を入れる' }).click()
   const churn = page.getByRole('link', { name: '見本: 解約の予測 (表の分類)' })
-  await expect(churn).toBeVisible({ timeout: 60_000 })
+  await expect(churn).toBeVisible({ timeout: 120_000 })
 
   // 一式の説明と, 見本の新しいデータでの推論
   await churn.click()
