@@ -15,6 +15,8 @@ export function ExplainCard({ result }: { result: Result }) {
   })
   // 表と時系列の, ファイルを推論した結果だけ
   if (result.kind && !['table', 'timeseries'].includes(result.kind)) return null
+  // 何段も先の予測の結果には出さない (並べ替えて推論し直すのは 1 つ先の予測のため)
+  if (result.forecast) return null
   const explanation = result.explanation
   const most = Math.max(...(explanation?.columns.map((item) => item.effect ?? 0) ?? [0]), 1e-12)
   const unit = explanation?.measure === 'probability' ? '確率' : '値'

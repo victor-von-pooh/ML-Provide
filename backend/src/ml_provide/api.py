@@ -973,6 +973,11 @@ def explain_result(request: Request, result_id: str) -> dict[str, Any]:
     # 結果の一式と入力のファイル
     place = find_result(request, result_id)
     meta = read_meta(place)
+    if meta.get("forecast"):
+        raise HTTPException(
+            400, "何段も先の予測の結果は, 列の効きを求めません (並べ替えて"
+            "推論し直すのは 1 つ先の予測のため)"
+        )
     entry = get_store(request).find(str(meta.get("bundle_id")))
     if entry is None:
         raise HTTPException(400, "一式が登録されていないので求められません")

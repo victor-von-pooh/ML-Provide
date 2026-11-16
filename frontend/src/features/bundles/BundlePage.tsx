@@ -111,7 +111,7 @@ function PredictCard({ bundle, description }: { bundle: Bundle; description: Des
   const [source, setSource] = useState('')
   const [texts, setTexts] = useState('')
   // 目的の列の過去の値を使う回帰と予測の一式は, 何段も先まで予測できる
-  const canForecast = description.task !== 'classification' && description.steps.includes('lag')
+  const canForecast = !!description.forecastable
   const [ahead, setAhead] = useState(false)
   const [form, setForm] = useState<RulesForm>(() => toForm(description.conclusion))
   const { rules, problems } = fromForm(form, description.task, description.classes)
@@ -187,22 +187,24 @@ function PredictCard({ bundle, description }: { bundle: Bundle; description: Des
           </div>
         )}
         {canForecast && mode === 'file' && (
-          <label className="flex items-start gap-2 text-sm">
+          <div className="flex items-start gap-2 text-sm">
             <input
+              id="predict-ahead"
               type="checkbox"
               className="mt-1"
               checked={ahead}
+              aria-describedby="predict-ahead-note"
               onChange={(event) => setAhead(event.target.checked)}
             />
-            <span>
-              何段も先まで予測する
-              <span className="block text-xs text-ink-3">
+            <div>
+              <label htmlFor="predict-ahead">何段も先まで予測する</label>
+              <p id="predict-ahead-note" className="text-xs text-ink-3">
                 目的の列が空の先の行を,
                 予測した値を次の行の過去の値に使いながら系列ごとに順に予測します.
                 結果は先の行だけで, 何段目かを step に出します (先の段ほど誤りが積み重なります)
-              </span>
-            </span>
-          </label>
+              </p>
+            </div>
+          </div>
         )}
         <section aria-label="結論の決め方">
           <h3 className="mb-2 text-xs font-semibold text-ink-2">

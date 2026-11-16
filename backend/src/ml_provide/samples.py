@@ -172,7 +172,8 @@ def daily_fresh(rng: np.random.Generator, count: int) -> pd.DataFrame:
     frame: pd.DataFrame
         date, shop, sales の表 (先の 7 日の売上は空)
     """
-    # 学習のデータの続きの期間を作り, 最後の 7 日の売上を空に
+    # 日付の上で学習のデータの続きの期間 (値は別に作った系列) と, 最後の
+    # 7 日の空の売上
     whole = daily_frame(rng, DAILY_DAYS + 37)
     whole["date"] = pd.to_datetime(whole["date"])
     later = whole[whole["date"] >= whole["date"].max() - pd.Timedelta(
@@ -189,7 +190,8 @@ def daily_fresh(rng: np.random.Generator, count: int) -> pd.DataFrame:
 # 日々の売上の見本の, 店ごとの日の数
 DAILY_DAYS = 300
 
-# 見本の名前から, データを作る関数と設定 (目的の列, タスク, 前処理, 分割,
+# 見本の名前から, データを作る関数と設定. 置き場の番号 (sample<n>) は並び
+# の順なので, 新しい見本は最後に足す (目的の列, タスク, 前処理, 分割,
 # 読み込みの設定, 結論の決め方の既定値)
 SAMPLES: dict[str, tuple[Callable[..., pd.DataFrame], dict[str, Any]]] = {
     "見本: 解約の予測 (表の分類)": (churn_frame, {
@@ -216,6 +218,13 @@ SAMPLES: dict[str, tuple[Callable[..., pd.DataFrame], dict[str, Any]]] = {
             "group_by": "shop",
         },
     }),
+    "見本: レビューの分類 (文)": (review_frame, {
+        "target": "label", "task": "classification", "steps": [],
+        "item_steps": [{"op": "vocabulary", "unit": "char", "length": 16}],
+        "split": {"method": "stratified", "valid": 0.2, "seed": 0},
+        "options": {"text_column": "review"},
+        "conclusion": {"min_confidence": 0.8},
+    }),
     "見本: 日々の売上の予測 (時系列, 先の予測)": (daily_frame, {
         "target": "sales", "task": "forecasting",
         "steps": [
@@ -230,13 +239,6 @@ SAMPLES: dict[str, tuple[Callable[..., pd.DataFrame], dict[str, Any]]] = {
         "split": {"method": "time", "valid": 0.2},
         "options": {}, "rows": DAILY_DAYS, "fresh": daily_fresh,
         "conclusion": {"group_by": "shop"},
-    }),
-    "見本: レビューの分類 (文)": (review_frame, {
-        "target": "label", "task": "classification", "steps": [],
-        "item_steps": [{"op": "vocabulary", "unit": "char", "length": 16}],
-        "split": {"method": "stratified", "valid": 0.2, "seed": 0},
-        "options": {"text_column": "review"},
-        "conclusion": {"min_confidence": 0.8},
     }),
 }
 
