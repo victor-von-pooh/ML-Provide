@@ -393,3 +393,39 @@ def test_samples(client: TestClient) -> None:
         )
         assert response.status_code == 201, response.text
         assert response.json()["summary"]["predicted"] == 50
+
+
+def test_explain(tmp_path: Path, client: TestClient) -> None:
+    """
+    結果の入力の列の効きを求めて, 結果に残すことを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    client: TestClient
+        クライアント
+
+    Returns
+    ----------
+    None
+    """
+    # ファイルを推論した結果の列の効き (前処理で落とす shop は 0)
+    paths = write_project(tmp_path / "project")
+    bundle = create(client, paths)
+    result = client.post(
+        f"/api/bundles/{bundle['id']}/predict",
+        json={"source": str(paths["csv"])},
+    ).json()
+    response = client.post(f"/api/results/{result['id']}/explain")
+    assert response.status_code == 200, response.text
+    explanation = response.json()["explanation"]
+    effects = {c["column"]: c["effect"] for c in explanation["columns"]}
+    assert explanation["measure"] == "probability"
+    assert effects["shop"] == 0 and set(effects) == {"shop", "a", "b"}
+
+    # 出し直しても残る
+    again = client.post(
+        f"/api/results/{result['id']}/conclude", json={"rules": {}}
+    ).json()
+    assert again["explanation"] == explanation

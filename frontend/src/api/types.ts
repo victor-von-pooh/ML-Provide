@@ -127,6 +127,24 @@ export interface Result {
   summary: Summary | null
   sentences: string[]
   columns?: string[]
+  kind?: string | null
+  explanation?: Explanation | null
+}
+
+/** 列ごとの効き (並べ替えの重要度) */
+export interface Explanation {
+  measure: 'probability' | 'value'
+  rows: number
+  columns: {
+    column: string
+    /** column (列), series (系列を分ける列. 名前を入れ替える), past (目的の列の過去の値), time (求めない時刻の列) */
+    kind: 'column' | 'series' | 'past' | 'time'
+    effect: number | null
+    spread: number | null
+    rows: number
+    lost: number
+    error: string | null
+  }[]
 }
 
 export interface Rows {

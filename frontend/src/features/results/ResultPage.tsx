@@ -9,6 +9,7 @@ import type { Counts, Result } from '../../api/types'
 import { Button, Card, ErrorBox, PageHeader, Spinner, StatTile } from '../../components/ui'
 import { formatPercent, formatValue } from '../../lib/format'
 import { fromForm, toForm, type RulesForm } from '../../lib/rules'
+import { ExplainCard } from './ExplainCard'
 import { RulesEditor } from './RulesEditor'
 
 // 判断が決まらなかったことを表す名前 (ML-Inference と同じ)
@@ -415,6 +416,7 @@ export function ResultPage() {
         {/* 出し直した後は, 使った決め方で編集を作り直す */}
         <ConcludeCard key={`conclude:${JSON.stringify(data.rules ?? {})}`} result={data} />
         <GroupTable result={data} />
+        <ExplainCard result={data} />
         {/* 出し直した後は, 絞り込みとページを初めに戻す */}
         <RowsTable key={`rows:${JSON.stringify(data.rules ?? {})}`} result={data} />
       </div>
