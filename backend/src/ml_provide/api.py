@@ -74,6 +74,7 @@ class PredictRequest(BaseModel):
     texts: Optional[list[str]] = None
     options: Optional[dict[str, Any]] = None
     rules: Optional[dict[str, Any]] = None
+    forecast: bool = False
 
 
 class ConcludeRequest(BaseModel):
@@ -596,13 +597,14 @@ def predict(
     with PREDICT_LOCK:
         try:
             result = ml_inference.infer(
-                bundle, source, rules=body.rules, options=body.options
+                bundle, source, rules=body.rules, options=body.options,
+                forecast=body.forecast
             )
         except Exception as error:
             raise user_error(error) from error
     result.update(
         source=described, bundle_id=bundle_id, task=bundle.task,
-        classes=bundle.classes, kind=bundle.kind,
+        classes=bundle.classes, kind=bundle.kind, forecast=body.forecast,
         source_path=str(source) if isinstance(source, Path) else None
     )
     # 書いた表を読み直して結論を出し直す (出し直しと同じ型の値でまとめ,
@@ -747,6 +749,7 @@ def result_view(result_id: str, place: Path) -> dict[str, Any]:
         "sentences": meta.get("sentences") or [],
         "columns": columns,
         "kind": meta.get("kind"),
+        "forecast": bool(meta.get("forecast")),
         "explanation": meta.get("explanation"),
     }
 

@@ -19,7 +19,7 @@ const NEUTRAL = new Set(['保留', '予測なし'])
 const PAGE = 50
 
 // 予測と判断の列 (元の列と分けて右に寄せる)
-const OWN = new Set(['index', 'status', 'reason', 'prediction', 'confidence', 'decision'])
+const OWN = new Set(['index', 'status', 'reason', 'step', 'prediction', 'confidence', 'decision'])
 
 /** 判断ごとの件数と割合の横棒 */
 function DecisionBars({ counts }: { counts: Counts }) {
@@ -346,6 +346,7 @@ export function ResultPage() {
         title={data.bundle?.name ?? '結果'}
         subtitle={
           <span>
+            {data.forecast && '何段も先の予測 · '}
             {data.created_at && new Date(data.created_at).toLocaleString()} ·{' '}
             <span className="font-mono">{data.source}</span>
           </span>

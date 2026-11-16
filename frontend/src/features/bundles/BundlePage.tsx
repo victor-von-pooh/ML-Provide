@@ -110,6 +110,9 @@ function PredictCard({ bundle, description }: { bundle: Bundle; description: Des
   const [mode, setMode] = useState<'file' | 'texts'>('file')
   const [source, setSource] = useState('')
   const [texts, setTexts] = useState('')
+  // 目的の列の過去の値を使う回帰と予測の一式は, 何段も先まで予測できる
+  const canForecast = description.task !== 'classification' && description.steps.includes('lag')
+  const [ahead, setAhead] = useState(false)
   const [form, setForm] = useState<RulesForm>(() => toForm(description.conclusion))
   const { rules, problems } = fromForm(form, description.task, description.classes)
   const predict = useMutation({
@@ -118,7 +121,7 @@ function PredictCard({ bundle, description }: { bundle: Bundle; description: Des
         bundle.id,
         mode === 'texts'
           ? { texts: texts.split('\n'), rules: withCleared(rules) }
-          : { source: source.trim(), rules: withCleared(rules) },
+          : { source: source.trim(), rules: withCleared(rules), forecast: canForecast && ahead },
       ),
     onSuccess: (result) => {
       client.invalidateQueries({ queryKey: ['results'] })
@@ -182,6 +185,24 @@ function PredictCard({ bundle, description }: { bundle: Bundle; description: Des
               className="w-full rounded-lg border border-line bg-surface p-2 text-sm"
             />
           </div>
+        )}
+        {canForecast && mode === 'file' && (
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={ahead}
+              onChange={(event) => setAhead(event.target.checked)}
+            />
+            <span>
+              何段も先まで予測する
+              <span className="block text-xs text-ink-3">
+                目的の列が空の先の行を,
+                予測した値を次の行の過去の値に使いながら系列ごとに順に予測します.
+                結果は先の行だけで, 何段目かを step に出します (先の段ほど誤りが積み重なります)
+              </span>
+            </span>
+          </label>
         )}
         <section aria-label="結論の決め方">
           <h3 className="mb-2 text-xs font-semibold text-ink-2">

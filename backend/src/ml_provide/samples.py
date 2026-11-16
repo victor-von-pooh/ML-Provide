@@ -123,6 +123,72 @@ def review_frame(rng: np.random.Generator, count: int) -> pd.DataFrame:
     return frame
 
 
+def daily_frame(rng: np.random.Generator, count: int) -> pd.DataFrame:
+    """
+    2 つの店の日々の売上の見本の表を作る関数
+
+    Parameters
+    ----------
+    rng: np.random.Generator
+        乱数
+    count: int
+        店ごとの日の数
+
+    Returns
+    ----------
+    frame: pd.DataFrame
+        date, shop, sales の表 (店ごとに日付の順)
+    """
+    # 店ごとの水準, 週末の倍率, 前の日からの揺れの続き
+    days = pd.date_range("2025-01-01", periods=count, freq="D")
+    parts = []
+    for shop, level in (("駅前店", 100.0), ("郊外店", 60.0)):
+        noise = np.zeros(count)
+        for day in range(1, count):
+            noise[day] = 0.7 * noise[day - 1] + rng.normal(0, 5)
+        weekend = np.where(days.day_of_week >= 5, 1.4, 1.0)
+        parts.append(pd.DataFrame({
+            "date": days.strftime("%Y-%m-%d"), "shop": shop,
+            "sales": (level * weekend + noise).round(1),
+        }))
+    frame: pd.DataFrame = pd.concat(parts, ignore_index=True)
+
+    return frame
+
+
+def daily_fresh(rng: np.random.Generator, count: int) -> pd.DataFrame:
+    """
+    日々の売上の見本の, 過去の 30 日と売上の空の先の 7 日の表を作る関数
+
+    Parameters
+    ----------
+    rng: np.random.Generator
+        乱数
+    count: int
+        使わない (日の数は決まっている)
+
+    Returns
+    ----------
+    frame: pd.DataFrame
+        date, shop, sales の表 (先の 7 日の売上は空)
+    """
+    # 学習のデータの続きの期間を作り, 最後の 7 日の売上を空に
+    whole = daily_frame(rng, DAILY_DAYS + 37)
+    whole["date"] = pd.to_datetime(whole["date"])
+    later = whole[whole["date"] >= whole["date"].max() - pd.Timedelta(
+        days=36
+    )].copy()
+    ahead = later["date"] > later["date"].max() - pd.Timedelta(days=7)
+    later.loc[ahead, "sales"] = np.nan
+    later["date"] = later["date"].dt.strftime("%Y-%m-%d")
+    frame: pd.DataFrame = later.reset_index(drop=True)
+
+    return frame
+
+
+# 日々の売上の見本の, 店ごとの日の数
+DAILY_DAYS = 300
+
 # 見本の名前から, データを作る関数と設定 (目的の列, タスク, 前処理, 分割,
 # 読み込みの設定, 結論の決め方の既定値)
 SAMPLES: dict[str, tuple[Callable[..., pd.DataFrame], dict[str, Any]]] = {
@@ -149,6 +215,21 @@ SAMPLES: dict[str, tuple[Callable[..., pd.DataFrame], dict[str, Any]]] = {
                       {"label": "多い"}],
             "group_by": "shop",
         },
+    }),
+    "見本: 日々の売上の予測 (時系列, 先の予測)": (daily_frame, {
+        "target": "sales", "task": "forecasting",
+        "steps": [
+            {"op": "lag", "columns": ["sales"], "lags": [1, 7],
+             "by": ["shop"]},
+            {"op": "drop_missing"},
+            {"op": "datetime_parts", "columns": ["date"],
+             "parts": ["weekday"]},
+            {"op": "one_hot", "columns": ["shop"]},
+            {"op": "standardize", "columns": "auto"},
+        ],
+        "split": {"method": "time", "valid": 0.2},
+        "options": {}, "rows": DAILY_DAYS, "fresh": daily_fresh,
+        "conclusion": {"group_by": "shop"},
     }),
     "見本: レビューの分類 (文)": (review_frame, {
         "target": "label", "task": "classification", "steps": [],
@@ -283,8 +364,13 @@ def write_sample(
     shutil.rmtree(place, ignore_errors=True)
     place.mkdir(parents=True)
     rng = np.random.default_rng(seed + number)
-    maker(rng, 600).to_csv(place / "train.csv", index=False)
-    fresh = maker(rng, FRESH_ROWS).drop(columns=[settings["target"]])
+    maker(rng, settings.get("rows", 600)).to_csv(
+        place / "train.csv", index=False
+    )
+    if "fresh" in settings:
+        fresh = settings["fresh"](rng, FRESH_ROWS)
+    else:
+        fresh = maker(rng, FRESH_ROWS).drop(columns=[settings["target"]])
     fresh.to_csv(place / "new.csv", index=False)
 
     # 前処理して書き出し, 小さなモデルを学習して一式に
