@@ -89,6 +89,8 @@ export interface Bundle {
   path: string
   managed: boolean
   added_at: string
+  /** 見本の一式の, 推論を試す新しいデータ */
+  sample_input?: string
   ok: boolean
   error: string | null
   description: Description | null

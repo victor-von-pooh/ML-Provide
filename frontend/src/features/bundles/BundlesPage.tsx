@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FolderInput, Package, Plus } from 'lucide-react'
+import { FlaskConical, FolderInput, Package, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 
@@ -33,6 +33,12 @@ export function BundlesPage() {
       navigate(`/bundles/${bundle.id}`)
     },
   })
+  const samples = useMutation({
+    mutationFn: api.addSamples,
+    onSuccess: () => client.invalidateQueries({ queryKey: ['bundles'] }),
+  })
+  // 全て登録済みで何も足さなかった場合の知らせ
+  const nothingAdded = samples.isSuccess && samples.data.length === 0
   const opened = (bundle: Bundle) => {
     setDialog(null)
     client.invalidateQueries({ queryKey: ['bundles'] })
@@ -40,6 +46,9 @@ export function BundlesPage() {
   }
   const actions = (
     <>
+      <Button icon={FlaskConical} disabled={samples.isPending} onClick={() => samples.mutate()}>
+        {samples.isPending ? '見本を学習しています…' : '見本の一式を入れる'}
+      </Button>
       <Button icon={FolderInput} onClick={() => setDialog('register')} data-return="register">
         場所で登録
       </Button>
@@ -61,6 +70,16 @@ export function BundlesPage() {
         actions={actions}
       />
       {register.isPending && <Spinner label="一式を確かめています" />}
+      {nothingAdded && (
+        <p role="status" className="mb-4 text-sm text-ink-2">
+          見本の一式は既に入っています.
+        </p>
+      )}
+      {samples.error && (
+        <div className="mb-4">
+          <ErrorBox error={samples.error} />
+        </div>
+      )}
       {register.error && (
         <div className="mb-4">
           <ErrorBox error={register.error} />
@@ -71,7 +90,8 @@ export function BundlesPage() {
       {bundles.data?.length === 0 && (
         <EmptyState icon={Package} title="一式がありません">
           学習のスクリプトが作った一式 (inference.yaml を持つディレクトリ) を場所で登録するか,
-          モデルの定義, データセット, 実験から作ります.
+          モデルの定義, データセット, 実験から作ります. 試すだけなら「見本の一式を入れる」で,
+          小さな見本のデータで学習した一式 (表の分類, 表の回帰, 文の分類) を入れられます.
         </EmptyState>
       )}
       {bundles.data && bundles.data.length > 0 && (

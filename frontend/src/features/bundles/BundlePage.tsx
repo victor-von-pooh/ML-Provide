@@ -148,13 +148,27 @@ function PredictCard({ bundle, description }: { bundle: Bundle; description: Des
           </div>
         )}
         {mode === 'file' ? (
-          <PathField
-            id="predict-source"
-            label="推論するデータ (学習のときと同じ列のファイルか, 画像などのディレクトリ)"
-            value={source}
-            onChange={setSource}
-            hint="目的の列は有っても無くてもかまいません. 学習のときと同じ読み込みで読みます"
-          />
+          <div>
+            <PathField
+              id="predict-source"
+              label="推論するデータ (学習のときと同じ列のファイルか, 画像などのディレクトリ)"
+              value={source}
+              onChange={setSource}
+              hint="目的の列は有っても無くてもかまいません. 学習のときと同じ読み込みで読みます"
+            />
+            {bundle.sample_input && source !== bundle.sample_input && (
+              <p className="mt-1 text-xs text-ink-2">
+                見本の一式です.{' '}
+                <button
+                  type="button"
+                  className="text-accent-text underline"
+                  onClick={() => setSource(bundle.sample_input ?? '')}
+                >
+                  見本の新しいデータ (目的の列の無い表) を使う
+                </button>
+              </p>
+            )}
+          </div>
         ) : (
           <div>
             <label htmlFor="predict-texts" className="mb-1 block text-xs font-medium text-ink-2">

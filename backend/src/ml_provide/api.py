@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, Response
 from ml_inference.conclude import RULE_KEYS
 from pydantic import BaseModel, Field
 
+from ml_provide.samples import write_samples
 from ml_provide.store import Store
 
 router = APIRouter(prefix="/api")
@@ -24,6 +25,9 @@ PREDICT_LOCK = threading.Lock()
 
 # 結果の書き換えを 1 つずつにする鍵
 RESULT_LOCK = threading.Lock()
+
+# 見本を作って登録する処理を 1 つずつにする鍵
+SAMPLES_LOCK = threading.Lock()
 
 # 読み込んだ一式を覚えておく数と, 場所ごとの (更新時刻, 一式)
 BUNDLE_CACHE_SIZE = 4
@@ -404,6 +408,59 @@ def create_bundle(request: Request, body: BundleCreate) -> dict[str, Any]:
     view = bundle_view(entry)
 
     return view
+
+
+@router.post("/samples")
+def add_samples(request: Request) -> list[dict[str, Any]]:
+    """
+    操作を試すための見本の一式を, その場で学習して作り登録する関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+
+    Returns
+    ----------
+    bundles: list[dict[str, Any]]
+        登録した見本 (登録済みの見本は登録し直さない)
+
+    Raises
+    ----------
+    HTTPException
+        見本を作れない場合は 500
+    """
+    # 2 つの要求が同時に来ても 2 重に登録しないように, 全体を 1 つずつ
+    store = get_store(request)
+    with SAMPLES_LOCK:
+        try:
+            samples = write_samples(store.home / "samples")
+        except Exception as error:
+            raise HTTPException(
+                500, f"見本を作れませんでした: {error}"
+            ) from error
+        # 同じ場所か同じ名前の見本の登録は, 登録し直さない (置き場を移した
+        # 場合も重ねない)
+        entries = store.read()
+        registered = {item.get("path") for item in entries} | {
+            item.get("name") for item in entries if item.get("sample_input")
+        }
+        bundles = []
+        # 一覧は新しいものが先なので, 最初の見本が先頭に来るように後ろから
+        # の登録
+        for name, (place, fresh) in reversed(samples.items()):
+            if str(place.resolve()) in registered or name in registered:
+                continue
+            try:
+                entry = store.add(
+                    place, name, managed=False,
+                    extra={"sample_input": str(fresh.resolve())}
+                )
+            except ValueError:
+                continue
+            bundles.append(bundle_view(entry))
+
+    return bundles
 
 
 @router.get("/bundles/{bundle_id}")

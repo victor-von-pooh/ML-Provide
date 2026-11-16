@@ -364,3 +364,32 @@ def test_index_column_and_stable_groups(
         json={"rules": {"group_by": "day"}},
     ).json()
     assert [g["group"] for g in again["summary"]["groups"]] == groups
+
+
+def test_samples(client: TestClient) -> None:
+    """
+    見本の一式を作り, 見本の新しいデータを推論できることを確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+
+    Returns
+    ----------
+    None
+    """
+    # 3 つの見本 (2 回目は登録し直さない)
+    added = client.post("/api/samples").json()
+    assert [b["name"] for b in added][0] == "見本: レビューの分類 (文)"
+    assert len(added) == 3 and all(b["ok"] for b in added)
+    assert client.post("/api/samples").json() == []
+
+    # 見本の新しいデータの推論
+    for bundle in added:
+        response = client.post(
+            f"/api/bundles/{bundle['id']}/predict",
+            json={"source": bundle["sample_input"]},
+        )
+        assert response.status_code == 201, response.text
+        assert response.json()["summary"]["predicted"] == 50
