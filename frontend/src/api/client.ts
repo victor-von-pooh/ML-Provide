@@ -93,8 +93,8 @@ export const api = {
   decide: (id: string, decision: Decision | null) =>
     request<Result>(`/api/results/${id}/decide`, json('POST', { decision })),
   backtest: (id: string) => request<Result>(`/api/results/${id}/backtest`, json('POST', {})),
-  remeasure: (id: string, write: boolean) =>
-    request<Remeasure>(`/api/results/${id}/remeasure`, json('POST', { write })),
+  remeasure: (id: string, write: boolean, horizon?: number, time?: string) =>
+    request<Remeasure>(`/api/results/${id}/remeasure`, json('POST', { write, horizon, time })),
   explain: (id: string) => request<Result>(`/api/results/${id}/explain`, json('POST', {})),
   downloadUrl: (id: string) => `/api/results/${id}/download`,
   deleteResult: (id: string) => request<void>(`/api/results/${id}`, { method: 'DELETE' }),

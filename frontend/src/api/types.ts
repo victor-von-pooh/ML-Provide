@@ -88,6 +88,9 @@ export interface UncertaintySummary {
   ece: number | null
   /** 一式を作ったときの記録に戻せるか */
   restorable?: boolean
+  /** 段ごとの外れ方を測った段の数と, 測れた最も先の段 (0 は測れていない) */
+  horizon?: number | null
+  steps_measured?: number
 }
 
 /** 検証用の分割を一式で推論した評価と, 実験の記録との比べ */

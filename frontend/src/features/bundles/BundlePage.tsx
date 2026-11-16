@@ -387,6 +387,10 @@ function UncertaintyText({ summary }: { summary: UncertaintySummary }) {
       {summary.coverage &&
         `. 80 % の幅がテスト用の分割を覆った割合 ${(summary.coverage['80'] * 100).toFixed(1)} %`}
       {summary.ece != null && `. 確率のずれ ${(summary.ece * 100).toFixed(1)} ポイント`}
+      {!!summary.steps_measured && `. 何段も先の外れ方は ${summary.steps_measured} 段目まで段ごと`}
+      {!!summary.horizon &&
+        !summary.steps_measured &&
+        `. 何段も先の外れ方は ${summary.horizon} 段先まで測ろうとしたが, 誤りが少なく測れなかった`}
     </>
   )
 }
