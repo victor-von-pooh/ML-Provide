@@ -413,10 +413,10 @@ export function ResultPage() {
           </div>
         )}
         {/* 出し直した後は, 使った決め方で編集を作り直す */}
-        <ConcludeCard key={JSON.stringify(data.rules ?? {})} result={data} />
+        <ConcludeCard key={`conclude:${JSON.stringify(data.rules ?? {})}`} result={data} />
         <GroupTable result={data} />
         {/* 出し直した後は, 絞り込みとページを初めに戻す */}
-        <RowsTable key={JSON.stringify(data.rules ?? {})} result={data} />
+        <RowsTable key={`rows:${JSON.stringify(data.rules ?? {})}`} result={data} />
       </div>
     </>
   )
