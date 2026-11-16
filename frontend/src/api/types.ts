@@ -68,7 +68,18 @@ export interface Description {
   }
   run: RunInfo | null
   conclusion: Rules
+  check: RunCheck | null
   notes: string[]
+}
+
+/** 検証用の分割を一式で推論した評価と, 実験の記録との比べ */
+export interface RunCheck {
+  split: string
+  rows: number
+  metric: 'acc' | 'mae'
+  value: number
+  recorded: number | null
+  matches: boolean | null
 }
 
 /** 登録した一式 */
