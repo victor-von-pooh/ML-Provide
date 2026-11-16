@@ -62,6 +62,8 @@ export const api = {
   createBundle: (body: BundleCreateBody) =>
     request<Bundle>('/api/bundles/create', json('POST', body)),
   addSamples: () => request<Bundle[]>('/api/samples', json('POST', {})),
+  restoreUncertainty: (id: string) =>
+    request<Bundle>(`/api/bundles/${id}/restore-uncertainty`, json('POST', {})),
   deleteBundle: (id: string) => request<void>(`/api/bundles/${id}`, { method: 'DELETE' }),
   predict: (
     id: string,

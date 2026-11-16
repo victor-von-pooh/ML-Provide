@@ -496,6 +496,40 @@ def get_bundle(request: Request, bundle_id: str) -> dict[str, Any]:
     return view
 
 
+@router.post("/bundles/{bundle_id}/restore-uncertainty")
+def restore_uncertainty(request: Request, bundle_id: str) -> dict[str, Any]:
+    """
+    測り直した一式の外れ方を, 一式を作ったときの記録に戻す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    bundle_id: str
+        一式の id
+
+    Returns
+    ----------
+    view: dict[str, Any]
+        戻した後の登録と説明
+
+    Raises
+    ----------
+    HTTPException
+        戻せる記録が無い場合と, 書けない場合は 400
+    """
+    # 推論と同じ鍵の中での書き戻し (測り直しと重ならないように)
+    entry = find_bundle(request, bundle_id)
+    with PREDICT_LOCK:
+        try:
+            ml_inference.restore_uncertainty(str(entry["path"]))
+        except (OSError, *USER_ERRORS) as error:
+            raise user_error(error) from error
+    view = bundle_view(entry)
+
+    return view
+
+
 @router.delete("/bundles/{bundle_id}", status_code=204)
 def delete_bundle(request: Request, bundle_id: str) -> Response:
     """

@@ -101,7 +101,7 @@ test('解約の見本で, 過去のデータを既定の意思決定で推論し
   await expect(page.getByRole('region', { name: 'たどり直し' })).toHaveCount(0)
 })
 
-test('解約の見本の過去のデータで, 外れ方を確かめて一式に書き戻す', async ({ page }) => {
+test('解約の見本の過去のデータで, 外れ方を確かめて一式に書き戻し, 元に戻す', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('link', { name: '見本: 解約の予測 (表の分類)' }).click()
   await expect(page.getByText(/検証用の分割 の [\d,]+ 行で測った/)).toBeVisible()
@@ -110,17 +110,30 @@ test('解約の見本の過去のデータで, 外れ方を確かめて一式に
   await expect(page.getByText(/300 件のうち 10 件/)).toBeVisible({ timeout: 30_000 })
 
   // 確かめるだけでは一式は変わらない
+  const status = page.getByRole('status', { name: '外れ方の確かめの状態' })
   await page.getByRole('button', { name: '確かめる' }).click()
-  await expect(page.getByText(/確率と実際に当たった割合のずれは平均/)).toBeVisible({
-    timeout: 30_000,
-  })
-  await expect(page.getByRole('status')).toContainText('一式は変えていません')
+  const found = page.getByRole('list', { name: '外れ方の確かめの結果' })
+  await expect(found).toContainText(
+    /300 行で, 確率と実際に当たった割合のずれは平均 [\d.]+ ポイント/,
+    {
+      timeout: 30_000,
+    },
+  )
+  await expect(status).toContainText('一式は変えていません')
 
-  // 書き戻すと, 一式の説明の外れ方の記録が実績になる
+  // 確認して書き戻すと, もう一度確かめた結果に替わる
+  page.once('dialog', (dialog) => dialog.accept())
   await page.getByRole('button', { name: '一式に書き戻す' }).click()
-  await expect(page.getByRole('status')).toContainText('一式に書き戻しました', {
-    timeout: 30_000,
-  })
+  await expect(status).toContainText('一式に書き戻しました', { timeout: 30_000 })
+  await page.getByRole('button', { name: '確かめる' }).click()
+  await expect(status).toContainText('一式は変えていません', { timeout: 30_000 })
+  await expect(found).toContainText('記録したときは')
+
+  // 一式の画面で, 作ったときの記録に戻す
   await page.getByRole('link', { name: '見本: 解約の予測 (表の分類)' }).first().click()
   await expect(page.getByText(/測り直した実績 \(.+\) の 300 行で測った/)).toBeVisible()
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: '外れ方を作ったときの記録に戻す' }).click()
+  await expect(page.getByText(/検証用の分割 の [\d,]+ 行で測った/)).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('button', { name: '外れ方を作ったときの記録に戻す' })).toHaveCount(0)
 })

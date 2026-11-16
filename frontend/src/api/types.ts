@@ -86,6 +86,8 @@ export interface UncertaintySummary {
   measured_at: string | null
   coverage: Record<'80' | '90', number> | null
   ece: number | null
+  /** 一式を作ったときの記録に戻せるか */
+  restorable?: boolean
 }
 
 /** 検証用の分割を一式で推論した評価と, 実験の記録との比べ */

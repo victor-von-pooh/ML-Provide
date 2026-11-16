@@ -526,6 +526,15 @@ def test_remeasure(client: TestClient) -> None:
     assert saved["written"] is True
     described = client.get(f"/api/bundles/{shop['id']}").json()
     assert described["description"]["uncertainty"]["split"] == "recent"
+    assert described["description"]["uncertainty"]["restorable"] is True
+
+    # 作ったときの記録に戻すと, もう戻せない
+    back = client.post(
+        f"/api/bundles/{shop['id']}/restore-uncertainty"
+    ).json()
+    assert back["description"]["uncertainty"]["split"] != "recent"
+    again = client.post(f"/api/bundles/{shop['id']}/restore-uncertainty")
+    assert again.status_code == 400
 
     # 目的の列の無い入力の結果は測り直せない
     fresh = client.post(

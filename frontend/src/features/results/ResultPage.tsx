@@ -426,7 +426,7 @@ export function ResultPage() {
           result={data}
           bundleAlive={bundleAlive}
         />
-        <RemeasureCard result={data} bundleAlive={bundleAlive} />
+        <RemeasureCard key={`remeasure:${data.id}`} result={data} bundleAlive={bundleAlive} />
         {summary && (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <StatTile label="行" value={summary.rows.toLocaleString()} />
