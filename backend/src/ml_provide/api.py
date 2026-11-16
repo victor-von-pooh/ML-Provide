@@ -86,6 +86,10 @@ class DecideRequest(BaseModel):
     decision: Optional[dict[str, Any]] = None
 
 
+class RemeasureRequest(BaseModel):
+    write: bool = False
+
+
 def get_store(request: Request) -> Store:
     """
     アプリの置き場を返す関数
@@ -1250,6 +1254,59 @@ def backtest_result(request: Request, result_id: str) -> dict[str, Any]:
         meta["backtest"] = replay
         write_meta(place, meta)
     view = result_view(result_id, place)
+
+    return view
+
+
+@router.post("/results/{result_id}/remeasure")
+def remeasure_result(
+    request: Request, result_id: str, body: RemeasureRequest
+) -> dict[str, Any]:
+    """
+    結果の入力 (目的の列を持つ) で, 一式の予測の外れ方を測り直す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    result_id: str
+        結果の id
+    body: RemeasureRequest
+        write (一式に書き戻すか)
+
+    Returns
+    ----------
+    view: dict[str, Any]
+        rows, before (今の記録の当たり具合), sentences, written
+
+    Raises
+    ----------
+    HTTPException
+        入力のファイルが無い場合, 目的の列が無い場合, 行が少ない場合は
+        400
+    """
+    # 入力のファイルと一式の場所 (覚えた一式は書き換えず, 読み直させる)
+    place = find_result(request, result_id)
+    meta = read_meta(place)
+    source = meta.get("source_path")
+    if not source or not Path(source).exists() or meta.get("forecast"):
+        raise HTTPException(
+            400, "測り直すには, 目的の列を持つ入力のファイルの結果が要ります"
+            " (書いた文と何段も先の予測の結果は除く)"
+        )
+    entry = get_store(request).find(str(meta.get("bundle_id")))
+    if entry is None:
+        raise HTTPException(400, "一式が登録されていないので測り直せません")
+    with PREDICT_LOCK:
+        try:
+            measured = ml_inference.remeasure(
+                str(entry["path"]), Path(source),
+                options=meta.get("options"), write=body.write
+            )
+        except (OSError, *USER_ERRORS) as error:
+            raise user_error(error) from error
+    view = {key: measured[key]
+            for key in ("rows", "before", "sentences", "written")}
 
     return view
 

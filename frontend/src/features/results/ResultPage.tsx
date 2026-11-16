@@ -11,6 +11,7 @@ import { formatPercent, formatValue } from '../../lib/format'
 import { fromForm, toForm, type RulesForm } from '../../lib/rules'
 import { DecisionCard } from './DecisionCard'
 import { ExplainCard } from './ExplainCard'
+import { RemeasureCard } from './RemeasureCard'
 import { RulesEditor } from './RulesEditor'
 
 // 判断が決まらなかったことを表す名前 (ML-Inference と同じ)
@@ -425,6 +426,7 @@ export function ResultPage() {
           result={data}
           bundleAlive={bundleAlive}
         />
+        <RemeasureCard result={data} bundleAlive={bundleAlive} />
         {summary && (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <StatTile label="行" value={summary.rows.toLocaleString()} />

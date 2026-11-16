@@ -100,3 +100,27 @@ test('解約の見本で, 過去のデータを既定の意思決定で推論し
   await expect(page.getByText(/以上を回すこと/)).toBeVisible({ timeout: 30_000 })
   await expect(page.getByRole('region', { name: 'たどり直し' })).toHaveCount(0)
 })
+
+test('解約の見本の過去のデータで, 外れ方を確かめて一式に書き戻す', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('link', { name: '見本: 解約の予測 (表の分類)' }).click()
+  await expect(page.getByText(/検証用の分割 の [\d,]+ 行で測った/)).toBeVisible()
+  await page.getByRole('button', { name: /見本の過去のデータ/ }).click()
+  await page.getByRole('button', { name: '推論する' }).click()
+  await expect(page.getByText(/300 件のうち 10 件/)).toBeVisible({ timeout: 30_000 })
+
+  // 確かめるだけでは一式は変わらない
+  await page.getByRole('button', { name: '確かめる' }).click()
+  await expect(page.getByText(/確率と実際に当たった割合のずれは平均/)).toBeVisible({
+    timeout: 30_000,
+  })
+  await expect(page.getByRole('status')).toContainText('一式は変えていません')
+
+  // 書き戻すと, 一式の説明の外れ方の記録が実績になる
+  await page.getByRole('button', { name: '一式に書き戻す' }).click()
+  await expect(page.getByRole('status')).toContainText('一式に書き戻しました', {
+    timeout: 30_000,
+  })
+  await page.getByRole('link', { name: '見本: 解約の予測 (表の分類)' }).first().click()
+  await expect(page.getByText(/測り直した実績 \(.+\) の 300 行で測った/)).toBeVisible()
+})
