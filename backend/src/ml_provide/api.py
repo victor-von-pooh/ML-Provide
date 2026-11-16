@@ -1,0 +1,851 @@
+import json
+import threading
+from collections import OrderedDict
+from pathlib import Path
+from typing import Any, Optional
+
+import ml_inference
+import pandas as pd
+import yaml
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import FileResponse, Response
+from ml_inference.conclude import RULE_KEYS
+from pydantic import BaseModel, Field
+
+from ml_provide.store import Store
+
+router = APIRouter(prefix="/api")
+
+# 推論を 1 つずつにする鍵 (大きなモデルでメモリを使い切らないように)
+PREDICT_LOCK = threading.Lock()
+
+# 読み込んだ一式を覚えておく数と, 場所ごとの (更新時刻, 一式)
+BUNDLE_CACHE_SIZE = 4
+BUNDLES: OrderedDict[str, tuple[float, ml_inference.Bundle]] = OrderedDict()
+BUNDLES_LOCK = threading.Lock()
+
+# 画面に書いた文として受け付ける上限
+MAX_TEXTS = 10000
+
+# 表として一度に返す行の上限
+MAX_ROWS = 500
+
+# 名前に使える長さ
+MAX_NAME = 80
+
+# 推論の誤りとして画面に返す例外
+USER_ERRORS = (ValueError, FileNotFoundError, KeyError, TypeError)
+
+
+class BundleRegister(BaseModel):
+    path: str
+    name: Optional[str] = None
+
+
+class BundleCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=MAX_NAME)
+    spec: str
+    dataset: str
+    weights: str
+    inputs: Optional[dict[str, Any]] = None
+    output: Optional[str] = None
+    kind: Optional[str] = None
+    target_scale: Optional[dict[str, float]] = None
+    conclusion: Optional[dict[str, Any]] = None
+    copy_weights: bool = True
+
+
+class PredictRequest(BaseModel):
+    source: Optional[str] = None
+    texts: Optional[list[str]] = None
+    options: Optional[dict[str, Any]] = None
+    rules: Optional[dict[str, Any]] = None
+
+
+class ConcludeRequest(BaseModel):
+    rules: dict[str, Any] = Field(default_factory=dict)
+
+
+def get_store(request: Request) -> Store:
+    """
+    アプリの置き場を返す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+
+    Returns
+    ----------
+    store: Store
+        置き場
+    """
+    store: Store = request.app.state.store
+
+    return store
+
+
+def user_error(error: Exception) -> HTTPException:
+    """
+    推論や一式の誤りを, 画面に出す 400 の例外にする関数
+
+    Parameters
+    ----------
+    error: Exception
+        起きた例外
+
+    Returns
+    ----------
+    exception: HTTPException
+        400 の例外 (文は元の誤りの文)
+    """
+    # SpecError などの誤りの文をそのまま
+    message = str(error) or type(error).__name__
+    exception = HTTPException(400, message)
+
+    return exception
+
+
+def open_bundle(path: str) -> ml_inference.Bundle:
+    """
+    一式を読む関数 (inference.yaml が変わっていなければ覚えたものを使う)
+
+    Parameters
+    ----------
+    path: str
+        一式のディレクトリ
+
+    Returns
+    ----------
+    bundle: ml_inference.Bundle
+        一式
+    """
+    # 更新時刻で覚えたものが古くないかを確かめる
+    stamp = (Path(path) / "inference.yaml").stat().st_mtime
+    with BUNDLES_LOCK:
+        cached = BUNDLES.get(path)
+        if cached is not None and cached[0] == stamp:
+            BUNDLES.move_to_end(path)
+            return cached[1]
+    bundle = ml_inference.load_bundle(path)
+    with BUNDLES_LOCK:
+        BUNDLES[path] = (stamp, bundle)
+        BUNDLES.move_to_end(path)
+        while len(BUNDLES) > BUNDLE_CACHE_SIZE:
+            BUNDLES.popitem(last=False)
+
+    return bundle
+
+
+def find_bundle(request: Request, bundle_id: str) -> dict[str, Any]:
+    """
+    登録した一式を探す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    bundle_id: str
+        一式の id
+
+    Returns
+    ----------
+    entry: dict[str, Any]
+        登録
+
+    Raises
+    ----------
+    HTTPException
+        無い場合は 404
+    """
+    entry = get_store(request).find(bundle_id)
+    if entry is None:
+        raise HTTPException(404, "一式が見つかりません")
+
+    return entry
+
+
+def bundle_view(entry: dict[str, Any]) -> dict[str, Any]:
+    """
+    登録に一式の説明を足して返す関数
+
+    Parameters
+    ----------
+    entry: dict[str, Any]
+        登録
+
+    Returns
+    ----------
+    view: dict[str, Any]
+        登録, ok, error, 説明 (読めない場合は None)
+    """
+    # 消えた一式や壊れた一式は理由付き
+    view: dict[str, Any] = {**entry, "ok": True, "error": None}
+    try:
+        view["description"] = ml_inference.describe_bundle(
+            open_bundle(str(entry["path"]))
+        )
+    except Exception as error:
+        view.update(ok=False, error=str(error), description=None)
+
+    return view
+
+
+@router.get("/info")
+def get_info() -> dict[str, Any]:
+    """
+    ML-Inference の版と結論の決め方の項目を返す関数
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    ----------
+    info: dict[str, Any]
+        version, rule_keys
+    """
+    info = {
+        "version": ml_inference.__version__,
+        "rule_keys": list(RULE_KEYS),
+    }
+
+    return info
+
+
+@router.get("/browse")
+def browse(path: str = "~") -> dict[str, Any]:
+    """
+    ディレクトリの中身を返す関数 (ファイルとディレクトリを選ぶため)
+
+    Parameters
+    ----------
+    path: str = "~"
+        ディレクトリ (~ から書ける)
+
+    Returns
+    ----------
+    listing: dict[str, Any]
+        path, parent, home, entries (名前, 場所, ディレクトリか, 大きさ),
+        truncated
+
+    Raises
+    ----------
+    HTTPException
+        ディレクトリでない場合は 404
+    """
+    # 隠しファイルを除いて, ディレクトリを先に名前の順で並べる
+    target = Path(path).expanduser().resolve()
+    if not target.is_dir():
+        raise HTTPException(404, f"{target} はディレクトリではありません")
+    try:
+        children = sorted(
+            target.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower())
+        )
+    except PermissionError as error:
+        raise HTTPException(403, "読む権限がありません") from error
+    visible = [c for c in children if not c.name.startswith(".")]
+    entries = []
+    for child in visible[:1000]:
+        try:
+            size = child.stat().st_size if child.is_file() else None
+        except OSError:
+            continue
+        entries.append({
+            "name": child.name, "path": str(child),
+            "is_dir": child.is_dir(), "size": size,
+            "bundle": child.is_dir() and (child / "inference.yaml").is_file(),
+        })
+    listing = {
+        "path": str(target),
+        "parent": str(target.parent) if target.parent != target else None,
+        "home": str(Path.home()),
+        "entries": entries,
+        "truncated": len(visible) > 1000,
+    }
+
+    return listing
+
+
+@router.get("/bundles")
+def list_bundles(request: Request) -> list[dict[str, Any]]:
+    """
+    登録した一式の一覧を返す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+
+    Returns
+    ----------
+    bundles: list[dict[str, Any]]
+        登録と説明 (新しい順)
+    """
+    entries = get_store(request).read()
+    bundles = [bundle_view(entry) for entry in reversed(entries)]
+
+    return bundles
+
+
+@router.post("/bundles", status_code=201)
+def register_bundle(
+    request: Request, body: BundleRegister
+) -> dict[str, Any]:
+    """
+    場所を指定して一式を登録する関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    body: BundleRegister
+        一式のディレクトリと名前
+
+    Returns
+    ----------
+    view: dict[str, Any]
+        登録と説明
+
+    Raises
+    ----------
+    HTTPException
+        読めない一式と, 既に登録した場所は 400
+    """
+    # 読めることを確かめてから登録
+    path = Path(body.path).expanduser().resolve()
+    try:
+        bundle = open_bundle(str(path))
+    except (OSError, *USER_ERRORS) as error:
+        raise user_error(error) from error
+    name = (body.name or str(bundle.info.get("name") or path.name))[:MAX_NAME]
+    try:
+        entry = get_store(request).add(path, name, managed=False)
+    except ValueError as error:
+        raise user_error(error) from error
+    view = bundle_view(entry)
+
+    return view
+
+
+@router.post("/bundles/create", status_code=201)
+def create_bundle(request: Request, body: BundleCreate) -> dict[str, Any]:
+    """
+    モデルの定義, データセット, 実験から置き場に一式を作って登録する関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    body: BundleCreate
+        名前, 定義, データセット, 重みか実験, つなぎ方, 結論の既定値
+
+    Returns
+    ----------
+    view: dict[str, Any]
+        登録と説明
+
+    Raises
+    ----------
+    HTTPException
+        一式を作れない場合は 400 (理由付き)
+    """
+    # 見本を推論できることまで ML-Inference が確かめる
+    store = get_store(request)
+    bundle_id, place = store.new_bundle_dir()
+    try:
+        ml_inference.make_bundle(
+            place, Path(body.spec).expanduser(),
+            Path(body.dataset).expanduser(), Path(body.weights).expanduser(),
+            inputs=body.inputs, output=body.output or None,
+            kind=body.kind or None, target_scale=body.target_scale,
+            conclusion=body.conclusion, name=body.name,
+            copy_weights=body.copy_weights
+        )
+    except Exception as error:
+        raise user_error(error) from error
+    entry = store.add(place, body.name, managed=True, bundle_id=bundle_id)
+    view = bundle_view(entry)
+
+    return view
+
+
+@router.get("/bundles/{bundle_id}")
+def get_bundle(request: Request, bundle_id: str) -> dict[str, Any]:
+    """
+    一式の登録と説明を返す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    bundle_id: str
+        一式の id
+
+    Returns
+    ----------
+    view: dict[str, Any]
+        登録と説明
+    """
+    view = bundle_view(find_bundle(request, bundle_id))
+
+    return view
+
+
+@router.delete("/bundles/{bundle_id}", status_code=204)
+def delete_bundle(request: Request, bundle_id: str) -> Response:
+    """
+    一式の登録を消す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    bundle_id: str
+        一式の id
+
+    Returns
+    ----------
+    response: Response
+        204
+
+    Raises
+    ----------
+    HTTPException
+        無い場合は 404
+    """
+    if not get_store(request).remove(bundle_id):
+        raise HTTPException(404, "一式が見つかりません")
+    response = Response(status_code=204)
+
+    return response
+
+
+def text_frame(bundle: ml_inference.Bundle, texts: list[str]) -> pd.DataFrame:
+    """
+    画面に書いた文を, 文の列を持つ表にする関数
+
+    Parameters
+    ----------
+    bundle: ml_inference.Bundle
+        一式
+    texts: list[str]
+        文の並び (空の行は除く)
+
+    Returns
+    ----------
+    frame: pd.DataFrame
+        文の列だけの表
+
+    Raises
+    ----------
+    HTTPException
+        文の一式でない場合, 文が無い場合と多すぎる場合は 400
+    """
+    # 文の一式だけ
+    column = bundle.dataset.info.get("text_column")
+    if bundle.kind != "text" or not column:
+        raise HTTPException(400, "文を書いて推論できるのは文の一式だけです")
+    kept = [text.strip() for text in texts if text.strip()]
+    if not kept:
+        raise HTTPException(400, "文がありません")
+    if len(kept) > MAX_TEXTS:
+        raise HTTPException(400, f"文は {MAX_TEXTS} 件までです")
+    frame: pd.DataFrame = pd.DataFrame({column: kept})
+
+    return frame
+
+
+@router.post("/bundles/{bundle_id}/predict", status_code=201)
+def predict(
+    request: Request, bundle_id: str, body: PredictRequest
+) -> dict[str, Any]:
+    """
+    ファイルか文を推論し, 結論を出して結果を保存する関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    bundle_id: str
+        一式の id
+    body: PredictRequest
+        ファイルの場所か文の並び, 読み込みの設定, 結論の決め方
+
+    Returns
+    ----------
+    view: dict[str, Any]
+        保存した結果のまとめ
+
+    Raises
+    ----------
+    HTTPException
+        入力が無い場合と, 推論できない場合は 400
+    """
+    # 一式と入力
+    entry = find_bundle(request, bundle_id)
+    try:
+        bundle = open_bundle(str(entry["path"]))
+    except (OSError, *USER_ERRORS) as error:
+        raise user_error(error) from error
+    if body.texts is not None:
+        source: Any = text_frame(bundle, body.texts)
+        described = f"書いた文 {len(source)} 件"
+    elif body.source:
+        source = Path(body.source).expanduser().resolve()
+        if not source.exists():
+            raise HTTPException(400, f"{source} がありません")
+        described = str(source)
+    else:
+        raise HTTPException(400, "推論するファイルか文を指定してください")
+
+    # 推論と結論 (1 つずつ)
+    with PREDICT_LOCK:
+        try:
+            result = ml_inference.infer(
+                bundle, source, rules=body.rules, options=body.options
+            )
+        except Exception as error:
+            raise user_error(error) from error
+    result.update(
+        source=described, bundle_id=bundle_id, task=bundle.task,
+        classes=bundle.classes
+    )
+    result_id, place = get_store(request).new_result_dir()
+    ml_inference.write_result(result, place)
+    view = result_view(result_id, place)
+
+    return view
+
+
+def read_meta(place: Path) -> dict[str, Any]:
+    """
+    結果の result.yaml を読む関数
+
+    Parameters
+    ----------
+    place: Path
+        結果のディレクトリ
+
+    Returns
+    ----------
+    meta: dict[str, Any]
+        result.yaml の中身
+    """
+    meta: dict[str, Any] = yaml.safe_load(
+        (place / "result.yaml").read_text(encoding="utf-8")
+    )
+
+    return meta
+
+
+def read_frame(place: Path, meta: dict[str, Any]) -> pd.DataFrame:
+    """
+    結果の予測の表を読む関数
+
+    Parameters
+    ----------
+    place: Path
+        結果のディレクトリ
+    meta: dict[str, Any]
+        result.yaml の中身 (タスクで予測の列の型を決める)
+
+    Returns
+    ----------
+    frame: pd.DataFrame
+        予測と判断の表 (理由と判断の空は空の文字)
+    """
+    # クラスの名前と判断は文字のまま (数字のクラスも)
+    texts = {"status": str, "reason": str, "decision": str}
+    if meta.get("task") == "classification":
+        texts["prediction"] = str
+    frame = pd.read_csv(
+        place / "predictions.csv", encoding="utf-8-sig", dtype=texts
+    )
+    for name in ("reason", "decision"):
+        if name in frame.columns:
+            frame[name] = frame[name].fillna("")
+
+    return frame
+
+
+def result_view(result_id: str, place: Path) -> dict[str, Any]:
+    """
+    結果のまとめを返す関数
+
+    Parameters
+    ----------
+    result_id: str
+        結果の id
+    place: Path
+        結果のディレクトリ
+
+    Returns
+    ----------
+    view: dict[str, Any]
+        id, 一式, 入力, 時刻, タスク, クラス, 決め方, まとめ, 文, 列
+    """
+    # 表の列は先頭の行だけ読んで決める
+    meta = read_meta(place)
+    columns = list(
+        pd.read_csv(place / "predictions.csv", encoding="utf-8-sig", nrows=0)
+    )
+    view = {
+        "id": result_id,
+        "bundle": meta.get("bundle"),
+        "bundle_id": meta.get("bundle_id"),
+        "source": meta.get("source"),
+        "created_at": meta.get("created_at"),
+        "task": meta.get("task"),
+        "classes": meta.get("classes") or [],
+        "rules": meta.get("rules") or {},
+        "summary": meta.get("summary"),
+        "sentences": meta.get("sentences") or [],
+        "columns": columns,
+    }
+
+    return view
+
+
+def find_result(request: Request, result_id: str) -> Path:
+    """
+    結果のディレクトリを探す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    result_id: str
+        結果の id
+
+    Returns
+    ----------
+    place: Path
+        結果のディレクトリ
+
+    Raises
+    ----------
+    HTTPException
+        無い場合は 404
+    """
+    place = get_store(request).result_dir(result_id)
+    if place is None:
+        raise HTTPException(404, "結果が見つかりません")
+
+    return place
+
+
+@router.get("/results")
+def list_results(
+    request: Request, bundle: Optional[str] = None
+) -> list[dict[str, Any]]:
+    """
+    結果の一覧を新しい順に返す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    bundle: Optional[str] = None
+        一式の id で絞る
+
+    Returns
+    ----------
+    results: list[dict[str, Any]]
+        結果のまとめ (表の列を除く)
+    """
+    # 読めない結果は飛ばす
+    store = get_store(request)
+    results = []
+    for result_id in store.result_ids():
+        place = store.results_dir / result_id
+        try:
+            meta = read_meta(place)
+        except (OSError, yaml.YAMLError):
+            continue
+        if bundle is not None and meta.get("bundle_id") != bundle:
+            continue
+        results.append({
+            "id": result_id,
+            "bundle": meta.get("bundle"),
+            "bundle_id": meta.get("bundle_id"),
+            "source": meta.get("source"),
+            "created_at": meta.get("created_at"),
+            "task": meta.get("task"),
+            "summary": meta.get("summary"),
+            "sentences": meta.get("sentences") or [],
+        })
+
+    return results
+
+
+@router.get("/results/{result_id}")
+def get_result(request: Request, result_id: str) -> dict[str, Any]:
+    """
+    結果のまとめを返す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    result_id: str
+        結果の id
+
+    Returns
+    ----------
+    view: dict[str, Any]
+        結果のまとめ
+    """
+    view = result_view(result_id, find_result(request, result_id))
+
+    return view
+
+
+@router.get("/results/{result_id}/rows")
+def get_rows(
+    request: Request, result_id: str,
+    offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=MAX_ROWS),
+    status: Optional[str] = None, decision: Optional[str] = None
+) -> dict[str, Any]:
+    """
+    予測の表の一部を返す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    result_id: str
+        結果の id
+    offset: int = Query(0, ge=0)
+        先頭から飛ばす行の数
+    limit: int = Query(50, ge=1, le=MAX_ROWS)
+        返す行の数
+    status: Optional[str] = None
+        ok か skipped で絞る
+    decision: Optional[str] = None
+        判断で絞る
+
+    Returns
+    ----------
+    rows: dict[str, Any]
+        total (絞った後の行の数), offset, columns, rows (行の位置 index
+        付き)
+    """
+    # 絞ってから切り出す
+    place = find_result(request, result_id)
+    frame = read_frame(place, read_meta(place))
+    frame.insert(0, "index", range(len(frame)))
+    if status:
+        frame = frame[frame["status"] == status]
+    if decision is not None and "decision" in frame.columns:
+        frame = frame[frame["decision"] == decision]
+    part = frame.iloc[offset:offset + limit]
+    records = json.loads(part.to_json(orient="records", force_ascii=False))
+    rows = {
+        "total": int(len(frame)),
+        "offset": offset,
+        "columns": list(frame.columns),
+        "rows": records,
+    }
+
+    return rows
+
+
+@router.post("/results/{result_id}/conclude")
+def conclude_again(
+    request: Request, result_id: str, body: ConcludeRequest
+) -> dict[str, Any]:
+    """
+    決め方を変えて結論だけを出し直す関数 (結果を書き換える)
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    result_id: str
+        結果の id
+    body: ConcludeRequest
+        結論の決め方
+
+    Returns
+    ----------
+    view: dict[str, Any]
+        書き換えた結果のまとめ
+
+    Raises
+    ----------
+    HTTPException
+        決め方に誤りがある場合は 400
+    """
+    # 判断の列を除いた予測から出し直す
+    place = find_result(request, result_id)
+    meta = read_meta(place)
+    frame = read_frame(place, meta).drop(columns=["decision"], errors="ignore")
+    rules = {k: v for k, v in body.rules.items() if v is not None}
+    try:
+        conclusion = ml_inference.conclude(
+            frame, str(meta.get("task")), list(meta.get("classes") or []),
+            rules
+        )
+    except ValueError as error:
+        raise user_error(error) from error
+    meta.update(
+        summary=conclusion["summary"], sentences=conclusion["sentences"],
+        rules=conclusion["rules"], frame=conclusion["frame"]
+    )
+    ml_inference.write_result(meta, place)
+    view = result_view(result_id, place)
+
+    return view
+
+
+@router.get("/results/{result_id}/download")
+def download(request: Request, result_id: str) -> FileResponse:
+    """
+    予測と判断の CSV を返す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    result_id: str
+        結果の id
+
+    Returns
+    ----------
+    response: FileResponse
+        predictions.csv (結果の id の名前で保存させる)
+    """
+    place = find_result(request, result_id)
+    response = FileResponse(
+        place / "predictions.csv", media_type="text/csv",
+        filename=f"predictions-{result_id}.csv"
+    )
+
+    return response
+
+
+@router.delete("/results/{result_id}", status_code=204)
+def delete_result(request: Request, result_id: str) -> Response:
+    """
+    結果を消す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    result_id: str
+        結果の id
+
+    Returns
+    ----------
+    response: Response
+        204
+    """
+    import shutil
+
+    place = find_result(request, result_id)
+    shutil.rmtree(place)
+    response = Response(status_code=204)
+
+    return response
