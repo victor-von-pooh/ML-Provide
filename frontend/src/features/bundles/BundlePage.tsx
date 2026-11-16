@@ -74,6 +74,25 @@ function DescriptionView({ description }: { description: Description }) {
           )}
         </Row>
       )}
+      {description.check && (
+        <Row label="一式での評価">
+          {description.check.split} の {description.check.rows.toLocaleString()} 行で{' '}
+          {description.check.metric === 'acc' ? '正解率' : '平均絶対誤差'}{' '}
+          {formatNumber(description.check.value)}
+          {description.check.recorded != null && (
+            <>
+              {' '}
+              (実験の記録 {formatNumber(description.check.recorded)}.{' '}
+              {description.check.matches ? (
+                <span className="text-good-text">合う</span>
+              ) : (
+                <span className="text-critical-text">合わない</span>
+              )}
+              )
+            </>
+          )}
+        </Row>
+      )}
       {description.notes.map((note) => (
         <p key={note} className="mt-1 text-xs text-warning-text">
           {note}
@@ -233,6 +252,12 @@ export function BundlePage() {
         <ErrorBox error={`一式を読めません: ${data.error ?? ''}`} />
       ) : (
         <div className="grid gap-4 xl:grid-cols-[1fr_22rem]">
+          {/* 実験の記録と合わない一式は, 推論の前に気付けるように上に出す */}
+          {data.description.check?.matches === false && (
+            <div className="xl:col-span-2">
+              <ErrorBox error="この一式で推論した検証用の評価が, 実験の記録と合いません. 予測が誤っている可能性があります (下の「一式の説明」を参照)" />
+            </div>
+          )}
           <div className="flex min-w-0 flex-col gap-4">
             <PredictCard bundle={data} description={data.description} />
             <Card title="一式の説明">
