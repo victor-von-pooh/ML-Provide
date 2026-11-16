@@ -382,17 +382,20 @@ def test_samples(client: TestClient) -> None:
     # 3 つの見本 (2 回目は登録し直さない)
     added = client.post("/api/samples").json()
     assert [b["name"] for b in added][0] == "見本: レビューの分類 (文)"
-    assert len(added) == 3 and all(b["ok"] for b in added)
+    assert len(added) == 4 and all(b["ok"] for b in added)
     assert client.post("/api/samples").json() == []
 
-    # 見本の新しいデータの推論
+    # 見本の新しいデータの推論 (日々の売上は先の 7 日を 2 店)
     for bundle in added:
+        daily = "日々の売上" in bundle["name"]
         response = client.post(
             f"/api/bundles/{bundle['id']}/predict",
-            json={"source": bundle["sample_input"]},
+            json={"source": bundle["sample_input"], "forecast": daily},
         )
         assert response.status_code == 201, response.text
-        assert response.json()["summary"]["predicted"] == 50
+        result = response.json()
+        assert result["summary"]["predicted"] == (14 if daily else 50)
+        assert result["forecast"] is daily
 
 
 def test_explain(tmp_path: Path, client: TestClient) -> None:

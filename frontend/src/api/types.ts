@@ -128,6 +128,8 @@ export interface Result {
   sentences: string[]
   columns?: string[]
   kind?: string | null
+  /** 何段も先の予測の結果か (表は先の行だけ) */
+  forecast?: boolean
   explanation?: Explanation | null
 }
 

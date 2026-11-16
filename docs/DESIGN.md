@@ -45,12 +45,12 @@ ML-Provide の設計の方針をまとめる.
 | `GET /api/info` | ML-Inference の版, 結論の決め方の項目 |
 | `GET /api/browse` | ディレクトリの中身 (ファイルとディレクトリを選ぶため) |
 | `GET /api/bundles` | 登録した一式の一覧 (読めない一式は理由付き) |
-| `POST /api/samples` | 見本の一式 (表の分類, 表の回帰, 文の分類) を, 見本のデータでその場で学習して作り登録する |
+| `POST /api/samples` | 見本の一式 (表の分類, 表の回帰, 時系列の先の予測, 文の分類) を, 見本のデータでその場で学習して作り登録する |
 | `POST /api/bundles` | 場所を指定して登録 (`inference.yaml` を持つディレクトリ) |
 | `POST /api/bundles/create` | モデルの定義, データセット, 実験 (か重み) から置き場に作って登録 |
 | `GET /api/bundles/{id}` | 一式の説明 (ML-Inference の `describe_bundle`) |
 | `DELETE /api/bundles/{id}` | 登録を消す (置き場で作った一式は一式も消す) |
-| `POST /api/bundles/{id}/predict` | ファイルの場所か文の並びを推論し, 結論を出して結果を保存 |
+| `POST /api/bundles/{id}/predict` | ファイルの場所か文の並びを推論し, 結論を出して結果を保存. `forecast` で何段も先の予測 (目的の列の過去の値を使う回帰と予測の一式. 結果は先の行だけ) |
 | `GET /api/results` | 結果の一覧 (`bundle` で絞れる) |
 | `GET /api/results/{id}` | 結果のまとめ, 文, 決め方, 列 |
 | `GET /api/results/{id}/rows` | 予測の表の一部 (`offset`, `limit`, `status`, `decision` で絞る) |
