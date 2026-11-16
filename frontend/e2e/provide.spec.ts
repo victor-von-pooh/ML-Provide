@@ -158,4 +158,17 @@ test('日々の売上の見本の過去のデータで, 7 段先までの外れ�
     /何段も先の外れ方 \(予測を始める時刻 \d+ 個\): 80 % の幅は 1 段目/,
     { timeout: 60_000 },
   )
+
+  // 書き戻すと, 一式の画面に段ごとに測ったことが出る
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: '一式に書き戻す' }).click()
+  await expect(page.getByRole('status', { name: '外れ方の確かめの状態' })).toContainText(
+    '一式に書き戻しました',
+    { timeout: 60_000 },
+  )
+  await page
+    .getByRole('link', { name: '見本: 日々の売上の予測 (時系列, 先の予測)' })
+    .first()
+    .click()
+  await expect(page.getByText(/何段も先の外れ方は 7 段目まで段ごと/)).toBeVisible()
 })
