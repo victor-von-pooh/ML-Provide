@@ -52,6 +52,7 @@ export const api = {
     request<Bundle>('/api/bundles', json('POST', { path, name })),
   createBundle: (body: BundleCreateBody) =>
     request<Bundle>('/api/bundles/create', json('POST', body)),
+  addSamples: () => request<Bundle[]>('/api/samples', json('POST', {})),
   deleteBundle: (id: string) => request<void>(`/api/bundles/${id}`, { method: 'DELETE' }),
   predict: (id: string, body: { source?: string; texts?: string[]; rules?: Rules }) =>
     request<Result>(`/api/bundles/${id}/predict`, json('POST', body)),

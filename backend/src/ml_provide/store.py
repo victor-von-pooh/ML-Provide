@@ -146,7 +146,8 @@ class Store:
 
     def add(
         self, path: Path, name: str, managed: bool,
-        bundle_id: Optional[str] = None
+        bundle_id: Optional[str] = None,
+        extra: Optional[dict[str, Any]] = None
     ) -> dict[str, Any]:
         """
         一式を登録する関数
@@ -161,6 +162,8 @@ class Store:
             置き場で作ったか (登録を消すと一式も消す)
         bundle_id: Optional[str] = None
             id (省略すると作る)
+        extra: Optional[dict[str, Any]] = None
+            登録に足す項目 (見本の新しいデータの場所など)
 
         Returns
         ----------
@@ -184,6 +187,7 @@ class Store:
                 "path": resolved,
                 "managed": managed,
                 "added_at": datetime.now().astimezone().isoformat(),
+                **(extra or {}),
             }
             bundles.append(bundle)
             self.write(bundles)
