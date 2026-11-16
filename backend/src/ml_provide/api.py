@@ -75,10 +75,15 @@ class PredictRequest(BaseModel):
     options: Optional[dict[str, Any]] = None
     rules: Optional[dict[str, Any]] = None
     forecast: bool = False
+    decision: Optional[dict[str, Any]] = None
 
 
 class ConcludeRequest(BaseModel):
     rules: dict[str, Any] = Field(default_factory=dict)
+
+
+class DecideRequest(BaseModel):
+    decision: Optional[dict[str, Any]] = None
 
 
 def get_store(request: Request) -> Store:
@@ -449,13 +454,14 @@ def add_samples(request: Request) -> list[dict[str, Any]]:
         bundles = []
         # 一覧は新しいものが先なので, 最初の見本が先頭に来るように後ろから
         # の登録
-        for name, (place, fresh) in reversed(samples.items()):
+        for name, (place, fresh, past) in reversed(samples.items()):
             if str(place.resolve()) in registered or name in registered:
                 continue
             try:
                 entry = store.add(
                     place, name, managed=False,
-                    extra={"sample_input": str(fresh.resolve())}
+                    extra={"sample_input": str(fresh.resolve()),
+                           "sample_past": str(past.resolve())}
                 )
             except ValueError:
                 continue
@@ -598,13 +604,19 @@ def predict(
         try:
             result = ml_inference.infer(
                 bundle, source, rules=body.rules, options=body.options,
-                forecast=body.forecast
+                forecast=body.forecast, decision=body.decision
             )
         except Exception as error:
             raise user_error(error) from error
     result.update(
         source=described, bundle_id=bundle_id, task=bundle.task,
         classes=bundle.classes, kind=bundle.kind, forecast=body.forecast,
+        has_target=bool(
+            str(bundle.dataset.info.get("target")) in result["frame"].columns
+            and result["frame"][str(bundle.dataset.info.get("target"))]
+            .notna().any()
+        ),
+        options=body.options,
         source_path=str(source) if isinstance(source, Path) else None
     )
     # 書いた表を読み直して結論を出し直す (出し直しと同じ型の値でまとめ,
@@ -658,6 +670,107 @@ def conclude_into(
     temporary = place / f".writing-{uuid.uuid4().hex[:8]}"
     try:
         ml_inference.write_result(meta, temporary)
+        for name in ("predictions.csv", "result.yaml"):
+            os.replace(temporary / name, place / name)
+    finally:
+        shutil.rmtree(temporary, ignore_errors=True)
+
+
+# 意思決定の型ごとに, 予測の表に足す列 (決め直すときに, この列だけを除く)
+TYPE_COLUMNS = {
+    "quantity": ["action", "level", "expected_cost", "point_expected_cost"],
+    "select": ["action", "gain_if_acted", "expected_gain"],
+    "triage": ["action", "expected_cost"],
+}
+
+
+def decision_columns(meta: dict[str, Any]) -> list[str]:
+    """
+    結果の意思決定が予測の表に足した列を返す関数
+
+    Parameters
+    ----------
+    meta: dict[str, Any]
+        result.yaml の中身
+
+    Returns
+    ----------
+    columns: list[str]
+        足した列 (意思決定の無い結果は空. 入力の同じ名前の列は残す)
+    """
+    # 前の決め方の型の列だけ
+    decided = (meta.get("decision") or {}).get("decision") or {}
+    columns = list(TYPE_COLUMNS.get(str(decided.get("type")), []))
+
+    return columns
+
+
+def write_meta(place: Path, meta: dict[str, Any]) -> None:
+    """
+    結果の result.yaml を, 隣に書いてから置き換える関数
+
+    Parameters
+    ----------
+    place: Path
+        結果のディレクトリ
+    meta: dict[str, Any]
+        result.yaml の中身
+
+    Returns
+    ----------
+    None
+    """
+    # 読んでいる途中で壊れた中身を見せないように
+    temporary = place / f".result-{uuid.uuid4().hex[:8]}.yaml"
+    temporary.write_text(
+        yaml.safe_dump(meta, allow_unicode=True, sort_keys=False),
+        encoding="utf-8"
+    )
+    os.replace(temporary, place / "result.yaml")
+
+
+def decide_into(
+    place: Path, meta: dict[str, Any], bundle: ml_inference.Bundle,
+    decision: Optional[dict[str, Any]]
+) -> None:
+    """
+    保存した予測から意思決定をし直し, 結果を書き換える関数
+
+    Parameters
+    ----------
+    place: Path
+        結果のディレクトリ
+    meta: dict[str, Any]
+        result.yaml の中身
+    bundle: ml_inference.Bundle
+        結果の一式 (外れ方を使う)
+    decision: Optional[dict[str, Any]]
+        意思決定の決め方 (None で意思決定を外す)
+
+    Returns
+    ----------
+    None
+
+    Raises
+    ----------
+    ValueError
+        決め方に誤りがある場合
+    """
+    # 前の意思決定が足した列を除いた予測から決め直す (たどり直しの結果は
+    # 古くなる)
+    frame = read_frame(place, meta).drop(
+        columns=decision_columns(meta), errors="ignore"
+    )
+    meta = {**meta, "backtest": None}
+    if decision:
+        decided = ml_inference.decide(bundle, frame, decision)
+        frame = decided.pop("frame")
+        meta["decision"] = decided
+    else:
+        meta["decision"] = None
+    temporary = place / f".writing-{uuid.uuid4().hex[:8]}"
+    try:
+        ml_inference.write_result({**meta, "frame": frame}, temporary)
         for name in ("predictions.csv", "result.yaml"):
             os.replace(temporary / name, place / name)
     finally:
@@ -750,6 +863,9 @@ def result_view(result_id: str, place: Path) -> dict[str, Any]:
         "columns": columns,
         "kind": meta.get("kind"),
         "forecast": bool(meta.get("forecast")),
+        "decision": meta.get("decision"),
+        "backtest": meta.get("backtest"),
+        "has_target": bool(meta.get("has_target")),
         "explanation": meta.get("explanation"),
     }
 
@@ -998,12 +1114,141 @@ def explain_result(request: Request, result_id: str) -> dict[str, Any]:
     with RESULT_LOCK:
         meta = read_meta(place)
         meta["explanation"] = explanation
-        temporary = place / f".result-{uuid.uuid4().hex[:8]}.yaml"
-        temporary.write_text(
-            yaml.safe_dump(meta, allow_unicode=True, sort_keys=False),
-            encoding="utf-8"
+        write_meta(place, meta)
+    view = result_view(result_id, place)
+
+    return view
+
+
+def result_bundle(
+    request: Request, meta: dict[str, Any]
+) -> ml_inference.Bundle:
+    """
+    結果の一式を読む関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    meta: dict[str, Any]
+        result.yaml の中身
+
+    Returns
+    ----------
+    bundle: ml_inference.Bundle
+        一式
+
+    Raises
+    ----------
+    HTTPException
+        一式が登録されていない場合と読めない場合は 400
+    """
+    entry = get_store(request).find(str(meta.get("bundle_id")))
+    if entry is None:
+        raise HTTPException(400, "一式が登録されていないので決められません")
+    try:
+        bundle = open_bundle(str(entry["path"]))
+    except (OSError, *USER_ERRORS) as error:
+        raise user_error(error) from error
+
+    return bundle
+
+
+@router.post("/results/{result_id}/decide")
+def decide_again(
+    request: Request, result_id: str, body: DecideRequest
+) -> dict[str, Any]:
+    """
+    決め方を変えて意思決定だけをし直す関数 (推論はし直さない)
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    result_id: str
+        結果の id
+    body: DecideRequest
+        意思決定の決め方 (None で外す)
+
+    Returns
+    ----------
+    view: dict[str, Any]
+        書き換えた結果のまとめ
+
+    Raises
+    ----------
+    HTTPException
+        決め方に誤りがある場合は 400
+    """
+    # 一式の外れ方を使うので一式も読む
+    place = find_result(request, result_id)
+    bundle = result_bundle(request, read_meta(place))
+    with RESULT_LOCK:
+        try:
+            decide_into(place, read_meta(place), bundle, body.decision)
+        except ValueError as error:
+            raise user_error(error) from error
+    view = result_view(result_id, place)
+
+    return view
+
+
+@router.post("/results/{result_id}/backtest")
+def backtest_result(request: Request, result_id: str) -> dict[str, Any]:
+    """
+    結果の入力 (目的の列を持つ) で, 意思決定の方針をたどり直す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    result_id: str
+        結果の id
+
+    Returns
+    ----------
+    view: dict[str, Any]
+        たどり直し (backtest) を足した結果のまとめ
+
+    Raises
+    ----------
+    HTTPException
+        意思決定の無い結果, 入力のファイルが無い場合, 目的の列が無い
+        場合は 400
+    """
+    # 入力のファイルを読み直して, 方針と素朴なやり方を比べる
+    place = find_result(request, result_id)
+    meta = read_meta(place)
+    decided = meta.get("decision") or {}
+    source = meta.get("source_path")
+    if not decided.get("decision"):
+        raise HTTPException(400, "先に意思決定の決め方を選んでください")
+    if not source or not Path(source).exists() or meta.get("forecast"):
+        raise HTTPException(
+            400, "たどり直すには, 目的の列を持つ入力のファイルの結果が"
+            "要ります (書いた文と何段も先の予測の結果は除く)"
         )
-        os.replace(temporary, place / "result.yaml")
+    bundle = result_bundle(request, meta)
+    with PREDICT_LOCK:
+        try:
+            replay = ml_inference.backtest(
+                bundle, Path(source), decided["decision"],
+                options=meta.get("options")
+            )
+        except (OSError, *USER_ERRORS) as error:
+            raise user_error(error) from error
+    replay.pop("decision", None)
+    # たどり直している間に決め直していたら, 古い方針の結果は書かない
+    with RESULT_LOCK:
+        meta = read_meta(place)
+        now = (meta.get("decision") or {}).get("decision")
+        if now != decided["decision"]:
+            raise HTTPException(
+                409, "たどり直している間に意思決定が変わりました. もう一度"
+                "たどり直してください"
+            )
+        meta["backtest"] = replay
+        write_meta(place, meta)
     view = result_view(result_id, place)
 
     return view

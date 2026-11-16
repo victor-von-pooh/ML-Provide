@@ -434,3 +434,57 @@ def test_explain(tmp_path: Path, client: TestClient) -> None:
         f"/api/results/{result['id']}/conclude", json={"rules": {}}
     ).json()
     assert again["explanation"] == explanation
+
+
+def test_decision_flow(client: TestClient) -> None:
+    """
+    見本の既定の意思決定で推論し, 決め直しと過去のデータのたどり直しが
+    できることを確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+
+    Returns
+    ----------
+    None
+    """
+    # 解約の見本は対象を選ぶ既定値を持つ
+    added = client.post("/api/samples").json()
+    churn = next(b for b in added if "解約" in b["name"])
+    assert churn["description"]["decision"]["type"] == "select"
+
+    # 過去のデータ (目的の列あり) を既定の意思決定で推論
+    result = client.post(
+        f"/api/bundles/{churn['id']}/predict",
+        json={"source": churn["sample_past"],
+              "decision": churn["description"]["decision"]},
+    ).json()
+    assert result["decision"]["summary"]["acting"] == 10
+    assert result["has_target"] is True
+    rows = client.get(f"/api/results/{result['id']}/rows?limit=5").json()
+    assert "action" in rows["columns"] and "gain_if_acted" in rows["columns"]
+
+    # たどり直しと, 決め直し (振り分けに変える. たどり直しは古くなる)
+    replayed = client.post(f"/api/results/{result['id']}/backtest").json()
+    assert "この方針" in replayed["backtest"]["policies"]
+    triage = {"type": "triage", "positive": "解約", "miss_cost": 9,
+              "false_alarm_cost": 1}
+    again = client.post(f"/api/results/{result['id']}/decide",
+                        json={"decision": triage}).json()
+    assert again["decision"]["decision"]["type"] == "triage"
+    assert again["backtest"] is None
+    # 振り分けの列だけが残り, 選ぶ型の列は消える
+    columns = client.get(
+        f"/api/results/{result['id']}/rows?limit=5"
+    ).json()["columns"]
+    assert "expected_cost" in columns and "gain_if_acted" not in columns
+    bad = client.post(f"/api/results/{result['id']}/decide",
+                      json={"decision": {"type": "quantity"}})
+    assert bad.status_code == 400
+
+    # 意思決定を外す
+    off = client.post(f"/api/results/{result['id']}/decide",
+                      json={"decision": None}).json()
+    assert off["decision"] is None

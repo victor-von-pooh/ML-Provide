@@ -9,6 +9,7 @@ import type { Counts, Result } from '../../api/types'
 import { Button, Card, ErrorBox, PageHeader, Spinner, StatTile } from '../../components/ui'
 import { formatPercent, formatValue } from '../../lib/format'
 import { fromForm, toForm, type RulesForm } from '../../lib/rules'
+import { DecisionCard } from './DecisionCard'
 import { ExplainCard } from './ExplainCard'
 import { RulesEditor } from './RulesEditor'
 
@@ -19,7 +20,21 @@ const NEUTRAL = new Set(['保留', '予測なし'])
 const PAGE = 50
 
 // 予測と判断の列 (元の列と分けて右に寄せる)
-const OWN = new Set(['index', 'status', 'reason', 'step', 'prediction', 'confidence', 'decision'])
+const OWN = new Set([
+  'index',
+  'status',
+  'reason',
+  'step',
+  'prediction',
+  'confidence',
+  'decision',
+  'action',
+  'level',
+  'expected_cost',
+  'point_expected_cost',
+  'gain_if_acted',
+  'expected_gain',
+])
 
 /** 判断ごとの件数と割合の横棒 */
 function DecisionBars({ counts }: { counts: Counts }) {
@@ -404,6 +419,12 @@ export function ResultPage() {
           )}
           {summary && <DecisionBars counts={summary} />}
         </Card>
+        {/* 決め直した後は, 使った決め方で編集を作り直す */}
+        <DecisionCard
+          key={`decision:${JSON.stringify(data.decision?.decision ?? null)}`}
+          result={data}
+          bundleAlive={bundleAlive}
+        />
         {summary && (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <StatTile label="行" value={summary.rows.toLocaleString()} />
@@ -425,7 +446,10 @@ export function ResultPage() {
         <GroupTable result={data} />
         <ExplainCard result={data} bundleAlive={bundleAlive} />
         {/* 出し直した後は, 絞り込みとページを初めに戻す */}
-        <RowsTable key={`rows:${JSON.stringify(data.rules ?? {})}`} result={data} />
+        <RowsTable
+          key={`rows:${JSON.stringify(data.rules ?? {})}:${JSON.stringify(data.decision?.decision ?? null)}`}
+          result={data}
+        />
       </div>
     </>
   )

@@ -16,10 +16,11 @@ from torch import nn, optim
 STEPS = 300
 
 # 見本の作り方の版 (作り方を変えたら上げ, 置き場の古い見本を作り直す)
-SAMPLES_VERSION = 1
+SAMPLES_VERSION = 2
 
-# 推論を試す新しいデータの行の数
+# 推論を試す新しいデータと, たどり直しを試す過去のデータの行の数
 FRESH_ROWS = 50
+PAST_ROWS = 300
 
 
 def churn_frame(rng: np.random.Generator, count: int) -> pd.DataFrame:
@@ -36,7 +37,8 @@ def churn_frame(rng: np.random.Generator, count: int) -> pd.DataFrame:
     Returns
     ----------
     frame: pd.DataFrame
-        id, plan, months, calls, fee, label (解約 か 継続) の表
+        id, plan, months, calls, fee, yearly (1 年分の料金. 引き止めた
+        場合の価値の目安), label (解約 か 継続) の表
     """
     # 月ごとの契約, 短い利用, 多い問い合わせで高まる解約の点数
     plan = rng.choice(["月ごと", "年ごと"], size=count, p=[0.6, 0.4])
@@ -49,7 +51,7 @@ def churn_frame(rng: np.random.Generator, count: int) -> pd.DataFrame:
     )
     frame: pd.DataFrame = pd.DataFrame({
         "id": np.arange(1, count + 1), "plan": plan, "months": months,
-        "calls": calls, "fee": fee,
+        "calls": calls, "fee": fee, "yearly": fee * 12,
         "label": np.where(score > 0, "解約", "継続"),
     })
 
@@ -187,6 +189,33 @@ def daily_fresh(rng: np.random.Generator, count: int) -> pd.DataFrame:
     return frame
 
 
+def daily_past(rng: np.random.Generator, count: int) -> pd.DataFrame:
+    """
+    日々の売上の見本の, 売上の分かる過去の 60 日の表を作る関数
+
+    Parameters
+    ----------
+    rng: np.random.Generator
+        乱数
+    count: int
+        使わない (日の数は決まっている)
+
+    Returns
+    ----------
+    frame: pd.DataFrame
+        date, shop, sales の表 (学習のデータの日付の続き. 値は別に作った
+        系列)
+    """
+    # 学習のデータの日付の続きの 60 日
+    whole = daily_frame(rng, DAILY_DAYS + 60)
+    days = pd.to_datetime(whole["date"])
+    frame: pd.DataFrame = whole[
+        days > days.max() - pd.Timedelta(days=60)
+    ].reset_index(drop=True)
+
+    return frame
+
+
 # 日々の売上の見本の, 店ごとの日の数
 DAILY_DAYS = 300
 
@@ -197,12 +226,14 @@ SAMPLES: dict[str, tuple[Callable[..., pd.DataFrame], dict[str, Any]]] = {
     "見本: 解約の予測 (表の分類)": (churn_frame, {
         "target": "label", "task": "classification",
         "steps": [
-            {"op": "drop_columns", "columns": ["id"]},
+            {"op": "drop_columns", "columns": ["id", "yearly"]},
             {"op": "one_hot", "columns": ["plan"]},
             {"op": "standardize", "columns": "auto"},
         ],
         "split": {"method": "stratified", "valid": 0.2, "seed": 0},
         "options": {}, "conclusion": {"positive": "解約", "threshold": 0.4},
+        "decision": {"type": "select", "positive": "解約", "value": "yearly",
+                     "cost": 3000, "effect": 0.3, "budget": 10},
     }),
     "見本: 来店数の予測 (表の回帰)": (visitors_frame, {
         "target": "visitors", "task": "regression",
@@ -224,6 +255,9 @@ SAMPLES: dict[str, tuple[Callable[..., pd.DataFrame], dict[str, Any]]] = {
         "split": {"method": "stratified", "valid": 0.2, "seed": 0},
         "options": {"text_column": "review"},
         "conclusion": {"min_confidence": 0.8},
+        "decision": {"type": "triage", "positive": "悪い",
+                     "miss_cost": 5000, "false_alarm_cost": 500,
+                     "capacity": 10},
     }),
     "見本: 日々の売上の予測 (時系列, 先の予測)": (daily_frame, {
         "target": "sales", "task": "forecasting",
@@ -238,7 +272,8 @@ SAMPLES: dict[str, tuple[Callable[..., pd.DataFrame], dict[str, Any]]] = {
         ],
         "split": {"method": "time", "valid": 0.2},
         "options": {}, "rows": DAILY_DAYS, "fresh": daily_fresh,
-        "conclusion": {"group_by": "shop"},
+        "past": daily_past, "conclusion": {"group_by": "shop"},
+        "decision": {"type": "quantity", "under_cost": 3, "over_cost": 1},
     }),
 }
 
@@ -340,7 +375,7 @@ def train(
 
 def write_sample(
     root: Path, name: str, number: int, seed: int
-) -> tuple[Path, Path]:
+) -> tuple[Path, Path, Path]:
     """
     見本の 1 つ (データ, データセット, 一式, 新しいデータ) を書く関数
 
@@ -357,10 +392,12 @@ def write_sample(
 
     Returns
     ----------
-    paths: tuple[Path, Path]
-        一式のディレクトリと, 推論を試す新しいデータのファイル
+    paths: tuple[Path, Path, Path]
+        一式のディレクトリ, 推論を試す新しいデータのファイル, たどり直し
+        を試す目的の列のある過去のデータ (学習に使っていない行)
     """
-    # 学習用のデータと, 目的の列の無い新しいデータ
+    # 学習用のデータ, 目的の列の無い新しいデータ, 目的の列のある過去の
+    # データ (学習に使っていない行)
     maker, settings = SAMPLES[name]
     place = root / f"sample{number}"
     shutil.rmtree(place, ignore_errors=True)
@@ -374,6 +411,10 @@ def write_sample(
     else:
         fresh = maker(rng, FRESH_ROWS).drop(columns=[settings["target"]])
     fresh.to_csv(place / "new.csv", index=False)
+    past = settings["past"](rng, PAST_ROWS) if "past" in settings else (
+        maker(rng, PAST_ROWS)
+    )
+    past.to_csv(place / "past.csv", index=False)
 
     # 前処理して書き出し, 小さなモデルを学習して一式に
     recipe = {
@@ -392,14 +433,14 @@ def write_sample(
     ml_inference.make_bundle(
         place / "bundle", spec, place / "dataset", place / "weights.pt",
         target_scale=scale or None, conclusion=settings["conclusion"],
-        name=name
+        decision=settings.get("decision"), name=name
     )
     (place / "sample.yaml").write_text(
         yaml.safe_dump({"version": SAMPLES_VERSION, "name": name},
                        allow_unicode=True),
         encoding="utf-8"
     )
-    paths = (place / "bundle", place / "new.csv")
+    paths = (place / "bundle", place / "new.csv", place / "past.csv")
 
     return paths
 
@@ -431,13 +472,15 @@ def current(place: Path, name: str) -> bool:
         isinstance(mark, dict) and mark.get("version") == SAMPLES_VERSION
         and mark.get("name") == name
         and (place / "bundle" / "inference.yaml").is_file()
-        and (place / "new.csv").is_file()
+        and (place / "new.csv").is_file() and (place / "past.csv").is_file()
     )
 
     return ready
 
 
-def write_samples(root: Path, seed: int = 0) -> dict[str, tuple[Path, Path]]:
+def write_samples(
+    root: Path, seed: int = 0
+) -> dict[str, tuple[Path, Path, Path]]:
     """
     操作を試すための見本の一式を, 無いものだけ書く関数
 
@@ -450,16 +493,16 @@ def write_samples(root: Path, seed: int = 0) -> dict[str, tuple[Path, Path]]:
 
     Returns
     ----------
-    samples: dict[str, tuple[Path, Path]]
-        見本の名前から, 一式のディレクトリと新しいデータのファイル
+    samples: dict[str, tuple[Path, Path, Path]]
+        見本の名前から, 一式のディレクトリ, 新しいデータ, 過去のデータ
     """
     # 同じ版で作り終えた見本の再利用 (印のファイルは最後に書く)
     samples = {}
     for number, name in enumerate(SAMPLES):
         place = root / f"sample{number}"
-        bundle, fresh = place / "bundle", place / "new.csv"
+        paths = (place / "bundle", place / "new.csv", place / "past.csv")
         if not current(place, name):
-            bundle, fresh = write_sample(root, name, number, seed)
-        samples[name] = (bundle, fresh)
+            paths = write_sample(root, name, number, seed)
+        samples[name] = paths
 
     return samples
