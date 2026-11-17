@@ -321,16 +321,25 @@ export function BundlePage() {
     <>
       <PageHeader
         title={data.name}
-        subtitle={<span className="font-mono">{data.path}</span>}
+        subtitle={
+          <span className="font-mono">
+            {data.path}
+            {data.copied_from && (
+              <span className="font-sans"> (写した元の学習の実験: {data.copied_from})</span>
+            )}
+          </span>
+        }
         breadcrumb={<Link to="/">推論の一式</Link>}
         actions={
           <Button
             variant="danger"
             icon={Trash2}
             onClick={() => {
-              const message = data.managed
-                ? 'この一式を消しますか? (このアプリが作った一式なので, ファイルも消します. 結果は残ります)'
-                : '登録を外しますか? (一式のファイルは残ります)'
+              const message = data.copied_from
+                ? 'この一式を消しますか? (学習の実験から写した一式なので, 写しを消します. 写した元の実験の一式は残ります. 結果は残ります)'
+                : data.managed
+                  ? 'この一式を消しますか? (このアプリが作った一式なので, ファイルも消します. 結果は残ります)'
+                  : '登録を外しますか? (一式のファイルは残ります)'
               if (window.confirm(message)) remove.mutate()
             }}
           >

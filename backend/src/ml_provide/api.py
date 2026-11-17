@@ -520,12 +520,24 @@ def restore_uncertainty(request: Request, bundle_id: str) -> dict[str, Any]:
     HTTPException
         戻せる記録が無い場合と, 書けない場合は 400
     """
-    # 推論と同じ鍵の中での書き戻し (測り直しと重ならないように)
-    entry = find_bundle(request, bundle_id)
+    # 推論と同じ鍵の中での書き戻し (測り直しと重ならないように). 学習の
+    # 実験の中の一式は, 書き戻しと同じく置き場に写した方への書き戻し
+    find_bundle(request, bundle_id)
+    store = get_store(request)
     with PREDICT_LOCK:
+        entry = find_bundle(request, bundle_id)
+        copied = None
+        target = Path(entry["path"])
         try:
-            ml_inference.restore_uncertainty(str(entry["path"]))
-        except (OSError, *USER_ERRORS) as error:
+            if in_experiment(target):
+                copied = copy_into_store(store, entry)
+                target = copied
+            ml_inference.restore_uncertainty(str(target))
+            if copied is not None:
+                entry = store.relocate(entry["id"], copied)
+        except (OSError, KeyError, *USER_ERRORS) as error:
+            if copied is not None:
+                shutil.rmtree(copied, ignore_errors=True)
             raise user_error(error) from error
     view = bundle_view(entry)
 
@@ -1331,22 +1343,91 @@ def remeasure_result(
             400, "測り直すには, 目的の列を持つ入力のファイルの結果が要ります"
             " (書いた文と何段も先の予測の結果は除く)"
         )
-    entry = get_store(request).find(str(meta.get("bundle_id")))
-    if entry is None:
-        raise HTTPException(400, "一式が登録されていないので測り直せません")
+    store = get_store(request)
     with PREDICT_LOCK:
+        # 登録は鍵の中で読み直し (同時の書き戻しで二重に写さないように)
+        entry = store.find(str(meta.get("bundle_id")))
+        if entry is None:
+            raise HTTPException(400, "一式が登録されていないので測り直せません")
+
+        # 学習の実験の中の一式は書き換えず, 置き場に写した方への書き戻し
+        # (実験は書き換えないという ML-Found の約束). 登録を移すのは
+        # 書き戻せた後だけで, 失敗したら写しを消去
+        copied = None
+        target = Path(entry["path"])
         try:
+            if body.write and in_experiment(target):
+                copied = copy_into_store(store, entry)
+                target = copied
             measured = ml_inference.remeasure(
-                str(entry["path"]), Path(source),
+                str(target), Path(source),
                 options=meta.get("options"), write=body.write,
                 horizon=body.horizon, time=body.time or None
             )
-        except (OSError, *USER_ERRORS) as error:
+            if copied is not None:
+                store.relocate(entry["id"], copied)
+        except (OSError, KeyError, *USER_ERRORS) as error:
+            if copied is not None:
+                shutil.rmtree(copied, ignore_errors=True)
             raise user_error(error) from error
     view = {key: measured[key]
             for key in ("rows", "before", "sentences", "written")}
+    view["copied_to"] = str(copied) if copied else None
+    if copied:
+        view["sentences"] = [
+            "学習の実験の中の一式は書き換えず, ML-Provide の置き場に写して"
+            "から書き戻しました (この一式の登録は写した方を指します)",
+            *view["sentences"],
+        ]
 
     return view
+
+
+def in_experiment(path: Path) -> bool:
+    """
+    一式が ML-Found の実験のディレクトリの中にあるかを返す関数
+
+    Parameters
+    ----------
+    path: Path
+        一式のディレクトリ
+
+    Returns
+    ----------
+    inside: bool
+        一式か, その上のディレクトリが run.json を持つか (学習の
+        スクリプトは実験の中の inference に一式を作る)
+    """
+    # 一式自身, その親, そのまた親の run.json の有無
+    resolved = path.resolve()
+    inside = any((parent / "run.json").is_file()
+                 for parent in (resolved, *resolved.parents[:2]))
+
+    return inside
+
+
+def copy_into_store(store: Store, entry: dict[str, Any]) -> Path:
+    """
+    登録した一式を置き場に写す関数
+
+    Parameters
+    ----------
+    store: Store
+        置き場
+    entry: dict[str, Any]
+        一式の登録
+
+    Returns
+    ----------
+    place: Path
+        写した一式のディレクトリ (置き場の bundles の下)
+    """
+    # 一式の中の重みごとの写し (外の重みは絶対パスのまま)
+    _, place = store.new_bundle_dir()
+    place.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(entry["path"], place)
+
+    return place
 
 
 @router.get("/results/{result_id}/download")

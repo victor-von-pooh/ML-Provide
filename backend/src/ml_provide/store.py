@@ -181,6 +181,11 @@ class Store:
             resolved = str(path.resolve())
             if any(item.get("path") == resolved for item in bundles):
                 raise ValueError(f"{resolved} は既に登録されています")
+            if any(item.get("copied_from") == resolved for item in bundles):
+                raise ValueError(
+                    f"{resolved} は外れ方を書き戻したときに置き場へ写して"
+                    "登録してあります (登録の一覧の写した方を使ってください)"
+                )
             bundle = {
                 "id": bundle_id or uuid.uuid4().hex[:12],
                 "name": name,
@@ -190,6 +195,41 @@ class Store:
                 **(extra or {}),
             }
             bundles.append(bundle)
+            self.write(bundles)
+
+        return bundle
+
+    def relocate(self, bundle_id: str, path: Path) -> dict[str, Any]:
+        """
+        登録した一式の場所を, 置き場に写した一式に移す関数
+
+        Parameters
+        ----------
+        bundle_id: str
+            一式の id
+        path: Path
+            写した一式のディレクトリ (置き場の中)
+
+        Returns
+        ----------
+        bundle: dict[str, Any]
+            移した後の登録 (置き場で作った一式として扱う)
+
+        Raises
+        ----------
+        KeyError
+            登録が無い場合
+        """
+        # 場所と, 消すときに一式も消す印 (元の場所は登録に残す)
+        with self.lock:
+            bundles = self.read()
+            bundle = next((item for item in bundles
+                           if item.get("id") == bundle_id), None)
+            if bundle is None:
+                raise KeyError(bundle_id)
+            bundle["copied_from"] = bundle["path"]
+            bundle["path"] = str(path.resolve())
+            bundle["managed"] = True
             self.write(bundles)
 
         return bundle

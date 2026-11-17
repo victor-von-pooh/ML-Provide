@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -558,3 +559,71 @@ def test_remeasure(client: TestClient) -> None:
     bad = client.post(f"/api/results/{fresh['id']}/remeasure",
                       json={"write": False})
     assert bad.status_code == 400
+
+
+def test_remeasure_keeps_experiment(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """
+    学習の実験の中の一式に書き戻すときは, 実験を書き換えずに置き場へ写す
+    ことを確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    tmp_path: Path
+        一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 見本の一式を, 実験のディレクトリの中の inference に写して登録
+    added = client.post("/api/samples").json()
+    shop = next(b for b in added if "来店数" in b["name"])
+    run = tmp_path / "outputs" / "shop" / "2026-11-17" / "22-00-00"
+    run.mkdir(parents=True)
+    (run / "run.json").write_text("{}", encoding="utf-8")
+    shutil.copytree(shop["path"], run / "inference")
+    original = (run / "inference" / "inference.yaml").read_text("utf-8")
+    entry = client.post("/api/bundles",
+                        json={"path": str(run / "inference")}).json()
+    result = client.post(
+        f"/api/bundles/{entry['id']}/predict",
+        json={"source": shop["sample_past"], "decision": {}},
+    ).json()
+
+    # 確かめるだけなら写さず, 書き戻すと写した方への書き込み
+    checked = client.post(f"/api/results/{result['id']}/remeasure",
+                          json={"write": False}).json()
+    assert checked["copied_to"] is None
+    saved = client.post(f"/api/results/{result['id']}/remeasure",
+                        json={"write": True}).json()
+    assert saved["written"] is True and saved["copied_to"]
+    assert "書き換えず" in saved["sentences"][0]
+    assert (run / "inference" / "inference.yaml").read_text("utf-8") == (
+        original
+    )
+    moved = client.get(f"/api/bundles/{entry['id']}").json()
+    assert moved["path"] == saved["copied_to"]
+    assert moved["description"]["uncertainty"]["split"] == "recent"
+    assert moved["copied_from"] == str((run / "inference").resolve())
+
+    # 2 回目は写した方に書き, 戻すのも写した方. 実験のファイルは変わらない
+    before = {p: p.read_bytes() for p in run.rglob("*") if p.is_file()}
+    again = client.post(f"/api/results/{result['id']}/remeasure",
+                        json={"write": True}).json()
+    assert again["copied_to"] is None
+    back = client.post(f"/api/bundles/{entry['id']}/restore-uncertainty")
+    assert back.status_code == 200
+    assert {p: p.read_bytes() for p in run.rglob("*") if p.is_file()} == (
+        before
+    )
+
+    # 写した元の場所はもう一度登録できない. 消すと写しだけが消える
+    twice = client.post("/api/bundles", json={"path": str(run / "inference")})
+    assert twice.status_code == 400
+    assert client.delete(f"/api/bundles/{entry['id']}").status_code == 204
+    assert not Path(saved["copied_to"]).exists()
+    assert (run / "inference" / "inference.yaml").is_file()
