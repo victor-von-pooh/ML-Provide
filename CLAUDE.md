@@ -13,7 +13,7 @@ ML-Inference を使って, 学習したモデルで新しいデータを推論�
 
 - Python: [ML-Inference/CODING_STYLE.md](ML-Inference/CODING_STYLE.md) に従う (日本語の NumPy 形式の docstring, コメントは体言止め, 79 文字以内など). Ruff と mypy (strict) を通す
 - TypeScript: Prettier と oxlint に従い, `strict` で型検査を通す. コメントは日本語で書く
-- ドキュメントとコードのコメントでは, 「機械学習を全て GUI 上で行う」という目的のために開発しているリポジトリ (今は ML-Found, ML-Dashboard, ML-ModelControl, ML-CreateArchitecture, ML-EDA, ML-Fathom, ML-Inference, ML-Provide, ML_tester) 以外に触れない. ローカルのディレクトリ構成やパスも書かない
+- ドキュメントとコードのコメントでは, 「機械学習を全て GUI 上で行う」という目的のために開発しているリポジトリ (今は ML-Found, ML-Dashboard, ML-ModelControl, ML-CreateArchitecture, ML-EDA, ML-Fathom, ML-Inference, ML-Provide, ML-Quest, ML-Pathfinder, ML_tester) 以外に触れない. ローカルのディレクトリ構成やパスも書かない
 
 ## 進める流れ
 
