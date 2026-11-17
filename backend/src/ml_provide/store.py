@@ -181,6 +181,11 @@ class Store:
             resolved = str(path.resolve())
             if any(item.get("path") == resolved for item in bundles):
                 raise ValueError(f"{resolved} は既に登録されています")
+            if any(item.get("copied_from") == resolved for item in bundles):
+                raise ValueError(
+                    f"{resolved} は外れ方を書き戻したときに置き場へ写して"
+                    "登録してあります (登録の一覧の写した方を使ってください)"
+                )
             bundle = {
                 "id": bundle_id or uuid.uuid4().hex[:12],
                 "name": name,

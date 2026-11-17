@@ -110,6 +110,8 @@ export interface Bundle {
   path: string
   managed: boolean
   added_at: string
+  /** 学習の実験の中から置き場に写した一式の, 写した元 */
+  copied_from?: string
   /** 見本の一式の, 推論を試す新しいデータ */
   sample_input?: string
   /** 見本の一式の, たどり直しを試す目的の列のある過去のデータ */
