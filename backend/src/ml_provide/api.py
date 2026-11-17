@@ -1331,10 +1331,17 @@ def remeasure_result(
             400, "測り直すには, 目的の列を持つ入力のファイルの結果が要ります"
             " (書いた文と何段も先の予測の結果は除く)"
         )
-    entry = get_store(request).find(str(meta.get("bundle_id")))
+    store = get_store(request)
+    entry = store.find(str(meta.get("bundle_id")))
     if entry is None:
         raise HTTPException(400, "一式が登録されていないので測り直せません")
     with PREDICT_LOCK:
+        # 学習の実験の中の一式は書き換えず, 置き場に写してから書き戻す
+        # (実験は書き換えないという ML-Found の約束)
+        copied = None
+        if body.write and in_experiment(Path(entry["path"])):
+            copied = copy_into_store(store, entry)
+            entry = store.relocate(entry["id"], copied)
         try:
             measured = ml_inference.remeasure(
                 str(entry["path"]), Path(source),
@@ -1345,8 +1352,62 @@ def remeasure_result(
             raise user_error(error) from error
     view = {key: measured[key]
             for key in ("rows", "before", "sentences", "written")}
+    view["copied_to"] = str(copied) if copied else None
+    if copied:
+        view["sentences"] = [
+            "学習の実験の中の一式は書き換えず, ML-Provide の置き場に写して"
+            "から書き戻しました (この一式の登録は写した方を指します)",
+            *view["sentences"],
+        ]
 
     return view
+
+
+def in_experiment(path: Path) -> bool:
+    """
+    一式が ML-Found の実験のディレクトリの中にあるかを返す関数
+
+    Parameters
+    ----------
+    path: Path
+        一式のディレクトリ
+
+    Returns
+    ----------
+    inside: bool
+        一式か, その上のディレクトリが run.json を持つか (学習の
+        スクリプトは実験の中の inference に一式を作る)
+    """
+    # 一式の親か, その親 (実験の中の別の場所) まで
+    resolved = path.resolve()
+    inside = any((parent / "run.json").is_file()
+                 for parent in (resolved, *resolved.parents[:2]))
+
+    return inside
+
+
+def copy_into_store(store: Store, entry: dict[str, Any]) -> Path:
+    """
+    登録した一式を置き場に写す関数
+
+    Parameters
+    ----------
+    store: Store
+        置き場
+    entry: dict[str, Any]
+        一式の登録
+
+    Returns
+    ----------
+    place: Path
+        写した一式のディレクトリ (置き場の bundles の下)
+    """
+    # 重みも一式の中にあれば一緒に写る (外の重みは絶対パスのまま)
+    _, place = store.new_bundle_dir()
+    place.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(entry["path"], place)
+
+    return place
 
 
 @router.get("/results/{result_id}/download")

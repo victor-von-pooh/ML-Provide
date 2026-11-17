@@ -230,4 +230,6 @@ export interface Remeasure {
   before: { coverage?: Record<'80' | '90', number>; ece?: number }
   sentences: string[]
   written: boolean
+  /** 学習の実験の中の一式を書き戻すために写した場所 (写さなければ null) */
+  copied_to: string | null
 }
