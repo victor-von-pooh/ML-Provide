@@ -116,6 +116,8 @@ export interface Bundle {
   sample_input?: string
   /** 見本の一式の, たどり直しを試す目的の列のある過去のデータ */
   sample_past?: string
+  /** つないだ問題の設定 (problem.yaml) の場所 */
+  problem?: string
   ok: boolean
   error: string | null
   description: Description | null
@@ -234,4 +236,36 @@ export interface Remeasure {
   written: boolean
   /** 学習の実験の中の一式を書き戻すために写した場所 (写さなければ null) */
   copied_to: string | null
+}
+
+/** 一式につないだ問題の設定から読んだ推論の値 */
+export interface LinkedProblem {
+  name: string
+  path: string
+  /** 問題の設定のファイルの中身の印 (変わったら既定を読み直す) */
+  version: string
+  created_at: string
+  /** 意思決定 (意思決定しない問題の設定は null) */
+  decision: Decision | null
+  /** 一式の既定値に問題の設定の値を重ねた結論の決め方 */
+  conclusion: Rules
+  /** 何期先まで予測するか */
+  horizon: number | null
+  /** 損得の値の根拠 */
+  basis: string | null
+  /** 意思決定の文 */
+  text: string
+  /** 一式との食い違い */
+  issues: string[]
+}
+
+/** 一式と問題の設定のつなぎの状態 */
+export interface ProblemState {
+  /** つないだ場所 (つないでいなければ null) */
+  path: string | null
+  linked: LinkedProblem | null
+  /** つないだ問題の設定を読めない理由 */
+  error: string | null
+  /** つないでいない一式の, 上のディレクトリで見つけた候補 */
+  hint: string | null
 }

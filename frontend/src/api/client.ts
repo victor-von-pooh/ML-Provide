@@ -3,6 +3,7 @@ import type {
   BundleCreateBody,
   Decision,
   Listing,
+  ProblemState,
   Remeasure,
   Result,
   Rows,
@@ -65,6 +66,9 @@ export const api = {
   restoreUncertainty: (id: string) =>
     request<Bundle>(`/api/bundles/${id}/restore-uncertainty`, json('POST', {})),
   deleteBundle: (id: string) => request<void>(`/api/bundles/${id}`, { method: 'DELETE' }),
+  bundleProblem: (id: string) => request<ProblemState>(`/api/bundles/${id}/problem`),
+  linkProblem: (id: string, path: string | null) =>
+    request<ProblemState>(`/api/bundles/${id}/problem`, json('PUT', { path })),
   predict: (
     id: string,
     body: {

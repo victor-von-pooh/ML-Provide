@@ -43,6 +43,8 @@ export function PathPicker({
         className="mb-3 flex gap-2"
         onSubmit={(event) => {
           event.preventDefault()
+          // 対話は外側のフォームの中に置かれるので, 外側のフォームまで送らない
+          event.stopPropagation()
           // ディレクトリなら開き, ファイルならそれを選ぶ
           const value = typed.trim()
           if (!value) return

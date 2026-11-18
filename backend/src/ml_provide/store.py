@@ -234,6 +234,48 @@ class Store:
 
         return bundle
 
+    def link_problem(
+        self, bundle_id: str, problem: Optional[str],
+        created: Optional[str] = None
+    ) -> dict[str, Any]:
+        """
+        登録した一式に問題の設定をつなぐか, つなぎを外す関数
+
+        Parameters
+        ----------
+        bundle_id: str
+            一式の id
+        problem: Optional[str]
+            problem.yaml の場所 (None で外す)
+        created: Optional[str] = None
+            問題の設定を作った時刻 (置き換わったことを見分けるため)
+
+        Returns
+        ----------
+        bundle: dict[str, Any]
+            変えた後の登録
+
+        Raises
+        ----------
+        KeyError
+            登録が無い場合
+        """
+        # 場所と作った時刻の組 (外すときは両方とも除く)
+        with self.lock:
+            bundles = self.read()
+            bundle = next((item for item in bundles
+                           if item.get("id") == bundle_id), None)
+            if bundle is None:
+                raise KeyError(bundle_id)
+            bundle.pop("problem", None)
+            bundle.pop("problem_created", None)
+            if problem is not None:
+                bundle["problem"] = problem
+                bundle["problem_created"] = created
+            self.write(bundles)
+
+        return bundle
+
     def remove(self, bundle_id: str) -> bool:
         """
         一式の登録を消す関数 (置き場で作った一式は一式も消す)
