@@ -97,7 +97,16 @@ export function DecisionEditor({
                   }
                   className={`${field} w-56`}
                 >
-                  <option value="">{item.optional ? '既定' : '選ぶ'}</option>
+                  <option value="">
+                    {item.optional ? `既定 (${item.choices[0]?.label ?? ''})` : '選ぶ'}
+                  </option>
+                  {/* 既定値などの選択肢に無い値も出す (選び直せるように) */}
+                  {form.values[item.key] &&
+                    !item.choices.some((choice) => choice.value === form.values[item.key]) && (
+                      <option value={form.values[item.key]}>
+                        {form.values[item.key]} (知らない値)
+                      </option>
+                    )}
                   {item.choices.map((choice) => (
                     <option key={choice.value} value={choice.value}>
                       {choice.label}
