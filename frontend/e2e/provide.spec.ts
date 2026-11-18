@@ -1,3 +1,5 @@
+import path from 'node:path'
+
 import { expect, test } from '@playwright/test'
 
 test.describe.configure({ mode: 'serial' })
@@ -184,4 +186,36 @@ test('日々の売上の見本の過去のデータで, 7 段先までの外れ�
     .first()
     .click()
   await expect(page.getByText(/何段も先の外れ方は 7 段目まで段ごと/)).toBeVisible()
+})
+
+test('日々の売上の見本に問題の設定をつなぐと, 損得と根拠が既定になる', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('link', { name: '見本: 日々の売上の予測 (時系列, 先の予測)' }).click()
+  // 一式の既定値 (欠品 3, 余り 1)
+  const under = page.getByLabel('1 単位足りないときの損 (欠品の利益など)')
+  await expect(under).toHaveValue('3')
+
+  // つなぐと, 問題の設定の損得と根拠
+  await page
+    .getByLabel('問題の設定 (problem.yaml か, それを持つディレクトリ)')
+    .fill(path.resolve(import.meta.dirname, '.work', 'problem'))
+  await page.getByRole('button', { name: 'つなぐ', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '問題の設定: 総菜の作る量' })).toBeVisible()
+  await expect(page.getByText('損得の根拠: 欠品は粗利 200 円, 廃棄は原価 150 円')).toBeVisible()
+  await expect(under).toHaveValue('200')
+  await expect(page.getByText(/問題の設定「総菜の作る量」の損得/)).toBeVisible()
+
+  // その値で推論できる
+  await page.getByRole('button', { name: /見本の過去のデータ/ }).click()
+  await page.getByRole('button', { name: '推論する' }).click()
+  await expect(page.getByText(/件のうち/).first()).toBeVisible({ timeout: 30_000 })
+
+  // 外すと一式の既定値に戻る
+  await page
+    .getByRole('link', { name: '見本: 日々の売上の予測 (時系列, 先の予測)' })
+    .first()
+    .click()
+  await page.getByRole('button', { name: 'つなぎを外す' }).click()
+  await expect(page.getByRole('heading', { name: '問題の設定', exact: true })).toBeVisible()
+  await expect(under).toHaveValue('3')
 })

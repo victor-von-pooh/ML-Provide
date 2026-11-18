@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 
 import { api } from '../../api/client'
-import type { Bundle, Description, UncertaintySummary } from '../../api/types'
+import type { Bundle, Description, LinkedProblem, UncertaintySummary } from '../../api/types'
 import { PathField } from '../../components/PathPicker'
 import { Button, Card, ErrorBox, PageHeader, Spinner } from '../../components/ui'
 import { formatNumber, KIND_LABELS, TASK_LABELS } from '../../lib/format'
@@ -13,6 +13,7 @@ import { fromForm, toForm, withCleared, type RulesForm } from '../../lib/rules'
 import { DecisionEditor } from '../results/DecisionEditor'
 import { ResultList } from '../results/ResultList'
 import { RulesEditor } from '../results/RulesEditor'
+import { ProblemCard } from './ProblemCard'
 
 /** 説明の 1 行 */
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -109,8 +110,19 @@ function DescriptionView({ description }: { description: Description }) {
   )
 }
 
-/** 推論するデータと結論の決め方を選んで推論する */
-function PredictCard({ bundle, description }: { bundle: Bundle; description: Description }) {
+/**
+ * 推論するデータと結論の決め方を選んで推論する.
+ * 問題の設定をつないだ一式は, 意思決定と結論の決め方の既定を問題の設定の値にする
+ */
+function PredictCard({
+  bundle,
+  description,
+  linked,
+}: {
+  bundle: Bundle
+  description: Description
+  linked: LinkedProblem | null
+}) {
   const navigate = useNavigate()
   const client = useQueryClient()
   const textual = description.kind === 'text' && !!description.text_column
@@ -120,11 +132,22 @@ function PredictCard({ bundle, description }: { bundle: Bundle; description: Des
   // 目的の列の過去の値を使う回帰と予測の一式は, 何段も先まで予測できる
   const canForecast = !!description.forecastable
   const [ahead, setAhead] = useState(false)
-  const [form, setForm] = useState<RulesForm>(() => toForm(description.conclusion))
+  const defaults = linked
+    ? { conclusion: linked.conclusion, decision: linked.decision }
+    : { conclusion: description.conclusion, decision: description.decision }
+  const [form, setForm] = useState<RulesForm>(() => toForm(defaults.conclusion))
   const { rules, problems: ruleProblems } = fromForm(form, description.task, description.classes)
   const [decisionForm, setDecisionForm] = useState<DecisionForm>(() =>
-    toDecisionForm(description.decision),
+    toDecisionForm(defaults.decision),
   )
+  // つないだ問題の設定が変わったら (つなぐ, 外す, 中身を直す), 既定を読み直す
+  const defaultsKey = linked ? linked.version : 'bundle'
+  const [seenKey, setSeenKey] = useState(defaultsKey)
+  if (seenKey !== defaultsKey) {
+    setSeenKey(defaultsKey)
+    setForm(toForm(defaults.conclusion))
+    setDecisionForm(toDecisionForm(defaults.decision))
+  }
   const { decision, problems: decisionProblems } = fromDecisionForm(
     decisionForm,
     description.classes,
@@ -240,6 +263,11 @@ function PredictCard({ bundle, description }: { bundle: Bundle; description: Des
             />
             <div>
               <label htmlFor="predict-ahead">何段も先まで予測する</label>
+              {linked?.horizon != null && linked.horizon > 1 && (
+                <p className="text-xs text-ink-2">
+                  問題の設定では {linked.horizon} 期先まで予測します
+                </p>
+              )}
               <p id="predict-ahead-note" className="text-xs text-ink-3">
                 目的の列が空の先の行を,
                 予測した値を次の行の過去の値に使いながら系列ごとに順に予測します.
@@ -252,6 +280,11 @@ function PredictCard({ bundle, description }: { bundle: Bundle; description: Des
           <h3 className="mb-2 text-xs font-semibold text-ink-2">
             意思決定 (任意. だから何をするか. 結果の画面で変えて決め直せます)
           </h3>
+          {linked && (
+            <p className="mb-2 text-xs text-ink-3">
+              問題の設定「{linked.name}」の損得と結論の決め方を既定にしています
+            </p>
+          )}
           <DecisionEditor
             form={decisionForm}
             onChange={setDecisionForm}
@@ -305,6 +338,10 @@ export function BundlePage() {
   const client = useQueryClient()
   const bundle = useQuery({ queryKey: ['bundles', id], queryFn: () => api.bundle(id) })
   const results = useQuery({ queryKey: ['results', id], queryFn: () => api.results(id) })
+  const problem = useQuery({
+    queryKey: ['bundle-problem', id],
+    queryFn: () => api.bundleProblem(id),
+  })
   const remove = useMutation({
     mutationFn: () => api.deleteBundle(id),
     onSuccess: () => {
@@ -359,7 +396,17 @@ export function BundlePage() {
             </div>
           )}
           <div className="flex min-w-0 flex-col gap-4">
-            <PredictCard bundle={data} description={data.description} />
+            {problem.isPending && <Spinner label="問題の設定を読んでいます" />}
+            {problem.error && <ErrorBox error={problem.error} />}
+            {problem.data && <ProblemCard bundleId={data.id} state={problem.data} />}
+            {/* 問題の設定を読み終えてから, その値を既定にして出す */}
+            {!problem.isPending && (
+              <PredictCard
+                bundle={data}
+                description={data.description}
+                linked={problem.data?.linked ?? null}
+              />
+            )}
             <Card title="一式の説明">
               <DescriptionView description={data.description} />
               {data.description.uncertainty?.restorable && <RestoreButton bundle={data} />}
