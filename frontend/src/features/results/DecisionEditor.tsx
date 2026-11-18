@@ -1,5 +1,5 @@
 import type { DecisionForm } from '../../lib/decision'
-import { DECISION_TYPES, NUMBER_ONLY } from '../../lib/decision'
+import { DECISION_TYPES, NUMBER_ONLY, visibleFields } from '../../lib/decision'
 
 const field = 'h-8 rounded-lg border border-line bg-surface px-2 text-sm'
 
@@ -76,7 +76,7 @@ export function DecisionEditor({
               </select>
             </div>
           )}
-          {spec.fields.map((item) => (
+          {visibleFields(form).map((item) => (
             <div key={item.key}>
               <label
                 htmlFor={`${idBase}-${item.key}`}
@@ -85,15 +85,39 @@ export function DecisionEditor({
                 {item.label}
                 {item.optional && ' (任意)'}
               </label>
-              <input
-                id={`${idBase}-${item.key}`}
-                inputMode={NUMBER_ONLY.has(item.key) ? 'decimal' : undefined}
-                value={form.values[item.key] ?? ''}
-                onChange={(event) =>
-                  onChange({ ...form, values: { ...form.values, [item.key]: event.target.value } })
-                }
-                className={`${field} w-56`}
-              />
+              {item.choices ? (
+                <select
+                  id={`${idBase}-${item.key}`}
+                  value={form.values[item.key] ?? ''}
+                  onChange={(event) =>
+                    onChange({
+                      ...form,
+                      values: { ...form.values, [item.key]: event.target.value },
+                    })
+                  }
+                  className={`${field} w-56`}
+                >
+                  <option value="">{item.optional ? '既定' : '選ぶ'}</option>
+                  {item.choices.map((choice) => (
+                    <option key={choice.value} value={choice.value}>
+                      {choice.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  id={`${idBase}-${item.key}`}
+                  inputMode={NUMBER_ONLY.has(item.key) ? 'decimal' : undefined}
+                  value={form.values[item.key] ?? ''}
+                  onChange={(event) =>
+                    onChange({
+                      ...form,
+                      values: { ...form.values, [item.key]: event.target.value },
+                    })
+                  }
+                  className={`${field} w-56`}
+                />
+              )}
             </div>
           ))}
         </div>

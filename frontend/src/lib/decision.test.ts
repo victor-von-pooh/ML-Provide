@@ -1,4 +1,4 @@
-import { fromDecisionForm, toDecisionForm } from './decision'
+import { fromDecisionForm, toDecisionForm, visibleFields } from './decision'
 
 describe('意思決定の編集', () => {
   it('数と列の名前を分けて渡す', () => {
@@ -36,6 +36,41 @@ describe('意思決定の編集', () => {
     expect(decision?.value).toBe(12000)
     expect(problems.some((p) => p.includes('0 から 1'))).toBe(true)
     expect(problems.some((p) => p.includes('整数'))).toBe(true)
+  })
+
+  it('効果を確率の差で渡すときは向きを求め, 負の差も通す', () => {
+    const base = { value: '1000', cost: '50', effect: '-0.2', effect_kind: 'uplift' }
+    const form = { type: 'select' as const, positive: 'いる', values: base }
+    const { problems } = fromDecisionForm(form, ['いる', 'いない'])
+    expect(problems).toEqual([
+      '「当たりをどうしたいか (減らすなら差が負, 増やすなら正が得)」を書いてください',
+    ])
+    const done = fromDecisionForm({ ...form, values: { ...base, effect_goal: 'reduce' } }, [
+      'いる',
+      'いない',
+    ])
+    expect(done).toEqual({
+      decision: {
+        type: 'select',
+        positive: 'いる',
+        value: 1000,
+        cost: 50,
+        effect: -0.2,
+        effect_kind: 'uplift',
+        effect_goal: 'reduce',
+      },
+      problems: [],
+    })
+    expect(visibleFields(form).some((f) => f.key === 'effect_goal')).toBe(true)
+  })
+
+  it('防げる割合では向きを渡さず, 負の効果は誤り', () => {
+    const values = { value: '1000', cost: '50', effect: '-0.2', effect_goal: 'reduce' }
+    const form = { type: 'select' as const, positive: 'いる', values }
+    const { decision, problems } = fromDecisionForm(form, ['いる', 'いない'])
+    expect(decision?.effect_goal).toBeUndefined()
+    expect(problems.some((p) => p.includes('0 以上'))).toBe(true)
+    expect(visibleFields(form).some((f) => f.key === 'effect_goal')).toBe(false)
   })
 
   it('選ばなければ意思決定しない', () => {
