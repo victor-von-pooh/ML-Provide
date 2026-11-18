@@ -1,40 +1,92 @@
 import type { Decision } from '../api/types'
 
-/** 意思決定の型の名前と, 型ごとの欄 (名前, 説明, 省けるか) */
-export const DECISION_TYPES: Record<
-  Decision['type'],
-  { label: string; fields: { key: string; label: string; optional?: boolean }[] }
-> = {
-  quantity: {
-    label: '量を決める (補充, 仕入れ, 人員)',
-    fields: [
-      { key: 'under_cost', label: '1 単位足りないときの損 (欠品の利益など)' },
-      { key: 'over_cost', label: '1 単位余ったときの損 (捨てるなら原価, 持ち越すなら保管の費用)' },
-      { key: 'stock', label: '今ある量 (数か列の名前)', optional: true },
-      { key: 'step', label: '量の刻み (箱の単位など)', optional: true },
-      { key: 'current', label: '今のやり方で足した量の列 (たどり直しで比べる)', optional: true },
-    ],
-  },
-  select: {
-    label: '対象を選ぶ (引き止め, 営業先, 点検)',
-    fields: [
-      { key: 'value', label: '当たり 1 件の価値 (数か列の名前)' },
-      { key: 'cost', label: '行動 1 件の費用 (数か列の名前)' },
-      { key: 'effect', label: '行動で当たりの損を防げる割合 (0 から 1. 仮定. 列も可)' },
-      { key: 'budget', label: '行動できる件数の上限', optional: true },
-      { key: 'budget_cost', label: '費用の上限', optional: true },
-      { key: 'current', label: '今のやり方で行動したかの列 (たどり直しで比べる)', optional: true },
-    ],
-  },
-  triage: {
-    label: '振り分ける (人が確かめる, 再検査)',
-    fields: [
-      { key: 'miss_cost', label: '当たりを見逃す損' },
-      { key: 'false_alarm_cost', label: '外れを回す損 (空振り)' },
-      { key: 'capacity', label: '回せる件数の上限 (人手)', optional: true },
-      { key: 'current', label: '今のやり方で回したかの列 (たどり直しで比べる)', optional: true },
-    ],
-  },
+/** 選んで書く欄の選択肢 (値と説明) */
+export interface Choice {
+  value: string
+  label: string
+}
+
+/** 意思決定の欄 (名前, 説明, 省けるか, 選んで書くなら選択肢) */
+export interface DecisionField {
+  key: string
+  label: string
+  optional?: boolean
+  choices?: Choice[]
+}
+
+/** 意思決定の型の名前と, 型ごとの欄 */
+export const DECISION_TYPES: Record<Decision['type'], { label: string; fields: DecisionField[] }> =
+  {
+    quantity: {
+      label: '量を決める (補充, 仕入れ, 人員)',
+      fields: [
+        { key: 'under_cost', label: '1 単位足りないときの損 (欠品の利益など)' },
+        {
+          key: 'over_cost',
+          label: '1 単位余ったときの損 (捨てるなら原価, 持ち越すなら保管の費用)',
+        },
+        { key: 'stock', label: '今ある量 (数か列の名前)', optional: true },
+        { key: 'step', label: '量の刻み (箱の単位など)', optional: true },
+        { key: 'current', label: '今のやり方で足した量の列 (たどり直しで比べる)', optional: true },
+      ],
+    },
+    select: {
+      label: '対象を選ぶ (引き止め, 営業先, 点検)',
+      fields: [
+        { key: 'value', label: '当たり 1 件の価値 (数か列の名前)' },
+        { key: 'cost', label: '行動 1 件の費用 (数か列の名前)' },
+        {
+          key: 'effect_kind',
+          label: '効果の渡し方 (防げる割合か, 行動したとき − しないときの当たりの確率)',
+          optional: true,
+          choices: [
+            { value: 'share', label: '防げる割合 (仮定)' },
+            { value: 'uplift', label: '確率の差 (効果のモデル)' },
+          ],
+        },
+        {
+          key: 'effect',
+          label: '効果 (割合は 0 から 1, 確率の差は -1 から 1. 数か列の名前)',
+        },
+        {
+          key: 'effect_goal',
+          label: '当たりをどうしたいか (減らすなら差が負, 増やすなら正が得)',
+          choices: [
+            { value: 'reduce', label: '減らしたい (解約など)' },
+            { value: 'raise', label: '増やしたい (成約など)' },
+          ],
+        },
+        { key: 'budget', label: '行動できる件数の上限', optional: true },
+        { key: 'budget_cost', label: '費用の上限', optional: true },
+        {
+          key: 'current',
+          label: '今のやり方で行動したかの列 (たどり直しで比べる)',
+          optional: true,
+        },
+      ],
+    },
+    triage: {
+      label: '振り分ける (人が確かめる, 再検査)',
+      fields: [
+        { key: 'miss_cost', label: '当たりを見逃す損' },
+        { key: 'false_alarm_cost', label: '外れを回す損 (空振り)' },
+        { key: 'capacity', label: '回せる件数の上限 (人手)', optional: true },
+        { key: 'current', label: '今のやり方で回したかの列 (たどり直しで比べる)', optional: true },
+      ],
+    },
+  }
+
+/** 効果を確率の差 (uplift) で渡すか */
+function isUplift(form: DecisionForm): boolean {
+  return form.type === 'select' && form.values.effect_kind === 'uplift'
+}
+
+/** 今の書き方で使う欄 (向きは確率の差のときだけ) */
+export function visibleFields(form: DecisionForm): DecisionField[] {
+  if (!form.type) return []
+  return DECISION_TYPES[form.type].fields.filter(
+    (field) => field.key !== 'effect_goal' || isUplift(form),
+  )
 }
 
 /** 画面で編集する意思決定 (欄は文字で持つ) */
@@ -86,16 +138,26 @@ export function fromDecisionForm(
     if (!classes.includes(form.positive)) problems.push('当たりのクラスを選んでください')
     decision.positive = form.positive
   }
-  for (const field of DECISION_TYPES[form.type].fields) {
+  const uplift = isUplift(form)
+  for (const field of visibleFields(form)) {
     const text = (form.values[field.key] ?? '').trim()
     if (!text) {
       if (!field.optional) problems.push(`「${field.label}」を書いてください`)
       continue
     }
+    if (field.choices) {
+      if (!field.choices.some((choice) => choice.value === text))
+        problems.push(`「${field.label}」は選択肢から選んでください`)
+      decision[field.key] = text
+      continue
+    }
     const value = COLUMN_ONLY.has(field.key) ? text : parseValue(text)
     if (NUMBER_ONLY.has(field.key) && typeof value !== 'number')
       problems.push(`「${field.label}」は数で書いてください`)
-    if (typeof value === 'number') {
+    if (typeof value === 'number' && field.key === 'effect' && uplift) {
+      if (Math.abs(value) > 1)
+        problems.push(`「${field.label}」は確率の差なので -1 から 1 にしてください`)
+    } else if (typeof value === 'number') {
       if (value < 0) problems.push(`「${field.label}」は 0 以上にしてください`)
       if (field.key === 'effect' && value > 1)
         problems.push(`「${field.label}」は 0 から 1 にしてください`)

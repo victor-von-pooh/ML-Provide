@@ -219,3 +219,18 @@ test('日々の売上の見本に問題の設定をつなぐと, 損得と根拠
   await expect(page.getByRole('heading', { name: '問題の設定', exact: true })).toBeVisible()
   await expect(under).toHaveValue('3')
 })
+
+test('効果を確率の差で渡すと, 向きの欄が出て, 無作為の試験で確かめると書く', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('link', { name: '見本: 解約の予測 (表の分類)' }).click()
+  await expect(page.getByLabel(/当たりをどうしたいか/)).toHaveCount(0)
+  await page.getByLabel(/効果の渡し方/).selectOption('uplift')
+  await page.getByLabel(/^効果 \(/).fill('-0.1')
+  await page.getByLabel(/当たりをどうしたいか/).selectOption('reduce')
+  await page.getByRole('button', { name: /見本の新しいデータ/ }).click()
+  await page.getByRole('button', { name: '推論する' }).click()
+  await expect(page.getByText(/しないときの当たりの確率の見積もり/)).toBeVisible({
+    timeout: 30_000,
+  })
+  await expect(page.getByText(/行動を無作為に割り当てた試験で確かめる/)).toBeVisible()
+})
