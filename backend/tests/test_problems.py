@@ -184,6 +184,18 @@ def test_link_problems(client: TestClient, tmp_path: Path) -> None:
     linked = client.put(url, json={"path": str(path)}).json()["linked"]
     assert any("目的の列" in text for text in linked["issues"])
 
+    # まとめる列 (総菜の店の列 store) が学習のデータに無い
+    daily = next(b for b in added if "日々の売上" in b["name"])
+    sozai = tmp_path / "sozai"
+    ml_quest.save_problem(example_problem("総菜の作る量"), sozai)
+    linked = client.put(f"/api/bundles/{daily['id']}/problem", json={
+        "path": str(sozai)
+    }).json()["linked"]
+    assert any("まとめる列 store" in text for text in linked["issues"])
+
+    # 場所として読めない文字は 422
+    assert client.put(url, json={"path": "/tmp/a\x00b"}).status_code == 422
+
     # 分類の一式に量の意思決定は合わない
     other = f"/api/bundles/{churn['id']}/problem"
     linked = client.put(other, json={"path": str(path)}).json()["linked"]

@@ -282,7 +282,9 @@ function PredictCard({
           </h3>
           {linked && (
             <p className="mb-2 text-xs text-ink-3">
-              問題の設定「{linked.name}」の損得と結論の決め方を既定にしています
+              {linked.decision
+                ? `問題の設定「${linked.name}」の損得と結論の決め方を既定にしています`
+                : `問題の設定「${linked.name}」は意思決定しない (予測を見て人が決める) ので, 意思決定は空にしています`}
             </p>
           )}
           <DecisionEditor
@@ -347,6 +349,7 @@ export function BundlePage() {
     onSuccess: () => {
       // 消した一式は取り直さずに外し, 一覧だけを読み直す
       client.removeQueries({ queryKey: ['bundles', id] })
+      client.removeQueries({ queryKey: ['bundle-problem', id] })
       client.invalidateQueries({ queryKey: ['bundles'], exact: true })
       navigate('/')
     },
@@ -396,8 +399,25 @@ export function BundlePage() {
             </div>
           )}
           <div className="flex min-w-0 flex-col gap-4">
-            {problem.isPending && <Spinner label="問題の設定を読んでいます" />}
-            {problem.error && <ErrorBox error={problem.error} />}
+            {problem.isPending && (
+              <p role="status" className="text-xs text-ink-3">
+                問題の設定を読んでいます…
+              </p>
+            )}
+            {problem.error && (
+              <ErrorBox error={problem.error} live={false}>
+                <p className="mt-1 text-xs text-ink-2">
+                  推論の既定は一式の既定値です.{' '}
+                  <button
+                    type="button"
+                    className="text-accent-text underline"
+                    onClick={() => void problem.refetch()}
+                  >
+                    読み直す
+                  </button>
+                </p>
+              </ErrorBox>
+            )}
             {problem.data && <ProblemCard bundleId={data.id} state={problem.data} />}
             {/* 問題の設定を読み終えてから, その値を既定にして出す */}
             {!problem.isPending && (

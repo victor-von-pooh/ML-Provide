@@ -19,7 +19,7 @@ export function ProblemCard({ bundleId, state }: { bundleId: string; state: Prob
     onSuccess: (next) => {
       setPath('')
       client.setQueryData(['bundle-problem', bundleId], next)
-      client.invalidateQueries({ queryKey: ['bundles'], exact: true })
+      client.invalidateQueries({ queryKey: ['bundles'] })
     },
   })
   const linked = state.linked
@@ -64,6 +64,7 @@ export function ProblemCard({ bundleId, state }: { bundleId: string; state: Prob
       ) : state.path ? (
         <div className="space-y-2">
           <ErrorBox
+            live={false}
             error={`${state.error ?? '問題の設定を読めません'}. 推論の既定は一式の既定値に戻しています`}
           />
           <p className="truncate font-mono text-xs text-ink-3" title={state.path}>
@@ -86,12 +87,13 @@ export function ProblemCard({ bundleId, state }: { bundleId: string; state: Prob
           {hint && (
             <div className="rounded-lg border border-line p-3 text-xs">
               <p className="text-ink-2">一式の上のディレクトリに問題の設定がありました.</p>
-              <p className="mt-1 truncate font-mono text-ink-3" title={hint}>
+              <p id="problem-hint" className="mt-1 truncate font-mono text-ink-3" title={hint}>
                 {hint}
               </p>
               <Button
                 className="mt-2"
                 icon={Link2}
+                aria-describedby="problem-hint"
                 disabled={link.isPending}
                 onClick={() => link.mutate(hint)}
               >
@@ -121,7 +123,16 @@ export function ProblemCard({ bundleId, state }: { bundleId: string; state: Prob
           </Button>
         </div>
       )}
-      {link.error && <ErrorBox error={link.error} />}
+      {link.error && (
+        <div className="mt-3">
+          <ErrorBox error={link.error} />
+        </div>
+      )}
+      <p role="status" className="mt-3 text-xs text-good-text empty:hidden">
+        {link.isSuccess && !link.isPending
+          ? `${link.variables === null ? 'つなぎを外しました' : 'つなぎました'}. 推論の意思決定と結論の決め方の既定を読み直しました`
+          : ''}
+      </p>
     </Card>
   )
 }

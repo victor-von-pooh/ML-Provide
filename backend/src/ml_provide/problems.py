@@ -54,11 +54,17 @@ def problem_file(text: str) -> Path:
     HTTPException
         無い場合は 404, YAML のファイルでない場合は 422
     """
-    # ディレクトリなら中の problem.yaml
-    path = Path(text.strip()).expanduser().resolve()
-    if path.is_dir():
-        path = path / "problem.yaml"
-    if not path.is_file():
+    # ディレクトリなら中の problem.yaml (読めない場所の形は 422)
+    try:
+        path = Path(text.strip()).expanduser().resolve()
+        if path.is_dir():
+            path = path / "problem.yaml"
+        found = path.is_file()
+    except (OSError, ValueError, RuntimeError) as error:
+        raise HTTPException(
+            422, f"問題の設定の場所として読めません: {error}"
+        ) from error
+    if not found:
         raise HTTPException(404, f"{path} に問題の設定がありません")
     if path.suffix.lower() not in SUFFIXES:
         raise HTTPException(
@@ -119,13 +125,18 @@ def version_of(path: Path) -> str:
     version: str
         中身の sha256 の 16 進 (画面が変わったことに気付くため)
     """
-    # ファイルの中身の要約
-    version = hashlib.sha256(path.read_bytes()).hexdigest()
+    # ファイルの中身の要約 (読んだ後に消えた場合も 422)
+    try:
+        version = hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as error:
+        raise HTTPException(
+            422, f"問題の設定を読めません: {error}"
+        ) from error
 
     return version
 
 
-def find_hint(bundle_path: Path) -> Optional[str]:
+def find_hint(bundle_path: Path, home: Path) -> Optional[str]:
     """
     一式の場所から上にたどり, 問題の設定のファイルの候補を探す関数
 
@@ -136,27 +147,62 @@ def find_hint(bundle_path: Path) -> Optional[str]:
     ----------
     bundle_path: Path
         一式のディレクトリ
+    home: Path
+        このアプリの置き場 (置き場の中の一式は探さない)
 
     Returns
     ----------
     hint: Optional[str]
-        最初に見つけた問題の設定のファイルの場所 (無ければ None)
+        最初に見つけた, 推論に渡せる問題の設定のファイルの場所 (無ければ
+        None)
     """
-    # 読めて, 問題の設定のファイルであるものだけ
+    # 置き場の中とホームより上は探さない. 推論に渡せるものだけ
     hint: Optional[str] = None
-    places = [bundle_path, *bundle_path.parents][:HINT_DEPTH + 1]
-    for place in places:
+    top = Path.home().resolve()
+    place = bundle_path.resolve()
+    if place.is_relative_to(home.resolve()):
+        return hint
+    for _ in range(HINT_DEPTH + 1):
+        if place == top or place == place.parent:
+            break
         candidate = place / "problem.yaml"
-        if not candidate.is_file():
-            continue
+        place = place.parent
         try:
-            read_problem(candidate)
-        except HTTPException:
+            if not candidate.is_file():
+                continue
+            ml_quest.handoff(read_problem(candidate))
+        except (HTTPException, OSError, *SHAPE_ERRORS):
             continue
         hint = str(candidate)
         return hint
 
     return hint
+
+
+def training_columns(bundle: ml_inference.Bundle) -> Optional[list[str]]:
+    """
+    一式の学習に使ったデータのファイルの列の名前を読む関数 (推論する
+    データも同じ列を持つ)
+
+    Parameters
+    ----------
+    bundle: ml_inference.Bundle
+        推論の一式
+
+    Returns
+    ----------
+    columns: Optional[list[str]]
+        列の名前 (データのファイルが無いか読めなければ None)
+    """
+    # データセットに残る元のデータの場所の 1 行目
+    source = bundle.dataset.info.get("source") or {}
+    columns: Optional[list[str]] = None
+    try:
+        columns = ml_quest.read_columns(str(source.get("path") or ""))
+    except (OSError, *SHAPE_ERRORS):
+        columns = None
+
+    return columns
 
 
 def issues_of(
@@ -182,7 +228,7 @@ def issues_of(
     issues: list[str]
         食い違いの文 (無ければ空)
     """
-    # 目的の列, 意思決定の型と一式のタスク, 結論の決め方
+    # 目的の列, 意思決定の型と一式のタスクと列, 結論の決め方
     issues = []
     target = active_value(problem, "ml.target")
     bundle_target = bundle.dataset.info.get("target")
@@ -191,15 +237,26 @@ def issues_of(
             f"問題の設定の目的の列 {target} と, 一式の目的の列 "
             f"{bundle_target} が違います (別の問題の設定かもしれません)"
         )
+    columns = training_columns(bundle)
     if decision:
         issues += [
             f"意思決定: {message}" for message in
-            ml_inference.check_decision(decision, bundle)
+            ml_inference.check_decision(
+                decision, bundle, columns, with_current=False
+            )
         ]
     issues += [
         f"結論の決め方: {message}" for message in
         ml_inference.check_rules(conclusion, bundle.task, bundle.classes)
     ]
+
+    # まとめる列は推論するデータの列 (学習のデータで確かめる)
+    group = conclusion.get("group_by")
+    if columns and isinstance(group, str) and group not in columns:
+        issues.append(
+            f"結論の決め方: まとめる列 {group} が一式の学習のデータに"
+            "ありません (このままでは推論が誤りになります)"
+        )
 
     return issues
 
@@ -230,7 +287,8 @@ def linked_view(
     HTTPException
         後ろの段階に渡せない問題の設定と, 読めない一式は 422
     """
-    # 渡せる問題の設定か (機械学習を使わない, 直すところがある場合は断る)
+    # 渡せる問題の設定かの確認 (機械学習を使わない, 直すところがある場合
+    # は断り)
     try:
         inference = ml_quest.handoff(problem)["inference"]
     except SHAPE_ERRORS as error:
@@ -262,7 +320,7 @@ def linked_view(
     return view
 
 
-def problem_state(entry: dict[str, Any]) -> dict[str, Any]:
+def problem_state(entry: dict[str, Any], home: Path) -> dict[str, Any]:
     """
     一式につないだ問題の設定の今の状態を返す関数
 
@@ -270,6 +328,8 @@ def problem_state(entry: dict[str, Any]) -> dict[str, Any]:
     ----------
     entry: dict[str, Any]
         一式の登録
+    home: Path
+        このアプリの置き場 (候補を探さない場所)
 
     Returns
     ----------
@@ -282,7 +342,7 @@ def problem_state(entry: dict[str, Any]) -> dict[str, Any]:
     state: dict[str, Any]
     if not isinstance(text, str):
         state = {"path": None, "linked": None, "error": None,
-                 "hint": find_hint(Path(str(entry["path"])))}
+                 "hint": find_hint(Path(str(entry["path"])), home)}
         return state
 
     # 置き換わったか読めなくなった場合は理由 (つなぎは外さない)
@@ -320,8 +380,10 @@ def get_problem(request: Request, bundle_id: str) -> dict[str, Any]:
     state: dict[str, Any]
         path, linked, error, hint
     """
-    # 推論のたびに読み直すので, 覚えない
-    state = problem_state(find_bundle(request, bundle_id))
+    # 推論のたびの読み直し (覚えない)
+    state = problem_state(
+        find_bundle(request, bundle_id), get_store(request).home
+    )
 
     return state
 
@@ -352,12 +414,15 @@ def link_problem(
     HTTPException
         無い場所は 404, 推論に渡せない問題の設定は 422
     """
-    # つなぐ前に, 読めて推論に渡せることを確かめる
+    # つなぐ前に, 読めて推論に渡せることの確認
     entry = find_bundle(request, bundle_id)
     store = get_store(request)
     if not (body.path or "").strip():
-        entry = store.link_problem(bundle_id, None)
-        state = problem_state(entry)
+        try:
+            entry = store.link_problem(bundle_id, None)
+        except KeyError as error:
+            raise HTTPException(404, "一式が見つかりません") from error
+        state = problem_state(entry, store.home)
         return state
     path = problem_file(str(body.path))
     problem = read_problem(path)
@@ -368,6 +433,6 @@ def link_problem(
         )
     except KeyError as error:
         raise HTTPException(404, "一式が見つかりません") from error
-    state = problem_state(entry)
+    state = problem_state(entry, store.home)
 
     return state
