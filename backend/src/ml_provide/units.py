@@ -124,6 +124,7 @@ def unit_hint(error: BaseException) -> Optional[str]:
     message: Optional[str]
         部品の名前, ノード, 起動の設定の案内 (他の誤りなら None)
     """
+    # 登録されていない部品の誤りだけへの案内
     message: Optional[str] = None
     found = unregistered_of(error)
     if found is None:

@@ -97,7 +97,7 @@ ML-Inference の一式の版 3 は, 受け持ち (`role`), 出力の形 (`output
 
 ### 自作の部品と起動の設定
 
-- 研究の自作の部品 (ML-ModelControl の `register_unit` で登録する部品) も手順と同じく, 起動の設定で明示したモジュールだけを読み込む (ML_tester の決めたこと 14). `ml-provide --units pkg.units,...` か環境変数 `ML_PROVIDE_UNITS` (`,` で区切る. 引数が環境変数より先) に書いたモジュールを, 起動のときに手順のモジュールの隣で ML-Inference の `register_units` (ML-ModelControl の `register_units_from`) に渡す. モジュールは `UNITS` か `register_units(register)` で部品を宣言する (書き方は ML-ModelControl の README の「自作の部品」). 読めないモジュール, 部品を宣言していないモジュールは起動を止める
+- 研究の自作の部品 (ML-ModelControl の `register_unit` で登録する部品) も手順と同じく, 起動の設定で明示したモジュールだけを読み込む (ML_tester の決めたこと 14). `ml-provide --units pkg.units,...` か環境変数 `ML_PROVIDE_UNITS` (`,` で区切る. 引数が環境変数より先) に書いたモジュールを, 起動のときに手順のモジュールの前 (手順のモジュールが部品を使えるように) で ML-Inference の `register_units` (ML-ModelControl の `register_units_from`) に渡す. モジュールは `UNITS` か `register_units(register)` で部品を宣言する (書き方は ML-ModelControl の README の「自作の部品」). 読めないモジュール, 部品を宣言していないモジュールは起動を止める
 - `GET /api/info` の `unit_modules` に, 読んだモジュールと登録した部品の名前 (`[{"name": "pkg.units", "units": ["my.Block"]}]`) を返す
 - 一式のモデルの定義に書かれた部品の名前からは何も読み込まない. 登録されていない部品を使う一式は, ML-Inference の `UnregisteredUnitError` (部品の名前とノード) に「自作の部品なら, 部品を宣言したモジュールを起動の設定 (`--units` か `ML_PROVIDE_UNITS`) に足してから起動し直してください」を添えて, 一式の画面 (一覧と一式の欄の誤り), 場所での登録, 画面で作る一式, 推論の誤りに出す
 

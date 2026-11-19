@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from ml_provide.api import find_bundle, get_store
 from ml_provide.cache import read_bundle
+from ml_provide.units import unit_hint
 
 router = APIRouter(prefix="/api")
 
@@ -341,7 +342,8 @@ def linked_view(
     try:
         bundle = read_bundle(str(entry["path"]))
     except Exception as error:
-        raise HTTPException(422, f"一式を読めません: {error}") from error
+        message = unit_hint(error) or f"一式を読めません: {error}"
+        raise HTTPException(422, message) from error
 
     # 結論の決め方は一式の既定値に重ね, 意思決定は問題の設定のまま
     inference = stages["inference"]

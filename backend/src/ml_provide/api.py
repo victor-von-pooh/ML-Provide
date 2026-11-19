@@ -148,6 +148,27 @@ def user_error(error: Exception) -> HTTPException:
     return exception
 
 
+def join_hints(*hints: Optional[str]) -> Optional[str]:
+    """
+    起動の設定の案内をつなぐ関数
+
+    Parameters
+    ----------
+    *hints: Optional[str]
+        案内 (無いものは None)
+
+    Returns
+    ----------
+    message: Optional[str]
+        つないだ案内 (全て無ければ None)
+    """
+    # 部品と手順の案内を 1 つの文に
+    parts = [hint for hint in hints if hint]
+    message = " / ".join(parts) if parts else None
+
+    return message
+
+
 def bundle_error(path: str, error: Exception) -> HTTPException:
     """
     一式を読めない誤りを, 登録簿に無い手順の案内を添えて 400 にする関数
@@ -164,8 +185,9 @@ def bundle_error(path: str, error: Exception) -> HTTPException:
     exception: HTTPException
         400 の例外
     """
-    # 自作の部品と手順は起動の設定での登録 (一式のコードは読まない)
-    message = unit_hint(error) or missing_procedure(path)
+    # 自作の部品と手順は起動の設定での登録 (一式のコードは読まない. 両方
+    # 無ければ両方の案内)
+    message = join_hints(unit_hint(error), missing_procedure(path))
     if message is None:
         exception = user_error(error)
         return exception
@@ -224,10 +246,9 @@ def bundle_view(entry: dict[str, Any]) -> dict[str, Any]:
         description, loaded = describe(str(entry["path"]))
         view.update(description=description, model_loaded=loaded)
     except Exception as error:
-        message = (
-            unit_hint(error) or missing_procedure(str(entry["path"]))
-            or str(error)
-        )
+        message = join_hints(
+            unit_hint(error), missing_procedure(str(entry["path"]))
+        ) or str(error)
         view.update(ok=False, error=message, description=None)
 
     return view

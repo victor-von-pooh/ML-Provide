@@ -41,7 +41,7 @@ make serve   # 画面をビルドして http://127.0.0.1:8769 で起動 (使う�
 
 拡散のサンプリングのような繰り返しの手順を使う一式で, 研究の自作の手順を使う場合は, 手順を `ml_inference.register_procedure` で登録するモジュールを起動の設定に書く (`uv run ml-provide --procedures my_package.procedures` か, 環境変数 `ML_PROVIDE_PROCEDURES=my_package.procedures`. `,` で区切って複数). 書いたモジュールだけを起動のときに読み, 一式やファイルに書かれたコードは読まない. 登録簿に無い手順の一式は, 一式の画面でそう出る.
 
-研究の自作の部品 (ML-ModelControl の `register_unit` で登録する部品) を使う一式も同じく, 部品を宣言したモジュール (`UNITS` か `register_units(register)`. 書き方は ML-ModelControl の README の「自作の部品」) を起動の設定に書く (`uv run ml-provide --units my_package.units` か, 環境変数 `ML_PROVIDE_UNITS=my_package.units`. `,` で区切って複数). 読めないモジュールがあれば起動しない. 一式のモデルの定義に書かれた名前からは何も読み込まず, 登録されていない部品を使う一式は, 部品の名前と起動の設定への足し方が一式の画面, 登録, 推論の誤りに出る. 読んだモジュールと部品は `/api/info` の `unit_modules` で分かる.
+研究の自作の部品 (ML-ModelControl の `register_unit` で登録する部品) を使う一式も同じく, 部品を宣言したモジュール (`UNITS` か `register_units(register)`. 書き方は ML-ModelControl の README の「自作の部品」) を起動の設定に書く (`uv run ml-provide --units my_package.units` か, 環境変数 `ML_PROVIDE_UNITS=my_package.units`. `,` で区切って複数). 読めないモジュールがあれば起動しない. 一式のモデルの定義に書かれた名前からは何も読み込まず, 登録されていない部品を使う一式は, 部品の名前と起動の設定への足し方が一式の画面, 登録, 画面で作る一式, 推論の誤りに出る. 読んだモジュールと部品は `/api/info` の `unit_modules` で分かる.
 
 推論に使う一式は組み立てたモデルごと 4 つまで覚えて使い回す. 大きなモデルでメモリが足りない場合は環境変数 `ML_PROVIDE_MODEL_CACHE=1` で減らす.
 

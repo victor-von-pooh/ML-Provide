@@ -305,11 +305,12 @@ def create_app(
     home = data_dir or get_data_dir()
     app.state.store = Store(home)
 
-    # 起動の設定で明示した自作の手順のモジュールだけの読み込み
+    # 起動の設定で明示した自作の部品と手順のモジュールだけの読み込み
+    # (手順のモジュールが部品を使えるように部品が先)
+    app.state.unit_modules = load_unit_modules(configured_units(units))
     app.state.procedure_modules = load_modules(
         configured_modules(procedures)
     )
-    app.state.unit_modules = load_unit_modules(configured_units(units))
 
     # トークンの無い呼び出し, 他のサイトからの書き込み,
     # 他のホスト名での接続 (DNS rebinding) の拒否
