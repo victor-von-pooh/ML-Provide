@@ -76,6 +76,72 @@ export interface Description {
   /** 外れ方の記録の要約 (意思決定の前提) */
   uncertainty?: UncertaintySummary | null
   notes: string[]
+  /** 一式の形の版 (版 3 から受け持ちと出力の形を持つ) */
+  format_version?: number | null
+  /** 受け持ち (predict, generate, rank, group, effect. 版 2 までは predict) */
+  role?: string
+  /** 出力の形と形ごとの欄 */
+  output?: OutputInfo
+  /** 列の出力 (class, value, distribution) か. 偽なら結論の決め方と意思決定を使えない */
+  column_output?: boolean
+  /** 正解の種類と出どころ (target は前と同じく目的の列の名前) */
+  target_info?: TargetInfo | null
+  /** 繰り返しの手順 */
+  procedure?: Procedure | null
+  /** 学習済みの重みの置き方 (ノードごと) */
+  pretrained?: PretrainedRecord[]
+  /** 出どころから読んだ重みの警告 (モデルを組み立てた後に出る) */
+  pretrained_warnings?: string[]
+}
+
+/** 出力の形 (class, value, distribution, mask, point_cloud, vector, text, image) と形ごとの欄 */
+export interface OutputInfo {
+  form: string
+  /** 分布の分位点の水準 */
+  quantiles?: number[]
+  /** 領域の番号ごとの名前 */
+  classes?: string[]
+  /** 雑音から始まる手順の 1 件の形 */
+  shape?: number[]
+  [key: string]: unknown
+}
+
+/** 正解の出どころ (ML-EDA の版 2 の target.origin) */
+export interface TargetOrigin {
+  type: 'process' | 'annotation' | 'measurement' | 'synthetic' | 'unknown' | string
+  name?: string | null
+  settings?: unknown
+}
+
+export interface TargetInfo {
+  kind: string
+  origin?: TargetOrigin | null
+}
+
+/** 繰り返しの手順 (拡散のサンプリング, 文の生成) */
+export interface Procedure {
+  name: string
+  steps: number
+  seed: number
+  options?: Record<string, unknown> | null
+}
+
+/** 学習済みの重みを読むノードの置き方 */
+export interface PretrainedRecord {
+  node: string
+  unit?: string | null
+  model?: string | null
+  hub_id?: string | null
+  revision?: string | null
+  pinned_revision?: string | null
+  license?: string | null
+  status?: string | null
+  redistributable?: boolean | null
+  source?: string | null
+  /** bundle (一式の重みに写した) か source (出どころから読む) */
+  place: 'bundle' | 'source' | string
+  sha256?: string | null
+  keys?: number | null
 }
 
 /** 外れ方の記録の要約 (split は valid, train, recent (渡した実績)) */
@@ -121,6 +187,8 @@ export interface Bundle {
   ok: boolean
   error: string | null
   description: Description | null
+  /** モデルを組み立てたか (学習済みの重みの警告は組み立てた後に分かる) */
+  model_loaded?: boolean
 }
 
 export interface DecisionCount {
@@ -133,7 +201,8 @@ export interface Counts {
   rows: number
   predicted: number
   skipped: number
-  decisions: DecisionCount[]
+  /** 判断ごとの件数 (列の出力でない一式の件数だけの結論には無い) */
+  decisions?: DecisionCount[]
   values?: { sum: number; mean: number | null; min: number | null; max: number | null }
 }
 
@@ -164,6 +233,45 @@ export interface Result {
   /** 入力に目的の列があったか (たどり直せるか) */
   has_target?: boolean
   explanation?: Explanation | null
+  /** 結果の形の版 (表に収まらない中身があれば 2) */
+  format_version?: number
+  role?: string
+  output_form?: string | null
+  /** 列の出力の一式の結果か (前の結果は真) */
+  column_output?: boolean
+  target_info?: TargetInfo | null
+  pretrained_warnings?: string[]
+  /** 表に収まらない中身 (artifacts/) の記録 */
+  artifacts?: {
+    directory: string
+    column: string
+    format: string
+    form: string
+    count: number
+  } | null
+}
+
+/** 配列の出力の 1 件の見本 */
+export interface ArtifactPreview {
+  row: number
+  file: string
+  form: string
+  shape: number[]
+  dtype: string
+  /** 見せ方 (領域の格子, 画像, 点群, 値だけ) */
+  view: 'grid' | 'image' | 'points' | 'values'
+  /** 最初の値 */
+  values: number[]
+  size: number
+  /** 長さ (L2. 数で表せない大きさは null) */
+  norm: number | null
+  grid?: number[][]
+  labels?: { label: number; count: number }[]
+  /** (高さ, 幅) か (高さ, 幅, 3) の 0 から 255 */
+  image?: (number | number[])[][]
+  /** 間引いた点 (最初の 3 つの次元まで) */
+  points?: number[][]
+  total?: number
 }
 
 /** 意思決定の決め方 (値は数か, 予測の表の列の名前) */
@@ -226,6 +334,8 @@ export interface BundleCreateBody {
   target_scale?: { center: number; scale: number } | 'train' | null
   conclusion?: Rules | null
   copy_weights: boolean
+  role?: string | null
+  form?: string | null
 }
 
 /** 外れ方の測り直し (確かめるだけか, 一式に書き戻したか) */

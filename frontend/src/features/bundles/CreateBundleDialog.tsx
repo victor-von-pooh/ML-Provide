@@ -6,6 +6,7 @@ import type { Bundle } from '../../api/types'
 import { Dialog } from '../../components/Dialog'
 import { PathField } from '../../components/PathPicker'
 import { Button, ErrorBox } from '../../components/ui'
+import { FORM_LABELS, ROLE_LABELS } from '../../lib/outputs'
 
 const field = 'h-8 rounded-lg border border-line bg-surface px-2 text-sm'
 
@@ -28,6 +29,9 @@ export function CreateBundleDialog({
   const [scale, setScale] = useState('')
   const [trainScale, setTrainScale] = useState(false)
   const [copyWeights, setCopyWeights] = useState(true)
+  // 受け持ちと出力の形 (空はタスクから. 正解の無いデータセットは出力の形が要る)
+  const [role, setRole] = useState('')
+  const [form, setForm] = useState('')
   const create = useMutation({
     mutationFn: () => {
       // 先頭に足す番号は, 入力の名前と番号の並びが揃ったときだけ
@@ -53,6 +57,8 @@ export function CreateBundleDialog({
         output: output.trim() || null,
         target_scale: targetScale,
         copy_weights: copyWeights,
+        role: role || null,
+        form: form || null,
       })
     },
     onSuccess: onCreated,
@@ -156,6 +162,44 @@ export function CreateBundleDialog({
                 onChange={(event) => setOutput(event.target.value)}
                 className={`${field} w-full font-mono`}
               />
+            </div>
+            <div>
+              <label htmlFor="bundle-role" className="mb-1 block text-xs text-ink-2">
+                受け持ち
+              </label>
+              <select
+                id="bundle-role"
+                value={role}
+                onChange={(event) => setRole(event.target.value)}
+                className={`${field} w-full`}
+              >
+                <option value="">予測する (既定)</option>
+                {Object.entries(ROLE_LABELS)
+                  .filter(([value]) => value !== 'predict')
+                  .map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="bundle-form" className="mb-1 block text-xs text-ink-2">
+                出力の形 (正解の無いデータセットでは選ぶ)
+              </label>
+              <select
+                id="bundle-form"
+                value={form}
+                onChange={(event) => setForm(event.target.value)}
+                className={`${field} w-full`}
+              >
+                <option value="">タスクから決める</option>
+                {Object.entries(FORM_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
             </div>
             <fieldset className="md:col-span-2">
               <legend className="mb-1 text-xs text-ink-2">

@@ -46,6 +46,9 @@ for key, value in (
 ml_quest.save_problem(other, sys.argv[1] + "-generate")
 PY
 
+# 推論の一式の版 3 (列の出力でない一式. 領域とベクトル)
+uv run python ../frontend/e2e/make_v3.py "$WORK/v3"
+
 # 決まったトークンで起動
 ML_PROVIDE_HOME="$WORK/home" ML_PROVIDE_TOKEN=e2e-token \
   exec uv run ml-provide --port "$PORT"

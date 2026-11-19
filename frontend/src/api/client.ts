@@ -1,4 +1,5 @@
 import type {
+  ArtifactPreview,
   Bundle,
   BundleCreateBody,
   Decision,
@@ -101,5 +102,8 @@ export const api = {
     request<Remeasure>(`/api/results/${id}/remeasure`, json('POST', { write, horizon, time })),
   explain: (id: string) => request<Result>(`/api/results/${id}/explain`, json('POST', {})),
   downloadUrl: (id: string) => `/api/results/${id}/download`,
+  artifact: (id: string, row: number) =>
+    request<ArtifactPreview>(`/api/results/${id}/artifacts/${row}`),
+  artifactUrl: (id: string, row: number) => `/api/results/${id}/artifacts/${row}/file`,
   deleteResult: (id: string) => request<void>(`/api/results/${id}`, { method: 'DELETE' }),
 }

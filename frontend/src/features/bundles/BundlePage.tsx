@@ -9,10 +9,12 @@ import { PathField } from '../../components/PathPicker'
 import { Button, Card, ErrorBox, PageHeader, Spinner } from '../../components/ui'
 import { formatNumber, KIND_LABELS, TASK_LABELS } from '../../lib/format'
 import { fromDecisionForm, toDecisionForm, type DecisionForm } from '../../lib/decision'
+import { FORM_LABELS, isColumnOutput } from '../../lib/outputs'
 import { fromForm, toForm, withCleared, type RulesForm } from '../../lib/rules'
 import { DecisionEditor } from '../results/DecisionEditor'
 import { ResultList } from '../results/ResultList'
 import { RulesEditor } from '../results/RulesEditor'
+import { OutputNotices, OutputView } from './OutputView'
 import { ProblemCard } from './ProblemCard'
 
 /** 説明の 1 行 */
@@ -126,11 +128,14 @@ function PredictCard({
   const navigate = useNavigate()
   const client = useQueryClient()
   const textual = description.kind === 'text' && !!description.text_column
+  // 列の出力でない一式 (領域, 点群, ベクトル, 画像, 文) は結論が件数だけ
+  const column = isColumnOutput(description)
+  const outputForm = description.output?.form ?? ''
   const [mode, setMode] = useState<'file' | 'texts'>('file')
   const [source, setSource] = useState('')
   const [texts, setTexts] = useState('')
   // 目的の列の過去の値を使う回帰と予測の一式は, 何段も先まで予測できる
-  const canForecast = !!description.forecastable
+  const canForecast = column && !!description.forecastable
   const [ahead, setAhead] = useState(false)
   // 推論の結論を扱わない受け持ちの問題の設定は, 一式の既定値のまま
   const defaults =
@@ -154,20 +159,24 @@ function PredictCard({
     decisionForm,
     description.classes,
   )
-  const problems = [...ruleProblems, ...decisionProblems]
+  const problems = column ? [...ruleProblems, ...decisionProblems] : []
   const predict = useMutation({
     mutationFn: () =>
       api.predict(
         bundle.id,
-        mode === 'texts'
-          ? { texts: texts.split('\n'), rules: withCleared(rules), decision: decision ?? {} }
-          : {
-              source: source.trim(),
-              rules: withCleared(rules),
-              forecast: canForecast && ahead,
-              // 意思決定しない場合は空 (省くと一式の既定値になる)
-              decision: decision ?? {},
-            },
+        !column
+          ? mode === 'texts'
+            ? { texts: texts.split('\n') }
+            : { source: source.trim() }
+          : mode === 'texts'
+            ? { texts: texts.split('\n'), rules: withCleared(rules), decision: decision ?? {} }
+            : {
+                source: source.trim(),
+                rules: withCleared(rules),
+                forecast: canForecast && ahead,
+                // 意思決定しない場合は空 (省くと一式の既定値になる)
+                decision: decision ?? {},
+              },
       ),
     onSuccess: (result) => {
       client.invalidateQueries({ queryKey: ['results'] })
@@ -278,49 +287,59 @@ function PredictCard({
             </div>
           </div>
         )}
-        <section aria-label="意思決定">
-          <h3 className="mb-2 text-xs font-semibold text-ink-2">
-            意思決定 (任意. だから何をするか. 結果の画面で変えて決め直せます)
-          </h3>
-          {linked && (
-            <p className="mb-2 text-xs text-ink-3">
-              {!linked.handled
-                ? `「${linked.name}」: ${linked.text}`
-                : linked.decision
-                  ? `問題の設定「${linked.name}」の損得と結論の決め方を既定にしています`
-                  : `問題の設定「${linked.name}」は意思決定しない (予測を見て人が決める) ので, 意思決定は空にしています`}
-            </p>
-          )}
-          <DecisionEditor
-            form={decisionForm}
-            onChange={setDecisionForm}
-            task={description.task}
-            classes={description.classes}
-            idBase="predict-decision"
-          />
-        </section>
-        <section aria-label="結論の決め方">
-          <h3 className="mb-2 text-xs font-semibold text-ink-2">
-            結論の決め方 (結果の画面で変えて出し直せます)
-          </h3>
-          <RulesEditor
-            form={form}
-            onChange={setForm}
-            task={description.task}
-            classes={description.classes}
-            columns={[]}
-            suggestions={[
-              ...(description.text_column ? [description.text_column] : []),
-              ...description.features,
-            ]}
-            idBase="predict"
-          />
-          {problems.map((problem) => (
-            <p key={problem} role="alert" className="mt-1 text-xs text-critical-text">
-              {problem}
-            </p>
-          ))}
-        </section>
+        {!column && (
+          <p className="text-xs text-ink-2">
+            この一式の出力は{FORM_LABELS[outputForm] ?? outputForm}なので,
+            結論は推論した件数だけです. 結論の決め方と意思決定は使えません
+          </p>
+        )}
+        {column && (
+          <section aria-label="意思決定">
+            <h3 className="mb-2 text-xs font-semibold text-ink-2">
+              意思決定 (任意. だから何をするか. 結果の画面で変えて決め直せます)
+            </h3>
+            {linked && (
+              <p className="mb-2 text-xs text-ink-3">
+                {!linked.handled
+                  ? `「${linked.name}」: ${linked.text}`
+                  : linked.decision
+                    ? `問題の設定「${linked.name}」の損得と結論の決め方を既定にしています`
+                    : `問題の設定「${linked.name}」は意思決定しない (予測を見て人が決める) ので, 意思決定は空にしています`}
+              </p>
+            )}
+            <DecisionEditor
+              form={decisionForm}
+              onChange={setDecisionForm}
+              task={description.task}
+              classes={description.classes}
+              idBase="predict-decision"
+            />
+          </section>
+        )}
+        {column && (
+          <section aria-label="結論の決め方">
+            <h3 className="mb-2 text-xs font-semibold text-ink-2">
+              結論の決め方 (結果の画面で変えて出し直せます)
+            </h3>
+            <RulesEditor
+              form={form}
+              onChange={setForm}
+              task={description.task}
+              classes={description.classes}
+              columns={[]}
+              suggestions={[
+                ...(description.text_column ? [description.text_column] : []),
+                ...description.features,
+              ]}
+              idBase="predict"
+            />
+            {problems.map((problem) => (
+              <p key={problem} role="alert" className="mt-1 text-xs text-critical-text">
+                {problem}
+              </p>
+            ))}
+          </section>
+        )}
         {predict.error && <ErrorBox error={predict.error} />}
         <div className="flex justify-end">
           <Button
@@ -403,6 +422,10 @@ export function BundlePage() {
             </div>
           )}
           <div className="flex min-w-0 flex-col gap-4">
+            <OutputNotices
+              target={data.description.target_info}
+              warnings={data.description.pretrained_warnings}
+            />
             {problem.isPending && (
               <p role="status" className="text-xs text-ink-3">
                 問題の設定を読んでいます…
@@ -435,6 +458,12 @@ export function BundlePage() {
               <DescriptionView description={data.description} />
               {data.description.uncertainty?.restorable && <RestoreButton bundle={data} />}
             </Card>
+            {/* 版 3 からの項目 (版 2 までの一式は前と同じ画面) */}
+            {(data.description.format_version ?? 0) >= 3 && (
+              <Card title="受け持ちと出力">
+                <OutputView description={data.description} modelLoaded={!!data.model_loaded} />
+              </Card>
+            )}
           </div>
           <Card title="この一式の結果">
             {results.isPending && <Spinner />}

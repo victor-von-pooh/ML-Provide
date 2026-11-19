@@ -8,7 +8,10 @@ import { api } from '../../api/client'
 import type { Counts, Result } from '../../api/types'
 import { Button, Card, ErrorBox, PageHeader, Spinner, StatTile } from '../../components/ui'
 import { formatPercent, formatValue } from '../../lib/format'
+import { FORM_LABELS } from '../../lib/outputs'
 import { fromForm, toForm, type RulesForm } from '../../lib/rules'
+import { OutputNotices } from '../bundles/OutputView'
+import { ArtifactCard } from './ArtifactCard'
 import { DecisionCard } from './DecisionCard'
 import { ExplainCard } from './ExplainCard'
 import { RemeasureCard } from './RemeasureCard'
@@ -39,7 +42,8 @@ const OWN = new Set([
 
 /** 判断ごとの件数と割合の横棒 */
 function DecisionBars({ counts }: { counts: Counts }) {
-  if (counts.decisions.length === 0) return null
+  // 件数だけの結論 (列の出力でない一式) は判断の内訳を持たない
+  if (!counts.decisions || counts.decisions.length === 0) return null
   const most = Math.max(...counts.decisions.map((item) => item.count))
   return (
     <ul aria-label="判断の内訳" className="flex flex-col gap-1.5">
@@ -71,7 +75,9 @@ function GroupTable({ result }: { result: Result }) {
   const groups = result.summary?.groups
   if (!groups || groups.length === 0) return null
   const regression = result.task !== 'classification'
-  const names = [...new Set(groups.flatMap((group) => group.decisions.map((d) => d.decision)))]
+  const names = [
+    ...new Set(groups.flatMap((group) => (group.decisions ?? []).map((d) => d.decision))),
+  ]
   return (
     <Card title={`${result.rules?.group_by ?? ''} ごと`} padded={false}>
       <div className="max-h-96 overflow-auto">
@@ -122,7 +128,7 @@ function GroupTable({ result }: { result: Result }) {
                   </>
                 )}
                 {names.map((name) => {
-                  const found = group.decisions.find((d) => d.decision === name)
+                  const found = group.decisions?.find((d) => d.decision === name)
                   return (
                     <td key={name} className="tabular px-4 py-1.5 text-right">
                       {found ? found.count.toLocaleString() : '–'}
@@ -139,7 +145,8 @@ function GroupTable({ result }: { result: Result }) {
 }
 
 /** 予測の表 (予測しなかった行と判断で絞り, ページに分ける) */
-function RowsTable({ result }: { result: Result }) {
+function RowsTable({ result, onView }: { result: Result; onView?: (row: number) => void }) {
+  const column = result.column_output !== false
   const [page, setPage] = useState(0)
   const [status, setStatus] = useState('')
   const [decision, setDecision] = useState('')
@@ -155,7 +162,7 @@ function RowsTable({ result }: { result: Result }) {
     placeholderData: keepPreviousData,
   })
   const decisions = [
-    ...(result.summary?.decisions.map((item) => item.decision) ?? []),
+    ...(result.summary?.decisions?.map((item) => item.decision) ?? []),
     ...((result.summary?.skipped ?? 0) > 0 ? ['予測なし'] : []),
   ]
   const columns = rows.data
@@ -185,28 +192,32 @@ function RowsTable({ result }: { result: Result }) {
             className="h-8 rounded-lg border border-line bg-surface px-2 text-sm"
           >
             <option value="">全ての行</option>
-            <option value="ok">予測した行</option>
-            <option value="skipped">予測しなかった行</option>
+            <option value="ok">{column ? '予測した行' : '推論した行'}</option>
+            <option value="skipped">{column ? '予測しなかった行' : '推論しなかった行'}</option>
           </select>
-          <label className="sr-only" htmlFor="rows-decision">
-            判断で絞る
-          </label>
-          <select
-            id="rows-decision"
-            value={decision}
-            onChange={(event) => {
-              setDecision(event.target.value)
-              setPage(0)
-            }}
-            className="h-8 rounded-lg border border-line bg-surface px-2 text-sm"
-          >
-            <option value="">全ての判断</option>
-            {decisions.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
+          {column && (
+            <>
+              <label className="sr-only" htmlFor="rows-decision">
+                判断で絞る
+              </label>
+              <select
+                id="rows-decision"
+                value={decision}
+                onChange={(event) => {
+                  setDecision(event.target.value)
+                  setPage(0)
+                }}
+                className="h-8 rounded-lg border border-line bg-surface px-2 text-sm"
+              >
+                <option value="">全ての判断</option>
+                {decisions.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
         </>
       }
     >
@@ -219,6 +230,11 @@ function RowsTable({ result }: { result: Result }) {
               <caption className="sr-only">予測と判断の表</caption>
               <thead className="sticky top-0 bg-surface text-ink-3">
                 <tr className="border-b border-line">
+                  {onView && (
+                    <th scope="col" className="px-3 py-2 text-left font-normal">
+                      <span className="sr-only">出力を見る</span>
+                    </th>
+                  )}
                   {columns.map((name) => (
                     <th
                       key={name}
@@ -239,6 +255,24 @@ function RowsTable({ result }: { result: Result }) {
                       row.status === 'skipped' && 'text-ink-3',
                     )}
                   >
+                    {onView && (
+                      <td className="px-3 py-1">
+                        {row.artifact ? (
+                          <button
+                            type="button"
+                            className="text-accent-text underline"
+                            aria-label={`${String(row.index)} 行目の出力を見る`}
+                            onClick={() => {
+                              onView(Number(row.index))
+                              // 表の上にある出力のカードへ移る
+                              document.getElementById('artifact-row')?.focus()
+                            }}
+                          >
+                            見る
+                          </button>
+                        ) : null}
+                      </td>
+                    )}
                     {columns.map((name) => (
                       <td
                         key={name}
@@ -331,6 +365,13 @@ function ConcludeCard({ result }: { result: Result }) {
 /** 推論の結果 (結論の文, 内訳, まとめ, 予測の表) */
 export function ResultPage() {
   const { id = '' } = useParams()
+  // 配列の出力で見る行 (選ぶまでは推論した最初の行. 別の結果に移ったら戻す)
+  const [artifactRow, setArtifactRow] = useState<number | null>(null)
+  const [artifactOf, setArtifactOf] = useState(id)
+  if (artifactOf !== id) {
+    setArtifactOf(id)
+    setArtifactRow(null)
+  }
   const navigate = useNavigate()
   const client = useQueryClient()
   const result = useQuery({ queryKey: ['results', 'one', id], queryFn: () => api.result(id) })
@@ -362,6 +403,9 @@ export function ResultPage() {
   const values = summary?.values
   // まとめる列ごとの文 (ML-Inference は先頭の 10 個まで) の前までが全体の文
   const overall = data.sentences.length - Math.min(summary?.groups?.length ?? 0, 10)
+  // 列の出力でない一式の結果は件数だけ (決め方, 意思決定, 列の効きは使えない)
+  const column = data.column_output !== false
+  const form = data.artifacts?.form ?? data.output_form ?? ''
   return (
     <>
       <PageHeader
@@ -401,6 +445,7 @@ export function ResultPage() {
       />
       {remove.error && <ErrorBox error={remove.error} />}
       <div className="flex flex-col gap-4">
+        <OutputNotices target={data.target_info} warnings={data.pretrained_warnings} />
         <Card title="結論">
           <ul className="mb-4 flex flex-col gap-1 text-base">
             {data.sentences.slice(0, overall).map((sentence) => (
@@ -421,41 +466,67 @@ export function ResultPage() {
           {summary && <DecisionBars counts={summary} />}
         </Card>
         {/* 決め直した後は, 使った決め方で編集を作り直す */}
-        <DecisionCard
-          key={`decision:${JSON.stringify(data.decision?.decision ?? null)}`}
-          result={data}
-          bundleAlive={bundleAlive}
-        />
-        <RemeasureCard
-          key={`remeasure:${data.id}`}
-          result={data}
-          bundleAlive={bundleAlive}
-          forecastable={!!bundle.data?.description?.forecastable}
-        />
+        {column && (
+          <DecisionCard
+            key={`decision:${JSON.stringify(data.decision?.decision ?? null)}`}
+            result={data}
+            bundleAlive={bundleAlive}
+          />
+        )}
+        {column && (
+          <RemeasureCard
+            key={`remeasure:${data.id}`}
+            result={data}
+            bundleAlive={bundleAlive}
+            forecastable={!!bundle.data?.description?.forecastable}
+          />
+        )}
         {summary && (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <StatTile label="行" value={summary.rows.toLocaleString()} />
-            <StatTile label="予測した" value={summary.predicted.toLocaleString()} />
-            <StatTile label="予測しなかった" value={summary.skipped.toLocaleString()} />
-            {values ? (
+            <StatTile
+              label={column ? '予測した' : '推論した'}
+              value={summary.predicted.toLocaleString()}
+            />
+            <StatTile
+              label={column ? '予測しなかった' : '推論しなかった'}
+              value={summary.skipped.toLocaleString()}
+            />
+            {!column ? (
+              <StatTile label="出力の形" value={FORM_LABELS[form] ?? form} />
+            ) : values ? (
               <StatTile
                 label="予測の平均"
                 value={formatValue(values.mean)}
                 hint={`合計 ${formatValue(values.sum)}`}
               />
             ) : (
-              <StatTile label="判断の種類" value={summary.decisions.length.toLocaleString()} />
+              <StatTile
+                label="判断の種類"
+                value={(summary.decisions?.length ?? 0).toLocaleString()}
+              />
             )}
           </div>
         )}
         {/* 出し直した後は, 使った決め方で編集を作り直す */}
-        <ConcludeCard key={`conclude:${JSON.stringify(data.rules ?? {})}`} result={data} />
-        <GroupTable result={data} />
-        <ExplainCard result={data} bundleAlive={bundleAlive} />
+        {column && (
+          <ConcludeCard key={`conclude:${JSON.stringify(data.rules ?? {})}`} result={data} />
+        )}
+        {column && <GroupTable result={data} />}
+        {column && <ExplainCard result={data} bundleAlive={bundleAlive} />}
+        {data.artifacts && (
+          <ArtifactCard
+            result={data}
+            row={artifactRow}
+            onRow={setArtifactRow}
+            names={bundle.data?.description?.output?.classes ?? []}
+          />
+        )}
         {/* 出し直した後は, 絞り込みとページを初めに戻す */}
         <RowsTable
           key={`rows:${JSON.stringify(data.rules ?? {})}:${JSON.stringify(data.decision?.decision ?? null)}`}
           result={data}
+          onView={data.artifacts ? setArtifactRow : undefined}
         />
       </div>
     </>
