@@ -41,6 +41,8 @@ make serve   # 画面をビルドして http://127.0.0.1:8769 で起動 (使う�
 
 拡散のサンプリングのような繰り返しの手順を使う一式で, 研究の自作の手順を使う場合は, 手順を `ml_inference.register_procedure` で登録するモジュールを起動の設定に書く (`uv run ml-provide --procedures my_package.procedures` か, 環境変数 `ML_PROVIDE_PROCEDURES=my_package.procedures`. `,` で区切って複数). 書いたモジュールだけを起動のときに読み, 一式やファイルに書かれたコードは読まない. 登録簿に無い手順の一式は, 一式の画面でそう出る.
 
+推論に使う一式は組み立てたモデルごと 4 つまで覚えて使い回す. 大きなモデルでメモリが足りない場合は環境変数 `ML_PROVIDE_MODEL_CACHE=1` で減らす.
+
 置き場は `~/.ml-provide/` (環境変数 `ML_PROVIDE_HOME` で変えられる). 画面で作った一式と結果を置く. 元のデータ, データセット, 実験のディレクトリは書き換えない.
 
 ## 開発

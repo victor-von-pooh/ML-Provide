@@ -262,7 +262,8 @@ def test_vector_bundle(tmp_path: Path, client: TestClient) -> None:
     assert result["sentences"] == ["6 件のうち 5 件を推論 (1 件は推論できず)"]
     assert result["rules"] == {}
     assert result["artifacts"]["form"] == "vector"
-    assert "artifact" in result["columns"] and "output" not in result["columns"]
+    assert "artifact" in result["columns"]
+    assert "output" not in result["columns"]
     assert client.get(f"/api/bundles/{bundle['id']}").json()["model_loaded"]
 
     # 表は相対パス, 配列はモデルの出力と同じ
@@ -344,13 +345,15 @@ def test_mask_bundle(tmp_path: Path, client: TestClient) -> None:
     assert description["output"]["classes"] == ["背景", "物"]
     assert description["target_info"] == {"kind": "mask", "origin": origin}
 
-    # 結論は件数と出どころの文
+    # 結論は件数. 出どころの文は結論の文と分けて origin_note に
     response = client.post(f"/api/bundles/{bundle['id']}/predict",
                            json={"source": str(paths["csv"])})
     assert response.status_code == 201, response.text
     result = response.json()
     assert result["summary"]["predicted"] == 5
-    assert any("今の判定 の出力" in s for s in result["sentences"])
+    assert "今の判定 の出力" in result["origin_note"]
+    assert result["sentences"] == ["6 件のうち 5 件を推論 (1 件は推論できず)"]
+    assert result["overall_count"] == 1
     assert result["target_info"]["origin"] == origin
 
     # 格子はクラスの番号
@@ -400,6 +403,266 @@ def test_previews_of_points_and_images() -> None:
 
     # 絵にできない形は値だけ
     assert array_preview(np.zeros((2, 3, 5, 7)), "image")["view"] == "values"
+
+    # 大きな領域は間引いた格子と, 全ての画素の数
+    mask = np.zeros((1000, 700), dtype=np.int64)
+    mask[:10] = 3
+    preview = array_preview(mask, "mask")
+    assert len(preview["grid"]) <= 256 and len(preview["grid"][0]) <= 256
+    assert preview["labels"] == [{"label": 0, "count": 693000},
+                                 {"label": 3, "count": 7000}]
+    assert preview["norm"] == pytest.approx(3 * np.sqrt(7000))
+
+
+def test_unsupported_arrays(tmp_path: Path, client: TestClient) -> None:
+    """
+    複素数, 構造のある型, オブジェクトの配列と外を指す行を断ることを
+    確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    client: TestClient
+        クライアント
+
+    Returns
+    ----------
+    None
+    """
+    # ベクトルの結果の配列を差し替える
+    paths = write_unlabeled(tmp_path / "data")
+    path = make_v3(tmp_path, paths, "embed", head_spec(5), form="vector")
+    bundle = register(client, path)
+    result = client.post(f"/api/bundles/{bundle['id']}/predict",
+                         json={"source": str(paths["csv"])}).json()
+    rid = result["id"]
+    place = tmp_path / "home" / "results" / rid
+    folder = place / "artifacts"
+    cases = {
+        0: np.array([1 + 2j, 3j]),
+        1: np.zeros(3, dtype=[("a", "f4"), ("b", "i4")]),
+        3: np.array(["a", "b"]),
+    }
+    for row, array in cases.items():
+        np.save(folder / f"{row:06d}.npy", array)
+        response = client.get(f"/api/results/{rid}/artifacts/{row}")
+        assert response.status_code == 400
+        assert "見せられません" in response.json()["detail"]
+
+    # オブジェクトの配列 (pickle) は読まない
+    np.save(folder / "000004.npy", np.array([{"a": 1}], dtype=object),
+            allow_pickle=True)
+    response = client.get(f"/api/results/{rid}/artifacts/4")
+    assert response.status_code == 400
+    assert "読めません" in response.json()["detail"]
+
+    # 表の外を指す行
+    table = pd.read_csv(place / "predictions.csv", encoding="utf-8-sig")
+    table.loc[5, "artifact"] = "../../outside.npy"
+    table.to_csv(place / "predictions.csv", index=False, encoding="utf-8-sig")
+    assert client.get(f"/api/results/{rid}/artifacts/5").status_code == 400
+    assert client.get(
+        f"/api/results/{rid}/artifacts/5/file"
+    ).status_code == 400
+
+
+def test_group_sentences_and_origin(
+    tmp_path: Path, client: TestClient
+) -> None:
+    """
+    まとめる列のある列の出力の結果で, 出どころの文が全体の文とまとめる
+    列ごとの文の数え方を崩さないことを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    client: TestClient
+        クライアント
+
+    Returns
+    ----------
+    None
+    """
+    # 今の処理の出力を正解にした分類の一式
+    csv, dataset = labeled(tmp_path / "data")
+    origin = {"type": "process", "name": "手作業の判定"}
+    path = make_v3(
+        tmp_path, {"dataset": dataset}, "cls", head_spec(2),
+        target={"kind": "column", "origin": origin}
+    )
+    bundle = register(client, path)
+    response = client.post(f"/api/bundles/{bundle['id']}/predict", json={
+        "source": str(csv), "rules": {"group_by": "label"},
+    })
+    assert response.status_code == 201, response.text
+    result = response.json()
+
+    # 全体の文は件数と内訳, 残りはまとめる列ごと, 出どころは別
+    sentences = result["sentences"]
+    assert result["overall_count"] == 2
+    assert sentences[0].startswith("40 件のうち 40 件を予測")
+    assert all(s.startswith(("良:", "悪:")) for s in sentences[2:])
+    assert len(sentences) == 4
+    assert not any("手作業の判定" in s for s in sentences)
+    assert "手作業の判定 の出力" in result["origin_note"]
+
+    # 出し直しても同じ
+    again = client.post(f"/api/results/{result['id']}/conclude",
+                        json={"rules": {"group_by": "label",
+                                        "min_confidence": 0.9}}).json()
+    assert again["overall_count"] == 2
+    assert "手作業の判定 の出力" in again["origin_note"]
+    assert not any("手作業の判定" in s for s in again["sentences"])
+
+
+def test_model_cache(
+    tmp_path: Path, client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    一覧で組み立てたモデルを追い出さず, 一式のファイルが変われば読み直し,
+    登録を消すと手放すことを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    client: TestClient
+        クライアント
+    monkeypatch: pytest.MonkeyPatch
+        覚える数の環境変数を替える
+
+    Returns
+    ----------
+    None
+    """
+    from ml_provide import cache
+
+    # 覚えるモデルは 1 つにし, 2 つの一式を一覧に並べる
+    monkeypatch.setenv(cache.MODEL_CACHE_ENV, "1")
+    assert cache.model_cache_size() == 1
+    monkeypatch.setenv(cache.MODEL_CACHE_ENV, "zero")
+    assert cache.model_cache_size() == cache.MODEL_CACHE_DEFAULT
+    monkeypatch.setenv(cache.MODEL_CACHE_ENV, "1")
+    paths = write_unlabeled(tmp_path / "data")
+    first = register(client, make_v3(tmp_path, paths, "first", head_spec(5),
+                                     form="vector"))
+    second = register(client, make_v3(tmp_path, paths, "second",
+                                      head_spec(4), form="vector"))
+    response = client.post(f"/api/bundles/{first['id']}/predict",
+                           json={"source": str(paths["csv"])})
+    assert response.status_code == 201
+
+    # 一覧と別の一式の画面を開いても, 推論した一式のモデルは残る
+    for _ in range(2):
+        listed = {b["id"]: b for b in client.get("/api/bundles").json()}
+        assert listed[first["id"]]["model_loaded"] is True
+        assert listed[second["id"]]["model_loaded"] is False
+        client.get(f"/api/bundles/{second['id']}")
+    assert str(Path(first["path"])) in cache.MODELS
+
+    # 定義のファイルが変わると読み直す (覚えたモデルは使わない)
+    spec = Path(first["path"]) / "model_spec.yaml"
+    spec.write_text(spec.read_text(encoding="utf-8") + "\n",
+                    encoding="utf-8")
+    assert client.get(
+        f"/api/bundles/{first['id']}"
+    ).json()["model_loaded"] is False
+
+    # 登録を消すと, 覚えたものを手放す
+    client.post(f"/api/bundles/{first['id']}/predict",
+                json={"source": str(paths["csv"])})
+    assert str(Path(first["path"])) in cache.MODELS
+    assert client.delete(f"/api/bundles/{first['id']}").status_code == 204
+    assert str(Path(first["path"])) not in cache.MODELS
+    assert str(Path(first["path"])) not in cache.DESCRIPTIONS
+
+
+def test_failed_inference_leaves_nothing(
+    tmp_path: Path, client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    推論の後の書き出しに失敗すると, 結果を残さないことを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    client: TestClient
+        クライアント
+    monkeypatch: pytest.MonkeyPatch
+        書き出しを失敗させる
+
+    Returns
+    ----------
+    None
+    """
+    import ml_provide.api as api
+
+    # 書き出しの途中の誤り
+    paths = write_unlabeled(tmp_path / "data")
+    bundle = register(client, make_v3(tmp_path, paths, "embed", head_spec(5),
+                                      form="vector"))
+    monkeypatch.setattr(api, "count_into", broken_count)
+    response = client.post(f"/api/bundles/{bundle['id']}/predict",
+                           json={"source": str(paths["csv"])})
+    assert response.status_code == 400
+    assert "書けません" in response.json()["detail"]
+    assert client.get("/api/results").json() == []
+    assert list((tmp_path / "home" / "results").iterdir()) == []
+
+
+def broken_count(place: Path, meta: dict[str, Any]) -> None:
+    """
+    書き出しに失敗する数え直し (テストのため)
+
+    Parameters
+    ----------
+    place: Path
+        結果のディレクトリ
+    meta: dict[str, Any]
+        result.yaml の中身
+
+    Returns
+    ----------
+    None
+    """
+    raise ValueError("書けません")
+
+
+def labeled(root: Path) -> tuple[Path, Path]:
+    """
+    2 クラスの分類の表とデータセットを作る関数
+
+    Parameters
+    ----------
+    root: Path
+        作るディレクトリ
+
+    Returns
+    ----------
+    paths: tuple[Path, Path]
+        CSV とデータセット
+    """
+    # 3 つの数の列と 2 つのクラス
+    rng = np.random.default_rng(1)
+    root.mkdir(parents=True)
+    frame = pd.DataFrame({
+        "a": rng.normal(size=40), "b": rng.normal(size=40),
+        "c": rng.normal(size=40), "label": rng.choice(["良", "悪"], size=40),
+    })
+    csv = root / "table.csv"
+    frame.to_csv(csv, index=False)
+    recipe = {
+        "format_version": 1, "target": "label", "task": "classification",
+        "steps": [{"op": "standardize", "columns": "auto"}],
+        "split": {"method": "random", "valid": 0.2, "seed": 0},
+    }
+    export_dataset(load_data(csv), recipe, root / "dataset")
+    paths = (csv, root / "dataset")
+
+    return paths
 
 
 def test_version_two_bundle_unchanged(
@@ -542,7 +805,8 @@ def test_procedures_from_startup_setting(
     assert response.status_code == 201, response.text
 
     # 登録簿に無い手順は, 起動の設定に足すよう案内 (一式のコードは読まない)
-    info = yaml.safe_load((path / "inference.yaml").read_text(encoding="utf-8"))
+    file = path / "inference.yaml"
+    info = yaml.safe_load(file.read_text(encoding="utf-8"))
     info["procedure"]["name"] = "never_registered"
     (path / "inference.yaml").write_text(
         yaml.safe_dump(info, allow_unicode=True), encoding="utf-8"

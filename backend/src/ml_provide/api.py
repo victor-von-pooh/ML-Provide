@@ -3,7 +3,6 @@ import os
 import shutil
 import threading
 import uuid
-from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -14,9 +13,23 @@ import yaml
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi import Path as FastPath
 from fastapi.responses import FileResponse, Response
-from ml_inference.conclude import RULE_KEYS, conclude_outputs, origin_sentence
+from ml_inference.conclude import (
+    RULE_KEYS,
+    conclude_outputs,
+    origin_sentence,
+    sentences_of,
+)
+from ml_inference.predict import target_of
 from pydantic import BaseModel, Field
 
+from ml_provide.cache import (
+    describe,
+    forget,
+    open_bundle,
+    read_bundle,
+    remember_warnings,
+)
+from ml_provide.previews import PREVIEW_LIMIT, array_preview, dtype_problem
 from ml_provide.procedures import missing_procedure, registered
 from ml_provide.samples import write_samples
 from ml_provide.store import Store
@@ -32,13 +45,6 @@ RESULT_LOCK = threading.Lock()
 # 見本を作って登録する処理を 1 つずつにする鍵
 SAMPLES_LOCK = threading.Lock()
 
-# 読み込んだ一式を覚えておく数と, 場所ごとの (更新時刻, 一式)
-# (組み立てたモデルも覚えるので, 大きなモデルでメモリを使い切らない数)
-BUNDLE_CACHE_SIZE = 4
-BUNDLES: OrderedDict[str, tuple[tuple[float, ...], ml_inference.Bundle]] = (
-    OrderedDict()
-)
-BUNDLES_LOCK = threading.Lock()
 
 # 画面に書いた文として受け付ける上限
 MAX_TEXTS = 10000
@@ -156,7 +162,7 @@ def bundle_error(path: str, error: Exception) -> HTTPException:
     exception: HTTPException
         400 の例外
     """
-    # 自作の手順は起動の設定で登録する (一式のコードは読まない)
+    # 自作の手順は起動の設定での登録 (一式のコードは読まない)
     message = missing_procedure(path)
     if message is None:
         exception = user_error(error)
@@ -164,68 +170,6 @@ def bundle_error(path: str, error: Exception) -> HTTPException:
     exception = HTTPException(400, message)
 
     return exception
-
-
-def open_bundle(path: str) -> ml_inference.Bundle:
-    """
-    一式を読む関数 (inference.yaml が変わっていなければ覚えたものを使う)
-
-    Parameters
-    ----------
-    path: str
-        一式のディレクトリ
-
-    Returns
-    ----------
-    bundle: ml_inference.Bundle
-        一式
-    """
-    # inference.yaml と重みの更新時刻と大きさで, 覚えたものが古くないか
-    # を確かめる (写さない重みは, 学習し直すと実験の中で変わる)
-    # (覚えた印は inference.yaml と重みの 2 つ分. 重みは覚えた一式の場所)
-    stamp = file_stamp(Path(path) / "inference.yaml")
-    with BUNDLES_LOCK:
-        cached = BUNDLES.get(path)
-    if cached is not None and cached[0] == stamp + file_stamp(
-        cached[1].weights_path
-    ):
-        with BUNDLES_LOCK:
-            if path in BUNDLES:
-                BUNDLES.move_to_end(path)
-        return cached[1]
-    bundle = ml_inference.load_bundle(path)
-    stamp = stamp + file_stamp(bundle.weights_path)
-    with BUNDLES_LOCK:
-        BUNDLES[path] = (stamp, bundle)
-        BUNDLES.move_to_end(path)
-        while len(BUNDLES) > BUNDLE_CACHE_SIZE:
-            BUNDLES.popitem(last=False)
-
-    return bundle
-
-
-def file_stamp(path: Path) -> tuple[float, ...]:
-    """
-    ファイルの更新時刻と大きさを返す関数
-
-    Parameters
-    ----------
-    path: Path
-        ファイル
-
-    Returns
-    ----------
-    stamp: tuple[float, ...]
-        更新時刻と大きさ (無ければ空)
-    """
-    # 消えたファイルは空 (読み込みで誤りになる)
-    try:
-        status = path.stat()
-    except OSError:
-        return ()
-    stamp = (status.st_mtime, float(status.st_size))
-
-    return stamp
 
 
 def find_bundle(request: Request, bundle_id: str) -> dict[str, Any]:
@@ -275,9 +219,8 @@ def bundle_view(entry: dict[str, Any]) -> dict[str, Any]:
         **entry, "ok": True, "error": None, "model_loaded": False
     }
     try:
-        bundle = open_bundle(str(entry["path"]))
-        view["description"] = ml_inference.describe_bundle(bundle)
-        view["model_loaded"] = "model" in bundle.cache
+        description, loaded = describe(str(entry["path"]))
+        view.update(description=description, model_loaded=loaded)
     except Exception as error:
         message = missing_procedure(str(entry["path"])) or str(error)
         view.update(ok=False, error=message, description=None)
@@ -417,7 +360,7 @@ def register_bundle(
     # 読めることを確かめてから登録
     path = Path(body.path).expanduser().resolve()
     try:
-        bundle = open_bundle(str(path))
+        bundle = read_bundle(str(path))
     except (OSError, *USER_ERRORS) as error:
         raise bundle_error(str(path), error) from error
     name = (body.name or str(bundle.info.get("name") or path.name))[:MAX_NAME]
@@ -621,9 +564,8 @@ def delete_bundle(request: Request, bundle_id: str) -> Response:
     entry = get_store(request).find(bundle_id)
     if not get_store(request).remove(bundle_id):
         raise HTTPException(404, "一式が見つかりません")
-    # 覚えた一式 (組み立てたモデル) も手放す
-    with BUNDLES_LOCK:
-        BUNDLES.pop(str((entry or {}).get("path")), None)
+    # 覚えた一式 (組み立てたモデル, 説明, 警告) の手放し
+    forget(str((entry or {}).get("path")))
     response = Response(status_code=204)
 
     return response
@@ -698,7 +640,7 @@ def predict(
         raise bundle_error(str(entry["path"]), error) from error
     rules, decision = body.rules, body.decision
     if not bundle.column_output:
-        # 列の出力でない一式は件数だけ (決め方と意思決定は使えない)
+        # 列の出力でない一式は件数だけ (決め方と意思決定は使えないもの)
         given = any(v is not None for v in (rules or {}).values())
         if given or decision or body.forecast:
             raise HTTPException(400, column_only(bundle.form))
@@ -724,6 +666,7 @@ def predict(
         except Exception as error:
             raise user_error(error) from error
         warned = list(bundle.cache.get("pretrained_warnings") or [])
+        remember_warnings(str(entry["path"]), bundle)
     result.update(
         source=described, bundle_id=bundle_id, task=bundle.task,
         classes=bundle.classes, kind=bundle.kind, forecast=body.forecast,
@@ -736,12 +679,13 @@ def predict(
         source_path=str(source) if isinstance(source, Path) else None,
         role=bundle.role, output_form=bundle.form,
         column_output=bundle.column_output,
-        target_info=ml_inference.describe_bundle(bundle)["target_info"],
+        target_info=target_of(bundle),
+        origin_note=origin_sentence(target_of(bundle)),
         pretrained_warnings=warned
     )
     # 書いた表を読み直して結論を出し直す (出し直しと同じ型の値でまとめ,
     # 日時のような列のまとめの名前が, 後の出し直しで変わらないように)
-    # (書き出しの途中で失敗した結果は, 壊れたまま残さずに消す)
+    # (書き出しの途中で失敗した結果は, 壊れたまま残さずに削除)
     result_id, place = get_store(request).new_result_dir()
     meta = {k: v for k, v in result.items() if k != "frame"}
     try:
@@ -780,19 +724,17 @@ def conclude_into(
     ValueError
         決め方に誤りがある場合
     """
-    # 列の出力でない結果は件数だけ (conclude をかけず, 配列は持ち越す)
+    # 列の出力でない結果は件数だけ (conclude をかけず, 配列は持ち越し)
     if not is_column(meta):
         count_into(place, meta)
         return
 
-    # 判断の列を除いた予測から出し直す (正解の出どころの文は残す)
+    # 判断の列を除いた予測からの出し直し (正解の出どころの文は結論の文に
+    # 混ぜず origin_note に. まとめる列ごとの文と分けるため)
     frame = read_frame(place, meta).drop(columns=["decision"], errors="ignore")
     conclusion = ml_inference.conclude(
         frame, str(meta.get("task")), list(meta.get("classes") or []), rules
     )
-    sentence = origin_sentence(meta.get("target_info"))
-    if sentence:
-        conclusion["sentences"].append(sentence)
     meta = {
         **meta, "summary": conclusion["summary"],
         "sentences": conclusion["sentences"], "rules": conclusion["rules"],
@@ -824,14 +766,11 @@ def count_into(place: Path, meta: dict[str, Any]) -> None:
     ----------
     None
     """
-    # read_result の結果をそのまま write_result に渡す (同じ場所なので
-    # artifacts/ はそのまま使う)
+    # read_result の結果をそのまま write_result へ (同じ場所なので
+    # artifacts/ はそのまま)
     result = ml_inference.read_result(place)
     frame = result["frame"].drop(columns=["decision"], errors="ignore")
     conclusion = conclude_outputs(frame)
-    sentence = origin_sentence(meta.get("target_info"))
-    if sentence:
-        conclusion["sentences"].append(sentence)
     result.update(conclusion)
     ml_inference.write_result(result, place)
 
@@ -1024,7 +963,7 @@ def read_meta(place: Path) -> dict[str, Any]:
     meta = yaml.safe_load((place / "result.yaml").read_text(encoding="utf-8"))
     if not isinstance(meta, dict):
         raise ValueError(f"{place.name} の result.yaml が壊れています")
-    # 知らない新しい版の結果は読み違えずに止める
+    # 知らない新しい版の結果は読み違えずに停止
     version = meta.get("format_version")
     version = 1 if version is None else version
     newest = ml_inference.RESULT_FORMAT_VERSION
@@ -1099,6 +1038,10 @@ def result_view(result_id: str, place: Path) -> dict[str, Any]:
         "rules": meta.get("rules") or {},
         "summary": meta.get("summary"),
         "sentences": meta.get("sentences") or [],
+        "overall_count": overall_count(meta),
+        "origin_note": meta.get("origin_note") or origin_sentence(
+            meta.get("target_info")
+        ),
         "columns": columns,
         "kind": meta.get("kind"),
         "forecast": bool(meta.get("forecast")),
@@ -1116,6 +1059,36 @@ def result_view(result_id: str, place: Path) -> dict[str, Any]:
     }
 
     return view
+
+
+def overall_count(meta: dict[str, Any]) -> int:
+    """
+    結論の文のうち, 全体の文 (まとめる列ごとの文の前まで) の数を返す関数
+
+    Parameters
+    ----------
+    meta: dict[str, Any]
+        result.yaml の中身
+
+    Returns
+    ----------
+    count: int
+        全体の文の数 (まとめる列の無い結果は全ての文)
+    """
+    # まとめる列を除いたまとめから作り直した文の数 (文の数での推し量りはしないこと)
+    sentences = list(meta.get("sentences") or [])
+    summary = meta.get("summary") or {}
+    count = len(sentences)
+    if not summary.get("groups"):
+        return count
+    try:
+        head = sentences_of({**summary, "groups": []}, str(meta.get("task")))
+    except (KeyError, TypeError, ValueError):
+        return count
+    if sentences[:len(head)] == head:
+        count = len(head)
+
+    return count
 
 
 def find_result(request: Request, result_id: str) -> Path:
@@ -1271,13 +1244,8 @@ def get_rows(
     return rows
 
 
-# 配列の見本の大きさ (絵の 1 辺の画素, 点群の点, ベクトルの値)
-PREVIEW_SIDE = 256
-PREVIEW_POINTS = 2000
-PREVIEW_VALUES = 16
-
-# 見せる配列の値の数の上限
-PREVIEW_LIMIT = 50_000_000
+# 配列の見本を同時に作る数 (大きな配列でメモリを使い切らないための上限)
+PREVIEW_SLOTS = threading.Semaphore(2)
 
 
 def artifact_file(place: Path, row: int) -> Path:
@@ -1328,129 +1296,6 @@ def artifact_file(place: Path, row: int) -> Path:
     return path
 
 
-def thin_grid(array: np.ndarray) -> np.ndarray:
-    """
-    絵の格子を 1 辺 PREVIEW_SIDE 以下に間引く関数
-
-    Parameters
-    ----------
-    array: np.ndarray
-        (高さ, 幅) か (高さ, 幅, チャンネル)
-
-    Returns
-    ----------
-    thinned: np.ndarray
-        間引いた格子
-    """
-    # 行と列を同じ間隔で
-    stride = max(1, -(-max(array.shape[0], array.shape[1]) // PREVIEW_SIDE))
-    thinned = array[::stride, ::stride]
-
-    return thinned
-
-
-def image_grid(array: np.ndarray) -> Optional[np.ndarray]:
-    """
-    画像の配列を (高さ, 幅) か (高さ, 幅, 3) の 0 から 255 にする関数
-
-    Parameters
-    ----------
-    array: np.ndarray
-        1 件の画像 ((高さ, 幅), (高さ, 幅, チャンネル), (チャンネル,
-        高さ, 幅))
-
-    Returns
-    ----------
-    grid: Optional[np.ndarray]
-        0 から 255 の整数の格子 (絵にできない形は None)
-    """
-    # チャンネルの位置をそろえる (1, 3, 4 チャンネルだけ)
-    grid: Optional[np.ndarray] = None
-    channels = (1, 3, 4)
-    if array.ndim == 3 and array.shape[0] in channels and (
-        array.shape[2] not in channels
-    ):
-        array = np.moveaxis(array, 0, -1)
-    if array.ndim == 3:
-        if array.shape[2] not in channels:
-            return grid
-        array = array[..., 0] if array.shape[2] == 1 else array[..., :3]
-    if array.ndim != 2 and array.ndim != 3:
-        return grid
-
-    # 最小と最大で 0 から 255 に
-    values = np.nan_to_num(
-        array.astype(np.float64), posinf=0.0, neginf=0.0
-    ).clip(-1e300, 1e300)
-    if values.size == 0:
-        return grid
-    low, high = float(np.min(values)), float(np.max(values))
-    scale = (high - low) or 1.0
-    grid = np.round((values - low) / scale * 255).astype(np.int64)
-
-    return grid
-
-
-def array_preview(array: np.ndarray, form: str) -> dict[str, Any]:
-    """
-    1 件の配列を, 出力の形ごとに画面で見せる形にする関数
-
-    Parameters
-    ----------
-    array: np.ndarray
-        1 件の配列
-    form: str
-        出力の形 (mask, image, point_cloud, vector)
-
-    Returns
-    ----------
-    preview: dict[str, Any]
-        shape, dtype, view (grid, image, points, values) と見せ方ごとの中身
-    """
-    # どの形も形と型, 最初の値
-    flat = np.nan_to_num(array.astype(np.float64)).ravel()
-    norm = float(np.linalg.norm(flat))
-    preview: dict[str, Any] = {
-        "form": form,
-        "shape": list(array.shape),
-        "dtype": str(array.dtype),
-        "view": "values",
-        "values": flat[:PREVIEW_VALUES].tolist(),
-        "size": int(flat.size),
-        "norm": norm if np.isfinite(norm) else None,
-    }
-
-    # 領域はクラスの番号の格子
-    if form == "mask" and array.ndim == 2:
-        grid = thin_grid(array.astype(np.int64))
-        labels, counts = np.unique(array.astype(np.int64), return_counts=True)
-        found = [
-            {"label": int(labels[i]), "count": int(counts[i])}
-            for i in range(min(len(labels), 50))
-        ]
-        preview.update(view="grid", grid=grid.tolist(), labels=found)
-        return preview
-
-    # 画像は 0 から 255 の格子
-    image = image_grid(array) if form == "image" else None
-    if image is not None:
-        preview.update(view="image", image=thin_grid(image).tolist())
-        return preview
-
-    # 点群は間引いた最初の 3 つの次元
-    if form == "point_cloud" and array.ndim == 2 and array.shape[1] >= 2:
-        stride = max(1, -(-array.shape[0] // PREVIEW_POINTS))
-        points = np.nan_to_num(
-            array[::stride, :3].astype(np.float64)
-        )
-        preview.update(
-            view="points", points=points.tolist(),
-            total=int(array.shape[0])
-        )
-
-    return preview
-
-
 @router.get("/results/{result_id}/artifacts/{row}")
 def get_artifact(
     request: Request, result_id: str, row: int = FastPath(ge=0)
@@ -1472,26 +1317,30 @@ def get_artifact(
     preview: dict[str, Any]
         row, file (配列のファイルの名前) と配列の見本
     """
-    # 配列は pickle を読まずに
-    # (大きな配列は読み込まずに断る. ファイルは落とせる)
+    # 配列は pickle を読まずに mmap で開き, 間引いた分だけの読み込み
+    # (大きすぎる配列と数でない型は断り. ファイルは落とせるもの)
     place = find_result(request, result_id)
     path = artifact_file(place, row)
-    try:
-        array = np.load(path, mmap_mode="r", allow_pickle=False)
-    except (OSError, ValueError) as error:
-        raise HTTPException(400, f"配列を読めません: {error}") from error
-    if array.size > PREVIEW_LIMIT:
-        raise HTTPException(
-            400, f"配列が大きい ({array.size:,} 個の値) ので見せません. "
-            ".npy を落として見てください"
-        )
     form = str((read_meta(place).get("artifacts") or {}).get("form"))
-    try:
-        shown = array_preview(np.asarray(array), form)
-    except (ValueError, TypeError) as error:
-        raise HTTPException(
-            400, f"数の配列でないので見せられません: {error}"
-        ) from error
+    with PREVIEW_SLOTS:
+        try:
+            array = np.load(path, mmap_mode="r", allow_pickle=False)
+        except (OSError, ValueError) as error:
+            raise HTTPException(400, f"配列を読めません: {error}") from error
+        problem = dtype_problem(array)
+        if problem is not None:
+            raise HTTPException(400, problem)
+        if array.size > PREVIEW_LIMIT:
+            raise HTTPException(
+                400, f"配列が大きい ({array.size:,} 個の値) ので見せません. "
+                ".npy を落として見てください"
+            )
+        try:
+            shown = array_preview(array, form)
+        except (ValueError, TypeError) as error:
+            raise HTTPException(
+                400, f"配列を見せる形にできません: {error}"
+            ) from error
     preview = {"row": row, "file": path.name, **shown}
 
     return preview

@@ -240,6 +240,10 @@ export interface Result {
   /** 列の出力の一式の結果か (前の結果は真) */
   column_output?: boolean
   target_info?: TargetInfo | null
+  /** 正解が今の処理の出力の場合の注意 (結論の文とは分ける) */
+  origin_note?: string | null
+  /** 結論の文のうち全体の文の数 (残りはまとめる列ごとの文) */
+  overall_count?: number
   pretrained_warnings?: string[]
   /** 表に収まらない中身 (artifacts/) の記録 */
   artifacts?: {

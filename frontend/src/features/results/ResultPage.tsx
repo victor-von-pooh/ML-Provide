@@ -402,7 +402,9 @@ export function ResultPage() {
   const summary = data.summary
   const values = summary?.values
   // まとめる列ごとの文 (ML-Inference は先頭の 10 個まで) の前までが全体の文
-  const overall = data.sentences.length - Math.min(summary?.groups?.length ?? 0, 10)
+  // (API が数えた数. 無い前の API では文の数から)
+  const overall =
+    data.overall_count ?? data.sentences.length - Math.min(summary?.groups?.length ?? 0, 10)
   // 列の出力でない一式の結果は件数だけ (決め方, 意思決定, 列の効きは使えない)
   const column = data.column_output !== false
   const form = data.artifacts?.form ?? data.output_form ?? ''

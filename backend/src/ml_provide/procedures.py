@@ -16,7 +16,7 @@ from ml_inference import PROCEDURES
 # 自作の手順を登録するモジュールを書く環境変数 (, で区切る)
 PROCEDURES_ENV = "ML_PROVIDE_PROCEDURES"
 
-# 起動の設定の書き方 (誤りの文に添える)
+# 起動の設定の書き方 (誤りの文に添える案内)
 SETTING_HINT = (
     "自作の手順なら, 登録するモジュールを起動の設定 (ml-provide の "
     f"--procedures か環境変数 {PROCEDURES_ENV}) に足してから起動し直して"
@@ -93,7 +93,7 @@ def load_modules(names: list[str]) -> list[str]:
     RuntimeError
         モジュールを読めない場合
     """
-    # 読めないモジュールは起動を止める (気付かずに手順の無いまま動かない)
+    # 読めないモジュールでの起動の停止 (気付かずに手順の無いまま動かないため)
     loaded: list[str] = []
     for name in names:
         try:
@@ -147,7 +147,7 @@ def missing_procedure(path: str) -> Optional[str]:
     message: Optional[str]
         登録簿に無い手順の案内 (無ければ None)
     """
-    # inference.yaml の procedure の名前だけを読む (コードは読まない)
+    # inference.yaml の procedure の名前だけの読み込み (コードは読まないこと)
     message: Optional[str] = None
     try:
         text = (Path(path) / "inference.yaml").read_text(encoding="utf-8")
