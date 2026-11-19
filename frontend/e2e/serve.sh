@@ -12,7 +12,8 @@ rm -rf "$WORK"
 mkdir -p "$WORK"
 cd ../../backend
 
-# 問題の設定の見本 (総菜の作る量) を, 日々の売上の見本の列 (日付, 店, 売上) に合わせて保存する
+# 問題の設定の見本 (総菜の作る量) を, 日々の売上の見本の列 (日付, 店, 売上) に合わせて保存する.
+# 受け持ちを作るにした問題の設定も並べて保存する
 uv run python - "$WORK/problem" <<'PY'
 import sys
 
@@ -22,12 +23,27 @@ from ml_quest.examples import example_problem
 problem = example_problem("総菜の作る量")
 for key, value in (
     ("information.columns", ["date", "shop", "sales"]),
-    ("ml.series_by", ["shop"]),
+    ("ml.parts.0.series_by", ["shop"]),
     ("information.known", ["shop"]),
     ("information.unknown", None),
 ):
     problem = ml_quest.answer(problem, key, value)
 ml_quest.save_problem(problem, sys.argv[1])
+
+# 受け持ちを作る (画像) にした問題の設定 (推論の結論はまだ扱わない)
+other = example_problem("総菜の作る量")
+other["ml"]["parts"] = [{}]
+for key in ("decision", "basis", "current"):
+    other["action"].pop(key, None)
+for key, value in (
+    ("role", "generate"), ("what", "品の見本の画像"), ("item", "1 枚"),
+    ("baseline", "手で撮る"), ("unit", "pair"), ("output", "image"),
+    ("target.source", "files"), ("method", "finetune"),
+    ("target.kind", "image"), ("evaluation.metric", "fid"),
+    ("evaluation.link", "見本が自然なほど撮る手間が減る"),
+):
+    other = ml_quest.answer(other, f"ml.parts.0.{key}", value)
+ml_quest.save_problem(other, sys.argv[1] + "-generate")
 PY
 
 # 決まったトークンで起動

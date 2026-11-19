@@ -4,6 +4,7 @@ from typing import Any
 
 import ml_quest
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 from ml_quest.examples import example_problem
 
@@ -11,6 +12,59 @@ from ml_provide.app import create_app
 
 # テストで使うトークン
 TOKEN = "test-token"
+
+# 版 1 の問題の設定のファイル (総菜の見本を日々の売上の見本の列に合わせた
+# もの. 版 2 の shop_problem と同じ答え)
+SHOP_V1 = """
+format_version: 1
+name: 総菜の作る量
+created_at: "2026-11-17T21:30:00+09:00"
+updated_at: "2026-11-17T21:45:00+09:00"
+issue:
+  owner: 店長
+  pain: 総菜の廃棄が多く, 夕方には品切れも出る
+  current: 前の週の同じ曜日と同じ数を作る
+  kpi: {name: 廃棄と欠品の損, unit: 円 / 月, current: 1200000,
+        target: 960000, better: lower}
+decomposition:
+  - {cause: 作る量が勘で決まる, lever: 作る量を予測から決める, ml: true}
+  - {cause: 値引きが遅い, lever: 値引きの時刻を決める, ml: false}
+action:
+  who: 店長
+  when: 前の日の 17 時
+  what: 品ごとの作る量
+  decision: {type: quantity, under_cost: 200, over_cost: 150}
+  basis: 欠品は粗利 200 円, 廃棄は原価 150 円
+ml:
+  use: true
+  reason: 品と日による売れ方の違いが大きい
+  predict: 翌日の品ごとの売れる数
+  row: 店, 日ごとの 1 行
+  target: sales
+  task: forecasting
+  time_column: date
+  series_by: [shop]
+  available_lag: 2
+  horizon: 1
+  baseline: 前の週の同じ曜日と同じ数
+  consumer: rule
+information:
+  columns: [date, shop, sales]
+  known: [shop]
+evaluation:
+  metric: mae
+  link: 誤差が小さいほど損が減る
+verification:
+  method: both
+  backtest: 過去 3 か月
+  trial: 1 店で 4 週間
+  success: 損が 2 割少ない
+operation:
+  review: 月に 1 回
+  approver: 本部
+  stop: 損が悪い月が 2 回続いたら止める
+  remeasure: 月に 1 回, 前の月の実績で外れ方を確かめる
+"""
 
 
 @pytest.fixture
@@ -54,7 +108,7 @@ def shop_problem() -> dict[str, Any]:
     problem = example_problem("総菜の作る量")
     for key, value in (
         ("information.columns", ["date", "shop", "sales"]),
-        ("ml.series_by", ["shop"]),
+        ("ml.parts.0.series_by", ["shop"]),
         ("information.known", ["shop"]),
         ("information.unknown", None),
     ):
@@ -221,3 +275,168 @@ def test_link_problems(client: TestClient, tmp_path: Path) -> None:
     state = client.get(url).json()
     assert state["linked"] is None and "置き換わって" in state["error"]
     assert state["path"] == str((path / "problem.yaml").resolve())
+
+
+def linked_values(linked: dict[str, Any]) -> dict[str, Any]:
+    """
+    つないだ問題の設定から読んだ値のうち, ファイルに依らない値を返す関数
+
+    Parameters
+    ----------
+    linked: dict[str, Any]
+        つないだ問題の設定から読んだ値
+
+    Returns
+    ----------
+    values: dict[str, Any]
+        場所, 中身の印, 作った時刻を除いた値
+    """
+    # ファイルごとに違う値の除外
+    values = {
+        key: value for key, value in linked.items()
+        if key not in ("path", "version", "created_at")
+    }
+
+    return values
+
+
+def test_version1_and_version2(client: TestClient, tmp_path: Path) -> None:
+    """
+    版 1 の問題の設定のファイルと, 版 2 に移したファイルが, 列の予測で
+    同じ推論の値と意思決定を返し, 版 1 のファイルを書き換えないことを
+    確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    tmp_path: Path
+        一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 版 1 は YAML のまま, 版 2 は ML-Quest で移して保存
+    added = client.post("/api/samples").json()
+    daily = next(b for b in added if "日々の売上" in b["name"])
+    old = tmp_path / "v1" / "problem.yaml"
+    old.parent.mkdir()
+    old.write_text(SHOP_V1, encoding="utf-8")
+    new = tmp_path / "v2"
+    ml_quest.save_problem(
+        ml_quest.upgrade_problem(yaml.safe_load(SHOP_V1)), new
+    )
+    assert ml_quest.load_problem(new)  # 保存できた版 2
+    assert yaml.safe_load(
+        (new / "problem.yaml").read_text(encoding="utf-8")
+    )["format_version"] == 2
+
+    # どちらも列の予測として読め, 値は同じ
+    url = f"/api/bundles/{daily['id']}/problem"
+    views = []
+    decisions = []
+    for place in (old, new):
+        linked = client.put(url, json={"path": str(place)}).json()["linked"]
+        assert linked["handled"] is True
+        views.append(linked_values(linked))
+        result = client.post(f"/api/bundles/{daily['id']}/predict", json={
+            "source": daily["sample_past"], "decision": linked["decision"],
+            "rules": linked["conclusion"],
+        })
+        assert result.status_code == 201, result.text
+        decisions.append(result.json()["decision"])
+    assert views[0] == views[1]
+    assert views[0]["decision"] == {"type": "quantity", "under_cost": 200,
+                                    "over_cost": 150}
+    assert views[0]["conclusion"] == {"group_by": "shop"}
+    assert views[0]["horizon"] == 1 and views[0]["issues"] == []
+    assert views[0]["role"] == "予測する (正解の種類: 表の列)"
+    assert decisions[0] == decisions[1]
+
+    # 版 1 のファイルは変えない (読んだ後に移すだけ)
+    assert old.read_text(encoding="utf-8") == SHOP_V1
+
+    # 知っている版より新しいファイルは, 読めない理由を出して止まる
+    newer = dict(yaml.safe_load(SHOP_V1), format_version=99)
+    future = tmp_path / "future" / "problem.yaml"
+    future.parent.mkdir()
+    future.write_text(yaml.safe_dump(newer, allow_unicode=True),
+                      encoding="utf-8")
+    refused = client.put(url, json={"path": str(future)})
+    assert refused.status_code == 422
+    assert "問題の設定を読めません" in refused.json()["detail"]
+
+
+def generate_problem() -> dict[str, Any]:
+    """
+    総菜の見本の課題で, 受け持ちを「作る」にした問題の設定を作る関数
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    ----------
+    problem: dict[str, Any]
+        受け持ちが作る (画像) の問題の設定
+    """
+    # 課題は見本のまま, 受け持ちは作り直し (意思決定は問わない)
+    problem = example_problem("総菜の作る量")
+    problem["ml"]["parts"] = [{}]
+    for key in ("decision", "basis", "current"):
+        problem["action"].pop(key, None)
+    for key, value in (
+        ("role", "generate"), ("what", "品の見本の画像"), ("item", "1 枚"),
+        ("baseline", "手で撮る"), ("unit", "pair"), ("output", "image"),
+        ("target.source", "files"), ("method", "finetune"),
+        ("target.kind", "image"), ("evaluation.metric", "fid"),
+        ("evaluation.link", "見本が自然なほど撮る手間が減る"),
+    ):
+        problem = ml_quest.answer(problem, f"ml.parts.0.{key}", value)
+
+    return problem
+
+
+def test_other_role(client: TestClient, tmp_path: Path) -> None:
+    """
+    列の予測でない受け持ちの問題の設定は, つなげるが推論の値を持たず,
+    まだ扱わないことを文で出し, 候補には出さないことを確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    tmp_path: Path
+        一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # つなぐと, 意思決定は無く結論の決め方は一式の既定値のまま
+    added = client.post("/api/samples").json()
+    daily = next(b for b in added if "日々の売上" in b["name"])
+    place = tmp_path / "generate"
+    ml_quest.save_problem(generate_problem(), place)
+    url = f"/api/bundles/{daily['id']}/problem"
+    state = client.put(url, json={"path": str(place)})
+    assert state.status_code == 200, state.text
+    linked = state.json()["linked"]
+    assert linked["handled"] is False
+    assert linked["role"] == "作る (正解の種類: 画像)"
+    assert linked["decision"] is None and linked["horizon"] is None
+    assert linked["basis"] is None and linked["issues"] == []
+    assert "推論の結論はまだ扱いません" in linked["text"]
+    assert linked["conclusion"] == {"group_by": "shop"}  # 見本の既定値
+
+    # 読み直しても同じ. 一式の上にあっても候補には出さない
+    assert client.get(url).json()["linked"] == linked
+    project = tmp_path / "project"
+    ml_quest.save_problem(generate_problem(), project)
+    copy = project / "experiments" / "run" / "bundle"
+    shutil.copytree(daily["path"], copy)
+    other = client.post("/api/bundles", json={"path": str(copy)}).json()
+    assert client.get(
+        f"/api/bundles/{other['id']}/problem"
+    ).json()["hint"] is None

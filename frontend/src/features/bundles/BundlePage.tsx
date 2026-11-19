@@ -132,9 +132,11 @@ function PredictCard({
   // 目的の列の過去の値を使う回帰と予測の一式は, 何段も先まで予測できる
   const canForecast = !!description.forecastable
   const [ahead, setAhead] = useState(false)
-  const defaults = linked
-    ? { conclusion: linked.conclusion, decision: linked.decision }
-    : { conclusion: description.conclusion, decision: description.decision }
+  // 推論の結論を扱わない受け持ちの問題の設定は, 一式の既定値のまま
+  const defaults =
+    linked && linked.handled
+      ? { conclusion: linked.conclusion, decision: linked.decision }
+      : { conclusion: description.conclusion, decision: description.decision }
   const [form, setForm] = useState<RulesForm>(() => toForm(defaults.conclusion))
   const { rules, problems: ruleProblems } = fromForm(form, description.task, description.classes)
   const [decisionForm, setDecisionForm] = useState<DecisionForm>(() =>
@@ -282,9 +284,11 @@ function PredictCard({
           </h3>
           {linked && (
             <p className="mb-2 text-xs text-ink-3">
-              {linked.decision
-                ? `問題の設定「${linked.name}」の損得と結論の決め方を既定にしています`
-                : `問題の設定「${linked.name}」は意思決定しない (予測を見て人が決める) ので, 意思決定は空にしています`}
+              {!linked.handled
+                ? `問題の設定「${linked.name}」: ${linked.text}`
+                : linked.decision
+                  ? `問題の設定「${linked.name}」の損得と結論の決め方を既定にしています`
+                  : `問題の設定「${linked.name}」は意思決定しない (予測を見て人が決める) ので, 意思決定は空にしています`}
             </p>
           )}
           <DecisionEditor

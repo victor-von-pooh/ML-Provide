@@ -6,8 +6,10 @@ import ml_inference
 import ml_quest
 import yaml
 from fastapi import APIRouter, HTTPException, Request
+from ml_quest.check import is_column_part
 from ml_quest.handoff import decision_text
 from ml_quest.problem import active_value
+from ml_quest.questions import ROLES, TARGET_KINDS
 from pydantic import BaseModel, Field
 
 from ml_provide.api import find_bundle, get_store, open_bundle
@@ -25,6 +27,15 @@ SUFFIXES = (".yaml", ".yml")
 
 # 一式の場所から問題の設定の候補を探す, 上のディレクトリの数
 HINT_DEPTH = 4
+
+# 受け持ちと正解の種類の短い名前 (ML-Quest の選択肢の名前の括弧の前)
+ROLE_NAMES: dict[str, str] = {
+    str(item["value"]): str(item["label"]).split(" (")[0] for item in ROLES
+}
+KIND_NAMES: dict[str, str] = {
+    str(item["value"]): str(item["label"]).split(" (")[0]
+    for item in TARGET_KINDS
+}
 
 
 class ProblemLink(BaseModel):
@@ -153,8 +164,8 @@ def find_hint(bundle_path: Path, home: Path) -> Optional[str]:
     Returns
     ----------
     hint: Optional[str]
-        最初に見つけた, 推論に渡せる問題の設定のファイルの場所 (無ければ
-        None)
+        最初に見つけた, 推論に渡せる列の予測の問題の設定のファイルの場所
+        (無ければ None)
     """
     # 置き場の中とホームより上は探さない. 推論に渡せるものだけ
     hint: Optional[str] = None
@@ -170,7 +181,10 @@ def find_hint(bundle_path: Path, home: Path) -> Optional[str]:
         try:
             if not candidate.is_file():
                 continue
-            ml_quest.handoff(read_problem(candidate))
+            problem = read_problem(candidate)
+            ml_quest.handoff(problem)
+            if not is_column_part(problem):
+                continue
         except (HTTPException, OSError, *SHAPE_ERRORS):
             continue
         hint = str(candidate)
@@ -206,7 +220,7 @@ def training_columns(bundle: ml_inference.Bundle) -> Optional[list[str]]:
 
 
 def issues_of(
-    bundle: ml_inference.Bundle, problem: dict[str, Any],
+    bundle: ml_inference.Bundle, target: Optional[str],
     decision: Optional[dict[str, Any]], conclusion: dict[str, Any]
 ) -> list[str]:
     """
@@ -216,8 +230,8 @@ def issues_of(
     ----------
     bundle: ml_inference.Bundle
         推論の一式
-    problem: dict[str, Any]
-        問題の設定
+    target: Optional[str]
+        問題の設定の目的の列 (受け渡しの data.target)
     decision: Optional[dict[str, Any]]
         問題の設定の意思決定 (ML-Inference の形)
     conclusion: dict[str, Any]
@@ -230,7 +244,6 @@ def issues_of(
     """
     # 目的の列, 意思決定の型と一式のタスクと列, 結論の決め方
     issues = []
-    target = active_value(problem, "ml.target")
     bundle_target = bundle.dataset.info.get("target")
     if target and bundle_target and target != bundle_target:
         issues.append(
@@ -261,11 +274,38 @@ def issues_of(
     return issues
 
 
+def part_name(part: dict[str, Any]) -> str:
+    """
+    受け渡しの受け持ちを, 画面に出す短い名前にする関数
+
+    Parameters
+    ----------
+    part: dict[str, Any]
+        受け渡しの part (role, target_kind など)
+
+    Returns
+    ----------
+    name: str
+        受け持ちの名前 (正解の種類があれば括弧で添える)
+    """
+    # 予測すると作るは正解の種類も (点群, 画像の領域など)
+    role = part.get("role")
+    name = ROLE_NAMES.get(str(role), str(role))
+    kind = part.get("target_kind")
+    if kind:
+        name += f" (正解の種類: {KIND_NAMES.get(str(kind), str(kind))})"
+
+    return name
+
+
 def linked_view(
     entry: dict[str, Any], path: Path, problem: dict[str, Any]
 ) -> dict[str, Any]:
     """
     問題の設定から推論の値を読み, 画面に出す形にする関数
+
+    列の予測でない受け持ちは推論の値を持たないため, 一式の既定値の
+    結論の決め方と, まだ扱わないことの文を返す
 
     Parameters
     ----------
@@ -274,12 +314,13 @@ def linked_view(
     path: Path
         problem.yaml
     problem: dict[str, Any]
-        問題の設定
+        問題の設定 (版 2. 版 1 は読んだときに移したもの)
 
     Returns
     ----------
     view: dict[str, Any]
-        name, path, version, created_at, decision, conclusion, horizon,
+        name, path, version, created_at, role (受け持ちの名前), handled
+        (推論の結論を扱う受け持ちか), decision, conclusion, horizon,
         basis (損得の根拠), text (意思決定の文), issues (一式との食い違い)
 
     Raises
@@ -290,7 +331,8 @@ def linked_view(
     # 渡せる問題の設定かの確認 (機械学習を使わない, 直すところがある場合
     # は断り)
     try:
-        inference = ml_quest.handoff(problem)["inference"]
+        stages = ml_quest.handoff(problem)
+        handled = is_column_part(problem)
     except SHAPE_ERRORS as error:
         raise HTTPException(
             422, f"問題の設定を推論に渡せません: {error}"
@@ -301,20 +343,33 @@ def linked_view(
         raise HTTPException(422, f"一式を読めません: {error}") from error
 
     # 結論の決め方は一式の既定値に重ね, 意思決定は問題の設定のまま
-    decision = inference["decision"]
+    inference = stages["inference"]
+    role = part_name(stages["part"])
+    decision = inference["decision"] if handled else None
     conclusion = {
         **(bundle.info.get("conclusion") or {}), **inference["conclusion"]
     }
+    if not handled:
+        text = (
+            f"この問題の設定の受け持ち ({role}) の推論の結論はまだ扱いません. "
+            "意思決定と結論の決め方は一式の既定値のままです"
+        )
+    elif decision:
+        text = decision_text(decision)
+    else:
+        text = "意思決定しない (予測を見て人が決める)"
     view = {
         "name": problem["name"], "path": str(path),
         "version": version_of(path),
         "created_at": str(problem["created_at"]),
+        "role": role, "handled": handled,
         "decision": decision, "conclusion": conclusion,
         "horizon": inference["horizon"],
-        "basis": active_value(problem, "action.basis"),
-        "text": decision_text(decision) if decision
-        else "意思決定しない (予測を見て人が決める)",
-        "issues": issues_of(bundle, problem, decision, conclusion),
+        "basis": active_value(problem, "action.basis") if handled else None,
+        "text": text,
+        "issues": issues_of(
+            bundle, stages["data"]["target"], decision, conclusion
+        ) if handled else [],
     }
 
     return view
