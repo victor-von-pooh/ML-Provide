@@ -5,6 +5,7 @@ from pathlib import Path
 import uvicorn
 
 from ml_provide.app import create_app, get_token
+from ml_provide.procedures import module_names
 
 
 def parse_args() -> argparse.Namespace:
@@ -23,6 +24,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="ml-provide")
     parser.add_argument("--host", default="127.0.0.1", help="待ち受けるホスト")
     parser.add_argument("--port", type=int, default=8769, help="ポート番号")
+    parser.add_argument(
+        "--procedures", default=None,
+        help="自作の繰り返しの手順を登録するモジュール (, で区切る. 省くと"
+        "環境変数 ML_PROVIDE_PROCEDURES). 明示したものだけを読む"
+    )
     parser.add_argument(
         "--openapi", type=Path, default=None,
         help="起動せずに OpenAPI の仕様をこのファイルに書き出す"
@@ -68,7 +74,12 @@ def main() -> None:
         hosts = ["*"]
     elif args.host not in hosts:
         hosts.append(args.host)
-    app = create_app(token=get_token(None), allowed_hosts=hosts)
+    modules = None
+    if args.procedures is not None:
+        modules = module_names(args.procedures)
+    app = create_app(
+        token=get_token(None), allowed_hosts=hosts, procedures=modules
+    )
     shown = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
     print(
         "ML-Provide を開く: "

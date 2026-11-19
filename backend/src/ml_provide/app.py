@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from ml_provide.api import router
 from ml_provide.problems import router as problem_router
+from ml_provide.procedures import configured_modules, load_modules
 from ml_provide.settings import get_data_dir
 from ml_provide.store import Store
 
@@ -264,7 +265,8 @@ def mount_frontend(app: FastAPI, static_dir: Path) -> None:
 
 def create_app(
     data_dir: Optional[Path] = None, token: Optional[str] = None,
-    allowed_hosts: Optional[list[str]] = None
+    allowed_hosts: Optional[list[str]] = None,
+    procedures: Optional[list[str]] = None
 ) -> FastAPI:
     """
     アプリを組み立てる関数
@@ -277,6 +279,9 @@ def create_app(
         API の呼び出しに求めるトークン, None の場合は環境変数かランダムに作成
     allowed_hosts: Optional[list[str]] = None
         受け付けるホスト名, None の場合は 127.0.0.1 と localhost
+    procedures: Optional[list[str]] = None
+        自作の繰り返しの手順を登録するモジュール, None の場合は環境変数
+        ML_PROVIDE_PROCEDURES (起動の設定で明示したものだけを読む)
 
     Returns
     ----------
@@ -294,6 +299,11 @@ def create_app(
     # 登録した一式と推論の結果の置き場をアプリに保存
     home = data_dir or get_data_dir()
     app.state.store = Store(home)
+
+    # 起動の設定で明示した自作の手順のモジュールだけの読み込み
+    app.state.procedure_modules = load_modules(
+        configured_modules(procedures)
+    )
 
     # トークンの無い呼び出し, 他のサイトからの書き込み,
     # 他のホスト名での接続 (DNS rebinding) の拒否

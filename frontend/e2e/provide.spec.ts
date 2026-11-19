@@ -1,6 +1,7 @@
+import fs from 'node:fs'
 import path from 'node:path'
 
-import { expect, test } from '@playwright/test'
+import { expect, test, type APIRequestContext } from '@playwright/test'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -258,3 +259,95 @@ test('効果を確率の差で渡すと, 向きの欄が出て, 無作為の試�
   })
   await expect(page.getByText(/行動を無作為に割り当てた試験で確かめる/)).toBeVisible()
 })
+
+test('版 3 の領域の一式は, 結論の決め方を出さずに件数と 1 件の領域を見せる', async ({ page }) => {
+  const root = path.resolve(import.meta.dirname, '.work', 'v3')
+  const bundle = { id: await registerFresh(page.request, path.join(root, 'mask')) }
+  try {
+    // 一式の画面: 受け持ちと出力, 正解の出どころの注意, 決め方と意思決定の欄は無い
+    await page.goto(`/bundles/${bundle.id}`)
+    await expect(page.getByText(/番号ごとの名前 0: 背景, 1: 物/)).toBeVisible()
+    await expect(page.getByText('今の処理の出力 (今の判定)', { exact: false })).toBeVisible()
+    await expect(page.getByRole('note', { name: '一式の注意' })).toContainText(
+      'その処理を超えられません',
+    )
+    await expect(
+      page.getByText(/この一式の出力は領域なので, 結論は推論した件数だけです/),
+    ).toBeVisible()
+    await expect(page.getByRole('region', { name: '結論の決め方' })).toHaveCount(0)
+    await expect(page.getByRole('region', { name: '意思決定' })).toHaveCount(0)
+
+    // 推論すると件数だけの結論と, 1 件の領域
+    await page.getByLabel(/推論するデータ/).fill(path.join(root, 'new.csv'))
+    await page.getByRole('button', { name: '推論する' }).click()
+    await expect(page.getByText('6 件のうち 5 件を推論 (1 件は推論できず)')).toBeVisible({
+      timeout: 30_000,
+    })
+    await expect(page.getByRole('note', { name: '一式の注意' })).toContainText('今の判定 の出力')
+    await expect(page.getByRole('heading', { name: '結論の決め方' })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: '意思決定' })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: '1 件の出力 (領域)' })).toBeVisible()
+    await expect(page.getByRole('img', { name: /^領域/ })).toBeVisible()
+    await expect(page.getByRole('list', { name: '領域の番号ごとの画素' })).toContainText('(物)')
+    await expect(page.getByLabel('行 (#)')).toHaveValue('0')
+
+    // 表の「見る」で行を選ぶ (推論しなかった行には無い)
+    const table = page.getByRole('table', { name: '予測と判断の表' })
+    await expect(table.getByRole('row').nth(3).getByRole('button', { name: '見る' })).toHaveCount(0)
+    await table.getByRole('row').nth(4).getByRole('button', { name: '見る' }).click()
+    await expect(page.getByLabel('行 (#)')).toHaveValue('3')
+    await expect(page.getByRole('link', { name: '.npy' })).toHaveAttribute(
+      'href',
+      /artifacts\/3\/file$/,
+    )
+  } finally {
+    await page.request.delete(`/api/bundles/${bundle.id}`)
+  }
+})
+
+test('版 3 のベクトルの一式は最初の値を見せ, 登録簿に無い手順は起動の設定を案内する', async ({
+  page,
+}) => {
+  const root = path.resolve(import.meta.dirname, '.work', 'v3')
+  const id = await registerFresh(page.request, path.join(root, 'vector'))
+  const file = path.join(root, 'later', 'inference.yaml')
+  const original = fs.readFileSync(file)
+  let laterId = ''
+  try {
+    await page.goto(`/bundles/${id}`)
+    await expect(page.getByText('まとめる', { exact: true })).toBeVisible()
+    await page.getByLabel(/推論するデータ/).fill(path.join(root, 'new.csv'))
+    await page.getByRole('button', { name: '推論する' }).click()
+    await expect(page.getByRole('heading', { name: '1 件の出力 (ベクトル)' })).toBeVisible({
+      timeout: 30_000,
+    })
+    await expect(page.getByText(/形 \(5\)/)).toBeVisible()
+    await expect(page.getByLabel('最初の値')).toBeVisible()
+
+    // 登録した後に手順が登録簿に無いものに変わった一式
+    laterId = await registerFresh(page.request, path.join(root, 'later'))
+    fs.copyFileSync(path.join(root, 'later-inference.yaml'), file)
+    await page.goto(`/bundles/${laterId}`)
+    await expect(page.getByText(/手順 my_sampler は登録簿にありません/)).toBeVisible()
+    await expect(page.getByText(/ML_PROVIDE_PROCEDURES/)).toBeVisible()
+  } finally {
+    // 書き換えた inference.yaml と登録を元に戻す (やり直しても同じに動くように)
+    fs.writeFileSync(file, original)
+    await page.request.delete(`/api/bundles/${id}`)
+    if (laterId) await page.request.delete(`/api/bundles/${laterId}`)
+  }
+})
+
+/** 同じ場所の登録を外してから, 場所で一式を登録して id を返す */
+async function registerFresh(request: APIRequestContext, place: string): Promise<string> {
+  const listed = (await (await request.get('/api/bundles')).json()) as {
+    id: string
+    path: string
+  }[]
+  for (const bundle of listed.filter((item) => item.path === place)) {
+    await request.delete(`/api/bundles/${bundle.id}`)
+  }
+  const response = await request.post('/api/bundles', { data: { path: place } })
+  expect(response.status()).toBe(201)
+  return ((await response.json()) as { id: string }).id
+}

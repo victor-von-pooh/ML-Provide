@@ -8,6 +8,7 @@ import type { Bundle } from '../../api/types'
 import { PathPicker } from '../../components/PathPicker'
 import { Button, Card, EmptyState, ErrorBox, PageHeader, Spinner } from '../../components/ui'
 import { formatNumber, KIND_LABELS, TASK_LABELS } from '../../lib/format'
+import { FORM_LABELS, isColumnOutput, ROLE_LABELS } from '../../lib/outputs'
 import { CreateBundleDialog } from './CreateBundleDialog'
 
 /** 一式の行の, 種類とタスクとクラス */
@@ -20,6 +21,13 @@ function bundleSummary(bundle: Bundle): string {
     description.task === 'forecasting'
       ? '予測'
       : (TASK_LABELS[description.task] ?? description.task)
+  // 列の出力でない一式は, 出力の形と受け持ち
+  if (!isColumnOutput(description)) {
+    const form = description.output?.form ?? ''
+    const role = description.role ?? 'predict'
+    const roleLabel = ROLE_LABELS[role] ?? role
+    return `${kind}から${FORM_LABELS[form] ?? form} (${roleLabel})`
+  }
   const classes = description.classes.length > 0 ? ` (${description.classes.join(', ')})` : ''
   return `${kind}の${task}${classes}`
 }

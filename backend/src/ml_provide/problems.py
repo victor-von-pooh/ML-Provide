@@ -12,7 +12,8 @@ from ml_quest.problem import active_value
 from ml_quest.questions import ROLES, TARGET_KINDS
 from pydantic import BaseModel, Field
 
-from ml_provide.api import find_bundle, get_store, open_bundle
+from ml_provide.api import find_bundle, get_store
+from ml_provide.cache import read_bundle
 
 router = APIRouter(prefix="/api")
 
@@ -338,7 +339,7 @@ def linked_view(
             422, f"問題の設定を推論に渡せません: {error}"
         ) from error
     try:
-        bundle = open_bundle(str(entry["path"]))
+        bundle = read_bundle(str(entry["path"]))
     except Exception as error:
         raise HTTPException(422, f"一式を読めません: {error}") from error
 

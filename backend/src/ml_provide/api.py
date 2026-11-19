@@ -3,18 +3,34 @@ import os
 import shutil
 import threading
 import uuid
-from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Optional, Union
 
 import ml_inference
+import numpy as np
 import pandas as pd
 import yaml
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import Path as FastPath
 from fastapi.responses import FileResponse, Response
-from ml_inference.conclude import RULE_KEYS
+from ml_inference.conclude import (
+    RULE_KEYS,
+    conclude_outputs,
+    origin_sentence,
+    sentences_of,
+)
+from ml_inference.predict import target_of
 from pydantic import BaseModel, Field
 
+from ml_provide.cache import (
+    describe,
+    forget,
+    open_bundle,
+    read_bundle,
+    remember_warnings,
+)
+from ml_provide.previews import PREVIEW_LIMIT, array_preview, dtype_problem
+from ml_provide.procedures import missing_procedure, registered
 from ml_provide.samples import write_samples
 from ml_provide.store import Store
 
@@ -29,12 +45,6 @@ RESULT_LOCK = threading.Lock()
 # 見本を作って登録する処理を 1 つずつにする鍵
 SAMPLES_LOCK = threading.Lock()
 
-# 読み込んだ一式を覚えておく数と, 場所ごとの (更新時刻, 一式)
-BUNDLE_CACHE_SIZE = 64
-BUNDLES: OrderedDict[str, tuple[tuple[float, ...], ml_inference.Bundle]] = (
-    OrderedDict()
-)
-BUNDLES_LOCK = threading.Lock()
 
 # 画面に書いた文として受け付ける上限
 MAX_TEXTS = 10000
@@ -67,6 +77,10 @@ class BundleCreate(BaseModel):
     target_scale: Union[dict[str, float], str, None] = None
     conclusion: Optional[dict[str, Any]] = None
     copy_weights: bool = True
+    role: Optional[str] = None
+    form: Optional[str] = None
+    output_options: Optional[dict[str, Any]] = None
+    procedure: Optional[dict[str, Any]] = None
 
 
 class PredictRequest(BaseModel):
@@ -132,61 +146,30 @@ def user_error(error: Exception) -> HTTPException:
     return exception
 
 
-def open_bundle(path: str) -> ml_inference.Bundle:
+def bundle_error(path: str, error: Exception) -> HTTPException:
     """
-    一式を読む関数 (inference.yaml が変わっていなければ覚えたものを使う)
+    一式を読めない誤りを, 登録簿に無い手順の案内を添えて 400 にする関数
 
     Parameters
     ----------
     path: str
         一式のディレクトリ
+    error: Exception
+        起きた例外
 
     Returns
     ----------
-    bundle: ml_inference.Bundle
-        一式
+    exception: HTTPException
+        400 の例外
     """
-    # inference.yaml と重みの更新時刻と大きさで, 覚えたものが古くないか
-    # を確かめる (写さない重みは, 学習し直すと実験の中で変わる)
-    stamp = file_stamp(Path(path) / "inference.yaml")
-    with BUNDLES_LOCK:
-        cached = BUNDLES.get(path)
-        if cached is not None and cached[0] == stamp:
-            BUNDLES.move_to_end(path)
-            return cached[1]
-    bundle = ml_inference.load_bundle(path)
-    stamp = stamp + file_stamp(bundle.weights_path)
-    with BUNDLES_LOCK:
-        BUNDLES[path] = (stamp, bundle)
-        BUNDLES.move_to_end(path)
-        while len(BUNDLES) > BUNDLE_CACHE_SIZE:
-            BUNDLES.popitem(last=False)
+    # 自作の手順は起動の設定での登録 (一式のコードは読まない)
+    message = missing_procedure(path)
+    if message is None:
+        exception = user_error(error)
+        return exception
+    exception = HTTPException(400, message)
 
-    return bundle
-
-
-def file_stamp(path: Path) -> tuple[float, ...]:
-    """
-    ファイルの更新時刻と大きさを返す関数
-
-    Parameters
-    ----------
-    path: Path
-        ファイル
-
-    Returns
-    ----------
-    stamp: tuple[float, ...]
-        更新時刻と大きさ (無ければ空)
-    """
-    # 消えたファイルは空 (読み込みで誤りになる)
-    try:
-        status = path.stat()
-    except OSError:
-        return ()
-    stamp = (status.st_mtime, float(status.st_size))
-
-    return stamp
+    return exception
 
 
 def find_bundle(request: Request, bundle_id: str) -> dict[str, Any]:
@@ -232,34 +215,44 @@ def bundle_view(entry: dict[str, Any]) -> dict[str, Any]:
         登録, ok, error, 説明 (読めない場合は None)
     """
     # 消えた一式や壊れた一式は理由付き
-    view: dict[str, Any] = {**entry, "ok": True, "error": None}
+    view: dict[str, Any] = {
+        **entry, "ok": True, "error": None, "model_loaded": False
+    }
     try:
-        view["description"] = ml_inference.describe_bundle(
-            open_bundle(str(entry["path"]))
-        )
+        description, loaded = describe(str(entry["path"]))
+        view.update(description=description, model_loaded=loaded)
     except Exception as error:
-        view.update(ok=False, error=str(error), description=None)
+        message = missing_procedure(str(entry["path"])) or str(error)
+        view.update(ok=False, error=message, description=None)
 
     return view
 
 
 @router.get("/info")
-def get_info() -> dict[str, Any]:
+def get_info(request: Request) -> dict[str, Any]:
     """
     ML-Inference の版と結論の決め方の項目を返す関数
 
     Parameters
     ----------
-    None
+    request: Request
+        リクエスト
 
     Returns
     ----------
     info: dict[str, Any]
-        version, rule_keys
+        version, rule_keys, result_version (読める結果の形の版まで),
+        procedures (繰り返しの手順の登録簿), procedure_modules (起動の
+        設定で読んだ手順のモジュール)
     """
     info = {
         "version": ml_inference.__version__,
         "rule_keys": list(RULE_KEYS),
+        "result_version": ml_inference.RESULT_FORMAT_VERSION,
+        "procedures": registered(),
+        "procedure_modules": list(
+            getattr(request.app.state, "procedure_modules", [])
+        ),
     }
 
     return info
@@ -367,9 +360,9 @@ def register_bundle(
     # 読めることを確かめてから登録
     path = Path(body.path).expanduser().resolve()
     try:
-        bundle = open_bundle(str(path))
+        bundle = read_bundle(str(path))
     except (OSError, *USER_ERRORS) as error:
-        raise user_error(error) from error
+        raise bundle_error(str(path), error) from error
     name = (body.name or str(bundle.info.get("name") or path.name))[:MAX_NAME]
     try:
         entry = get_store(request).add(path, name, managed=False)
@@ -412,7 +405,9 @@ def create_bundle(request: Request, body: BundleCreate) -> dict[str, Any]:
             inputs=body.inputs, output=body.output or None,
             kind=body.kind or None, target_scale=body.target_scale,
             conclusion=body.conclusion, name=body.name,
-            copy_weights=body.copy_weights
+            copy_weights=body.copy_weights, role=body.role or None,
+            form=body.form or None, output_options=body.output_options,
+            procedure=body.procedure
         )
     except Exception as error:
         raise user_error(error) from error
@@ -566,8 +561,11 @@ def delete_bundle(request: Request, bundle_id: str) -> Response:
     HTTPException
         無い場合は 404
     """
+    entry = get_store(request).find(bundle_id)
     if not get_store(request).remove(bundle_id):
         raise HTTPException(404, "一式が見つかりません")
+    # 覚えた一式 (組み立てたモデル, 説明, 警告) の手放し
+    forget(str((entry or {}).get("path")))
     response = Response(status_code=204)
 
     return response
@@ -639,7 +637,14 @@ def predict(
     try:
         bundle = open_bundle(str(entry["path"]))
     except (OSError, *USER_ERRORS) as error:
-        raise user_error(error) from error
+        raise bundle_error(str(entry["path"]), error) from error
+    rules, decision = body.rules, body.decision
+    if not bundle.column_output:
+        # 列の出力でない一式は件数だけ (決め方と意思決定は使えないもの)
+        given = any(v is not None for v in (rules or {}).values())
+        if given or decision or body.forecast:
+            raise HTTPException(400, column_only(bundle.form))
+        rules, decision = None, None
     if body.texts is not None:
         source: Any = text_frame(bundle, body.texts)
         described = f"書いた文 {len(source)} 件"
@@ -655,11 +660,13 @@ def predict(
     with PREDICT_LOCK:
         try:
             result = ml_inference.infer(
-                bundle, source, rules=body.rules, options=body.options,
-                forecast=body.forecast, decision=body.decision
+                bundle, source, rules=rules, options=body.options,
+                forecast=body.forecast, decision=decision
             )
         except Exception as error:
             raise user_error(error) from error
+        warned = list(bundle.cache.get("pretrained_warnings") or [])
+        remember_warnings(str(entry["path"]), bundle)
     result.update(
         source=described, bundle_id=bundle_id, task=bundle.task,
         classes=bundle.classes, kind=bundle.kind, forecast=body.forecast,
@@ -669,15 +676,25 @@ def predict(
             .notna().any()
         ),
         options=body.options,
-        source_path=str(source) if isinstance(source, Path) else None
+        source_path=str(source) if isinstance(source, Path) else None,
+        role=bundle.role, output_form=bundle.form,
+        column_output=bundle.column_output,
+        target_info=target_of(bundle),
+        origin_note=origin_sentence(target_of(bundle)),
+        pretrained_warnings=warned
     )
     # 書いた表を読み直して結論を出し直す (出し直しと同じ型の値でまとめ,
     # 日時のような列のまとめの名前が, 後の出し直しで変わらないように)
+    # (書き出しの途中で失敗した結果は, 壊れたまま残さずに削除)
     result_id, place = get_store(request).new_result_dir()
-    ml_inference.write_result(result, place)
     meta = {k: v for k, v in result.items() if k != "frame"}
-    with RESULT_LOCK:
-        conclude_into(place, meta, meta.get("rules") or {})
+    try:
+        ml_inference.write_result(result, place)
+        with RESULT_LOCK:
+            conclude_into(place, meta, meta.get("rules") or {})
+    except Exception as error:
+        shutil.rmtree(place, ignore_errors=True)
+        raise user_error(error) from error
     view = result_view(result_id, place)
 
     return view
@@ -707,7 +724,13 @@ def conclude_into(
     ValueError
         決め方に誤りがある場合
     """
-    # 判断の列を除いた予測から出し直す
+    # 列の出力でない結果は件数だけ (conclude をかけず, 配列は持ち越し)
+    if not is_column(meta):
+        count_into(place, meta)
+        return
+
+    # 判断の列を除いた予測からの出し直し (正解の出どころの文は結論の文に
+    # 混ぜず origin_note に. まとめる列ごとの文と分けるため)
     frame = read_frame(place, meta).drop(columns=["decision"], errors="ignore")
     conclusion = ml_inference.conclude(
         frame, str(meta.get("task")), list(meta.get("classes") or []), rules
@@ -726,6 +749,94 @@ def conclude_into(
             os.replace(temporary / name, place / name)
     finally:
         shutil.rmtree(temporary, ignore_errors=True)
+
+
+def count_into(place: Path, meta: dict[str, Any]) -> None:
+    """
+    列の出力でない結果の件数だけの結論を, 書いた表から数え直す関数
+
+    Parameters
+    ----------
+    place: Path
+        結果のディレクトリ
+    meta: dict[str, Any]
+        result.yaml の中身 (正解の出どころ)
+
+    Returns
+    ----------
+    None
+    """
+    # read_result の結果をそのまま write_result へ (同じ場所なので
+    # artifacts/ はそのまま)
+    result = ml_inference.read_result(place)
+    frame = result["frame"].drop(columns=["decision"], errors="ignore")
+    conclusion = conclude_outputs(frame)
+    result.update(conclusion)
+    ml_inference.write_result(result, place)
+
+
+def is_column(meta: dict[str, Any]) -> bool:
+    """
+    結果が列の出力の一式の結果かを返す関数
+
+    Parameters
+    ----------
+    meta: dict[str, Any]
+        result.yaml の中身
+
+    Returns
+    ----------
+    column: bool
+        列の出力か (記録の無い前の結果は列の出力)
+    """
+    column = meta.get("column_output") is not False
+
+    return column
+
+
+def column_only(form: Any) -> str:
+    """
+    列の出力でない一式に, 列の出力だけの機能を断る文を返す関数
+
+    Parameters
+    ----------
+    form: Any
+        出力の形
+
+    Returns
+    ----------
+    message: str
+        断る文
+    """
+    message = (
+        f"出力の形が {form} の一式 (列の出力でない一式) の結果には, 結論の"
+        "決め方, 意思決定, 何段も先の予測, 列の効き, たどり直し, 外れ方の"
+        "測り直しを使えません. 結論は件数だけです"
+    )
+
+    return message
+
+
+def require_column(meta: dict[str, Any]) -> None:
+    """
+    列の出力の結果でなければ 400 で断る関数
+
+    Parameters
+    ----------
+    meta: dict[str, Any]
+        result.yaml の中身
+
+    Returns
+    ----------
+    None
+
+    Raises
+    ----------
+    HTTPException
+        列の出力でない一式の結果の場合は 400
+    """
+    if not is_column(meta):
+        raise HTTPException(400, column_only(meta.get("output_form")))
 
 
 # 意思決定の型ごとに, 予測の表に足す列 (決め直すときに, この列だけを除く)
@@ -829,6 +940,12 @@ def decide_into(
         shutil.rmtree(temporary, ignore_errors=True)
 
 
+class NewerResult(ValueError):
+    """
+    知らない新しい版の結果を読んだ場合の誤り
+    """
+
+
 def read_meta(place: Path) -> dict[str, Any]:
     """
     結果の result.yaml を読む関数
@@ -846,6 +963,15 @@ def read_meta(place: Path) -> dict[str, Any]:
     meta = yaml.safe_load((place / "result.yaml").read_text(encoding="utf-8"))
     if not isinstance(meta, dict):
         raise ValueError(f"{place.name} の result.yaml が壊れています")
+    # 知らない新しい版の結果は読み違えずに停止
+    version = meta.get("format_version")
+    version = 1 if version is None else version
+    newest = ml_inference.RESULT_FORMAT_VERSION
+    if not isinstance(version, int) or version > newest:
+        raise NewerResult(
+            f"format_version {version} の結果は, このアプリの ML-Inference "
+            f"(結果の形の版 {newest} まで) では読めません"
+        )
 
     return meta
 
@@ -912,6 +1038,10 @@ def result_view(result_id: str, place: Path) -> dict[str, Any]:
         "rules": meta.get("rules") or {},
         "summary": meta.get("summary"),
         "sentences": meta.get("sentences") or [],
+        "overall_count": overall_count(meta),
+        "origin_note": meta.get("origin_note") or origin_sentence(
+            meta.get("target_info")
+        ),
         "columns": columns,
         "kind": meta.get("kind"),
         "forecast": bool(meta.get("forecast")),
@@ -919,9 +1049,46 @@ def result_view(result_id: str, place: Path) -> dict[str, Any]:
         "backtest": meta.get("backtest"),
         "has_target": bool(meta.get("has_target")),
         "explanation": meta.get("explanation"),
+        "format_version": meta.get("format_version", 1),
+        "role": meta.get("role", "predict"),
+        "output_form": meta.get("output_form"),
+        "column_output": is_column(meta),
+        "target_info": meta.get("target_info"),
+        "pretrained_warnings": meta.get("pretrained_warnings") or [],
+        "artifacts": meta.get("artifacts"),
     }
 
     return view
+
+
+def overall_count(meta: dict[str, Any]) -> int:
+    """
+    結論の文のうち, 全体の文 (まとめる列ごとの文の前まで) の数を返す関数
+
+    Parameters
+    ----------
+    meta: dict[str, Any]
+        result.yaml の中身
+
+    Returns
+    ----------
+    count: int
+        全体の文の数 (まとめる列の無い結果は全ての文)
+    """
+    # まとめる列を除いたまとめから作り直した文の数 (文の数での推し量りはしないこと)
+    sentences = list(meta.get("sentences") or [])
+    summary = meta.get("summary") or {}
+    count = len(sentences)
+    if not summary.get("groups"):
+        return count
+    try:
+        head = sentences_of({**summary, "groups": []}, str(meta.get("task")))
+    except (KeyError, TypeError, ValueError):
+        return count
+    if sentences[:len(head)] == head:
+        count = len(head)
+
+    return count
 
 
 def find_result(request: Request, result_id: str) -> Path:
@@ -950,6 +1117,8 @@ def find_result(request: Request, result_id: str) -> Path:
         raise HTTPException(404, "結果が見つかりません")
     try:
         read_meta(place)
+    except NewerResult as error:
+        raise HTTPException(400, str(error)) from error
     except (ValueError, yaml.YAMLError) as error:
         raise HTTPException(500, str(error)) from error
 
@@ -1075,6 +1244,139 @@ def get_rows(
     return rows
 
 
+# 配列の見本を同時に作る数 (大きな配列でメモリを使い切らないための上限)
+PREVIEW_SLOTS = threading.Semaphore(2)
+
+
+def artifact_file(place: Path, row: int) -> Path:
+    """
+    結果の行の位置の配列のファイルを返す関数
+
+    Parameters
+    ----------
+    place: Path
+        結果のディレクトリ
+    row: int
+        行の位置
+
+    Returns
+    ----------
+    path: Path
+        配列のファイル (結果のディレクトリの中)
+
+    Raises
+    ----------
+    HTTPException
+        配列の出力の結果でない場合, 行が無い場合, 推論しなかった行の
+        場合は 404
+    """
+    # 配列の記録の無い結果 (版 1) は読まずに断り, 他は read_result で
+    # 版を確かめ, artifact_path で結果の中に解決
+    if not (read_meta(place).get("artifacts") or {}).get("form"):
+        raise HTTPException(404, "この結果は配列の出力を持ちません")
+    try:
+        result = ml_inference.read_result(place)
+    except (OSError, ValueError, yaml.YAMLError) as error:
+        raise HTTPException(400, str(error)) from error
+    frame = result["frame"]
+    if "artifact" not in frame.columns:
+        raise HTTPException(404, "この結果は配列の出力を持ちません")
+    if row >= len(frame):
+        raise HTTPException(404, "その行はありません")
+    relative = str(frame["artifact"].iloc[row] or "")
+    if not relative:
+        raise HTTPException(404, "この行は推論していないので配列がありません")
+    try:
+        path: Path = ml_inference.artifact_path(place, relative)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    if not path.is_file():
+        raise HTTPException(404, f"{relative} がありません")
+
+    return path
+
+
+@router.get("/results/{result_id}/artifacts/{row}")
+def get_artifact(
+    request: Request, result_id: str, row: int = FastPath(ge=0)
+) -> dict[str, Any]:
+    """
+    配列の出力の結果の, 行の位置の配列の見本を返す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    result_id: str
+        結果の id
+    row: int = FastPath(ge=0)
+        行の位置
+
+    Returns
+    ----------
+    preview: dict[str, Any]
+        row, file (配列のファイルの名前) と配列の見本
+    """
+    # 配列は pickle を読まずに mmap で開き, 間引いた分だけの読み込み
+    # (大きすぎる配列と数でない型は断り. ファイルは落とせるもの)
+    place = find_result(request, result_id)
+    path = artifact_file(place, row)
+    form = str((read_meta(place).get("artifacts") or {}).get("form"))
+    with PREVIEW_SLOTS:
+        try:
+            array = np.load(path, mmap_mode="r", allow_pickle=False)
+        except (OSError, ValueError) as error:
+            raise HTTPException(400, f"配列を読めません: {error}") from error
+        problem = dtype_problem(array)
+        if problem is not None:
+            raise HTTPException(400, problem)
+        if array.size > PREVIEW_LIMIT:
+            raise HTTPException(
+                400, f"配列が大きい ({array.size:,} 個の値) ので見せません. "
+                ".npy を落として見てください"
+            )
+        try:
+            shown = array_preview(array, form)
+        except (ValueError, TypeError) as error:
+            raise HTTPException(
+                400, f"配列を見せる形にできません: {error}"
+            ) from error
+    preview = {"row": row, "file": path.name, **shown}
+
+    return preview
+
+
+@router.get("/results/{result_id}/artifacts/{row}/file")
+def get_artifact_file(
+    request: Request, result_id: str, row: int = FastPath(ge=0)
+) -> FileResponse:
+    """
+    配列の出力の結果の, 行の位置の配列のファイル (.npy) を返す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    result_id: str
+        結果の id
+    row: int = FastPath(ge=0)
+        行の位置
+
+    Returns
+    ----------
+    response: FileResponse
+        .npy のファイル
+    """
+    place = find_result(request, result_id)
+    path = artifact_file(place, row)
+    response = FileResponse(
+        path, media_type="application/octet-stream",
+        filename=f"{result_id}-{row:06d}.npy"
+    )
+
+    return response
+
+
 @router.post("/results/{result_id}/conclude")
 def conclude_again(
     request: Request, result_id: str, body: ConcludeRequest
@@ -1103,6 +1405,7 @@ def conclude_again(
     """
     # 消した項目を除く (陽性のクラスを消したら, しきい値も消す)
     place = find_result(request, result_id)
+    require_column(read_meta(place))
     rules = {k: v for k, v in body.rules.items() if v is not None}
     if "positive" not in rules:
         rules.pop("threshold", None)
@@ -1141,6 +1444,7 @@ def explain_result(request: Request, result_id: str) -> dict[str, Any]:
     # 結果の一式と入力のファイル
     place = find_result(request, result_id)
     meta = read_meta(place)
+    require_column(meta)
     if meta.get("forecast"):
         raise HTTPException(
             400, "何段も先の予測の結果は, 列の効きを求めません (並べ替えて"
@@ -1160,6 +1464,9 @@ def explain_result(request: Request, result_id: str) -> dict[str, Any]:
     with PREDICT_LOCK:
         try:
             bundle = open_bundle(str(entry["path"]))
+        except (OSError, *USER_ERRORS) as error:
+            raise bundle_error(str(entry["path"]), error) from error
+        try:
             explanation = ml_inference.explain(bundle, Path(source))
         except (OSError, *USER_ERRORS) as error:
             raise user_error(error) from error
@@ -1201,7 +1508,7 @@ def result_bundle(
     try:
         bundle = open_bundle(str(entry["path"]))
     except (OSError, *USER_ERRORS) as error:
-        raise user_error(error) from error
+        raise bundle_error(str(entry["path"]), error) from error
 
     return bundle
 
@@ -1234,6 +1541,7 @@ def decide_again(
     """
     # 一式の外れ方を使うので一式も読む
     place = find_result(request, result_id)
+    require_column(read_meta(place))
     bundle = result_bundle(request, read_meta(place))
     with RESULT_LOCK:
         try:
@@ -1271,6 +1579,7 @@ def backtest_result(request: Request, result_id: str) -> dict[str, Any]:
     # 入力のファイルを読み直して, 方針と素朴なやり方を比べる
     place = find_result(request, result_id)
     meta = read_meta(place)
+    require_column(meta)
     decided = meta.get("decision") or {}
     source = meta.get("source_path")
     if not decided.get("decision"):
@@ -1337,6 +1646,7 @@ def remeasure_result(
     # 入力のファイルと一式の場所 (覚えた一式は書き換えず, 読み直させる)
     place = find_result(request, result_id)
     meta = read_meta(place)
+    require_column(meta)
     source = meta.get("source_path")
     if not source or not Path(source).exists() or meta.get("forecast"):
         raise HTTPException(
