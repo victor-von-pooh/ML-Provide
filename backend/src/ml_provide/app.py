@@ -17,6 +17,7 @@ from ml_provide.problems import router as problem_router
 from ml_provide.procedures import configured_modules, load_modules
 from ml_provide.settings import get_data_dir
 from ml_provide.store import Store
+from ml_provide.units import configured_units, load_unit_modules
 
 # ビルド済みの画面を置く場所 (パッケージの中)
 STATIC_DIR = (Path(__file__).parent / "static").resolve()
@@ -266,7 +267,8 @@ def mount_frontend(app: FastAPI, static_dir: Path) -> None:
 def create_app(
     data_dir: Optional[Path] = None, token: Optional[str] = None,
     allowed_hosts: Optional[list[str]] = None,
-    procedures: Optional[list[str]] = None
+    procedures: Optional[list[str]] = None,
+    units: Optional[list[str]] = None
 ) -> FastAPI:
     """
     アプリを組み立てる関数
@@ -282,6 +284,9 @@ def create_app(
     procedures: Optional[list[str]] = None
         自作の繰り返しの手順を登録するモジュール, None の場合は環境変数
         ML_PROVIDE_PROCEDURES (起動の設定で明示したものだけを読む)
+    units: Optional[list[str]] = None
+        自作の部品を宣言するモジュール, None の場合は環境変数
+        ML_PROVIDE_UNITS (起動の設定で明示したものだけを読む)
 
     Returns
     ----------
@@ -304,6 +309,7 @@ def create_app(
     app.state.procedure_modules = load_modules(
         configured_modules(procedures)
     )
+    app.state.unit_modules = load_unit_modules(configured_units(units))
 
     # トークンの無い呼び出し, 他のサイトからの書き込み,
     # 他のホスト名での接続 (DNS rebinding) の拒否

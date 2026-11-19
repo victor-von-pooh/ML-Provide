@@ -831,7 +831,7 @@ provides-extras = ["all", "dev"]
 [[package]]
 name = "ml-modelcontrol"
 version = "0.1.0"
-source = { git = "https://github.com/victor-von-pooh/ML-ModelControl.git#9f1fa72a836c6882a6caaf75a9d03b1c056c9d59" }
+source = { git = "https://github.com/victor-von-pooh/ML-ModelControl.git#dab4ff5aa756c3a28a1821f5b5b96118ad38120f" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },

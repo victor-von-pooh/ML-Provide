@@ -30,6 +30,11 @@ def parse_args() -> argparse.Namespace:
         "環境変数 ML_PROVIDE_PROCEDURES). 明示したものだけを読む"
     )
     parser.add_argument(
+        "--units", default=None,
+        help="自作の部品を宣言するモジュール (, で区切る. 省くと環境変数 "
+        "ML_PROVIDE_UNITS). 明示したものだけを読む"
+    )
+    parser.add_argument(
         "--openapi", type=Path, default=None,
         help="起動せずに OpenAPI の仕様をこのファイルに書き出す"
     )
@@ -77,8 +82,12 @@ def main() -> None:
     modules = None
     if args.procedures is not None:
         modules = module_names(args.procedures)
+    units = None
+    if args.units is not None:
+        units = module_names(args.units)
     app = create_app(
-        token=get_token(None), allowed_hosts=hosts, procedures=modules
+        token=get_token(None), allowed_hosts=hosts, procedures=modules,
+        units=units
     )
     shown = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
     print(

@@ -5,6 +5,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 WORK="$PWD/.work"
+E2E_DIR="$PWD"
 PORT="${E2E_PORT:-8794}"
 
 # 前回の結果を消し, 置き場を作業用のディレクトリにする
@@ -49,6 +50,8 @@ PY
 # 推論の一式の版 3 (列の出力でない一式. 領域とベクトル)
 uv run python ../frontend/e2e/make_v3.py "$WORK/v3"
 
-# 決まったトークンで起動
-ML_PROVIDE_HOME="$WORK/home" ML_PROVIDE_TOKEN=e2e-token \
+# 決まったトークンで起動. 自作の部品は起動の設定 (環境変数) で明示した
+# 見本のモジュール (e2e/e2e_units.py) だけを読む
+PYTHONPATH="$E2E_DIR${PYTHONPATH:+:$PYTHONPATH}" ML_PROVIDE_UNITS=e2e_units \
+  ML_PROVIDE_HOME="$WORK/home" ML_PROVIDE_TOKEN=e2e-token \
   exec uv run ml-provide --port "$PORT"

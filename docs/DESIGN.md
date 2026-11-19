@@ -95,6 +95,12 @@ ML-Inference の一式の版 3 は, 受け持ち (`role`), 出力の形 (`output
 - 研究の自作の手順は, 起動の設定で明示したモジュールだけを読み込む (ML_tester の決めたこと 14). `ml-provide --procedures pkg.module,...` か環境変数 `ML_PROVIDE_PROCEDURES` (`,` で区切る) に書いたモジュールを起動のときに import し, モジュールが import のときに `register_procedure` で登録する. 読めないモジュールは起動を止める
 - 一式やファイルに書かれたコードは自動では読まない. 登録簿に無い手順の一式は「手順 … は登録簿にありません. 自作の手順なら, 登録するモジュールを起動の設定 (`--procedures` か `ML_PROVIDE_PROCEDURES`) に足してから起動し直してください」で止める
 
+### 自作の部品と起動の設定
+
+- 研究の自作の部品 (ML-ModelControl の `register_unit` で登録する部品) も手順と同じく, 起動の設定で明示したモジュールだけを読み込む (ML_tester の決めたこと 14). `ml-provide --units pkg.units,...` か環境変数 `ML_PROVIDE_UNITS` (`,` で区切る. 引数が環境変数より先) に書いたモジュールを, 起動のときに手順のモジュールの隣で ML-Inference の `register_units` (ML-ModelControl の `register_units_from`) に渡す. モジュールは `UNITS` か `register_units(register)` で部品を宣言する (書き方は ML-ModelControl の README の「自作の部品」). 読めないモジュール, 部品を宣言していないモジュールは起動を止める
+- `GET /api/info` の `unit_modules` に, 読んだモジュールと登録した部品の名前 (`[{"name": "pkg.units", "units": ["my.Block"]}]`) を返す
+- 一式のモデルの定義に書かれた部品の名前からは何も読み込まない. 登録されていない部品を使う一式は, ML-Inference の `UnregisteredUnitError` (部品の名前とノード) に「自作の部品なら, 部品を宣言したモジュールを起動の設定 (`--units` か `ML_PROVIDE_UNITS`) に足してから起動し直してください」を添えて, 一式の画面 (一覧と一式の欄の誤り), 場所での登録, 画面で作る一式, 推論の誤りに出す
+
 ## 問題の設定とのつなぎ
 
 問題の設定 (ML-Quest の `problem.yaml`) は, 7 の「損得」で意思決定の型と損得と制約と根拠を, 5 の「機械学習の受け持ち」で当たりのクラス, 系列を分ける列, 何期先までを決める. 骨組みから学習した一式は, 学習した時点の値を一式の既定値に持つ. ただし, 画面で作った一式は既定値を持たず, 学習の後に問題の設定の損得を見直すと一式の既定値は古くなる. そこで, 一式に問題の設定をつなぎ, 推論の既定を問題の設定の今の値にする.

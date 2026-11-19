@@ -338,6 +338,48 @@ test('版 3 のベクトルの一式は最初の値を見せ, 登録簿に無い
   }
 })
 
+test('起動の設定で読んだ自作の部品の一式を推論し, 登録されていない部品は起動の設定を案内する', async ({
+  page,
+}) => {
+  const root = path.resolve(import.meta.dirname, '.work', 'v3')
+
+  // 起動の設定 (ML_PROVIDE_UNITS) で読んだモジュールと部品
+  const info = (await (await page.request.get('/api/info')).json()) as {
+    unit_modules: { name: string; units: string[] }[]
+  }
+  expect(info.unit_modules).toEqual([{ name: 'e2e_units', units: ['e2e.Twice'] }])
+
+  const id = await registerFresh(page.request, path.join(root, 'unit'))
+  const file = path.join(root, 'unit', 'model_spec.yaml')
+  const original = fs.readFileSync(file)
+  try {
+    await page.goto(`/bundles/${id}`)
+    await page.getByLabel(/推論するデータ/).fill(path.join(root, 'new.csv'))
+    await page.getByRole('button', { name: '推論する' }).click()
+    await expect(page.getByRole('heading', { name: '1 件の出力 (ベクトル)' })).toBeVisible({
+      timeout: 30_000,
+    })
+    await expect(page.getByText(/形 \(4\)/)).toBeVisible()
+
+    // 部品を登録されていない名前に書き換えると, 一式の画面に名前と起動の設定が出る
+    fs.copyFileSync(path.join(root, 'unit-missing-spec.yaml'), file)
+    await page.goto(`/bundles/${id}`)
+    await expect(page.getByText(/e2e_missing\.Block/)).toBeVisible()
+    await expect(page.getByText(/ML_PROVIDE_UNITS/)).toBeVisible()
+
+    // 場所での登録も同じ案内で断る
+    const response = await page.request.post('/api/bundles', {
+      data: { path: path.join(root, 'unit'), name: 'もう一度' },
+    })
+    expect(response.status()).toBe(400)
+    expect(((await response.json()) as { detail: string }).detail).toContain('--units')
+  } finally {
+    // 書き換えた定義と登録を元に戻す (やり直しても同じに動くように)
+    fs.writeFileSync(file, original)
+    await page.request.delete(`/api/bundles/${id}`)
+  }
+})
+
 /** 同じ場所の登録を外してから, 場所で一式を登録して id を返す */
 async function registerFresh(request: APIRequestContext, place: string): Promise<string> {
   const listed = (await (await request.get('/api/bundles')).json()) as {
