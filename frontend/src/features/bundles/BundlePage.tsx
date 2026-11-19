@@ -285,7 +285,7 @@ function PredictCard({
           {linked && (
             <p className="mb-2 text-xs text-ink-3">
               {!linked.handled
-                ? `問題の設定「${linked.name}」: ${linked.text}`
+                ? `「${linked.name}」: ${linked.text}`
                 : linked.decision
                   ? `問題の設定「${linked.name}」の損得と結論の決め方を既定にしています`
                   : `問題の設定「${linked.name}」は意思決定しない (予測を見て人が決める) ので, 意思決定は空にしています`}

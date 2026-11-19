@@ -28,13 +28,13 @@ SUFFIXES = (".yaml", ".yml")
 # 一式の場所から問題の設定の候補を探す, 上のディレクトリの数
 HINT_DEPTH = 4
 
-# 受け持ちと正解の種類の短い名前 (ML-Quest の選択肢の名前の括弧の前)
+# 受け持ちの短い名前 (ML-Quest の選択肢の名前の括弧の前) と, 正解の種類
+# の名前 (表の列と合成の表を見分けるため, 括弧も残す)
 ROLE_NAMES: dict[str, str] = {
     str(item["value"]): str(item["label"]).split(" (")[0] for item in ROLES
 }
 KIND_NAMES: dict[str, str] = {
-    str(item["value"]): str(item["label"]).split(" (")[0]
-    for item in TARGET_KINDS
+    str(item["value"]): str(item["label"]) for item in TARGET_KINDS
 }
 
 
@@ -286,14 +286,14 @@ def part_name(part: dict[str, Any]) -> str:
     Returns
     ----------
     name: str
-        受け持ちの名前 (正解の種類があれば括弧で添える)
+        受け持ちの名前 (正解の種類があれば添える)
     """
     # 予測すると作るは正解の種類も (点群, 画像の領域など)
     role = part.get("role")
     name = ROLE_NAMES.get(str(role), str(role))
     kind = part.get("target_kind")
     if kind:
-        name += f" (正解の種類: {KIND_NAMES.get(str(kind), str(kind))})"
+        name += f", 正解の種類は{KIND_NAMES.get(str(kind), str(kind))}"
 
     return name
 

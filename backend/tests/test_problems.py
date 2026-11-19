@@ -332,7 +332,7 @@ def test_version1_and_version2(client: TestClient, tmp_path: Path) -> None:
         (new / "problem.yaml").read_text(encoding="utf-8")
     )["format_version"] == 2
 
-    # どちらも列の予測として読め, 値は同じ
+    # どちらも列の予測として読める値の一致
     url = f"/api/bundles/{daily['id']}/problem"
     views = []
     decisions = []
@@ -351,13 +351,13 @@ def test_version1_and_version2(client: TestClient, tmp_path: Path) -> None:
                                     "over_cost": 150}
     assert views[0]["conclusion"] == {"group_by": "shop"}
     assert views[0]["horizon"] == 1 and views[0]["issues"] == []
-    assert views[0]["role"] == "予測する (正解の種類: 表の列)"
+    assert views[0]["role"] == "予測する, 正解の種類は表の列 (クラスか値)"
     assert decisions[0] == decisions[1]
 
-    # 版 1 のファイルは変えない (読んだ後に移すだけ)
+    # 版 1 のファイルはそのまま (読んだ後の移行だけ)
     assert old.read_text(encoding="utf-8") == SHOP_V1
 
-    # 知っている版より新しいファイルは, 読めない理由を出して止まる
+    # 知っている版より新しいファイルは, 読めない理由での停止
     newer = dict(yaml.safe_load(SHOP_V1), format_version=99)
     future = tmp_path / "future" / "problem.yaml"
     future.parent.mkdir()
@@ -424,13 +424,13 @@ def test_other_role(client: TestClient, tmp_path: Path) -> None:
     assert state.status_code == 200, state.text
     linked = state.json()["linked"]
     assert linked["handled"] is False
-    assert linked["role"] == "作る (正解の種類: 画像)"
+    assert linked["role"] == "作る, 正解の種類は画像"
     assert linked["decision"] is None and linked["horizon"] is None
     assert linked["basis"] is None and linked["issues"] == []
     assert "推論の結論はまだ扱いません" in linked["text"]
     assert linked["conclusion"] == {"group_by": "shop"}  # 見本の既定値
 
-    # 読み直しても同じ. 一式の上にあっても候補には出さない
+    # 読み直しても同じ値. 一式の上にあっても候補には無し
     assert client.get(url).json()["linked"] == linked
     project = tmp_path / "project"
     ml_quest.save_problem(generate_problem(), project)

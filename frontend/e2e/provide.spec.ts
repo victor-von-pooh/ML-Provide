@@ -225,15 +225,18 @@ test('受け持ちが列の予測でない問題の設定は, つなぐとまだ
 }) => {
   await page.goto('/')
   await page.getByRole('link', { name: '見本: 日々の売上の予測 (時系列, 先の予測)' }).click()
+  // 前のテストがつないだままでも, 外してから始める (テストの順に依らない)
+  const unlink = page.getByRole('button', { name: 'つなぎを外す' })
+  const field = page.getByLabel('問題の設定 (problem.yaml か, それを持つディレクトリ)')
+  await expect(unlink.or(field)).toBeVisible()
+  if (await unlink.isVisible()) await unlink.click()
   const under = page.getByLabel('1 単位足りないときの損 (欠品の利益など)')
   await expect(under).toHaveValue('3')
 
-  await page
-    .getByLabel('問題の設定 (problem.yaml か, それを持つディレクトリ)')
-    .fill(path.resolve(import.meta.dirname, '.work', 'problem-generate'))
+  await field.fill(path.resolve(import.meta.dirname, '.work', 'problem-generate'))
   await page.getByRole('button', { name: 'つなぐ', exact: true }).click()
   await expect(page.getByRole('heading', { name: '問題の設定: 総菜の作る量' })).toBeVisible()
-  await expect(page.getByText('受け持ち: 作る (正解の種類: 画像)')).toBeVisible()
+  await expect(page.getByText('受け持ち: 作る, 正解の種類は画像')).toBeVisible()
   await expect(page.getByText(/推論の結論はまだ扱いません/).first()).toBeVisible()
   await expect(under).toHaveValue('3')
 
