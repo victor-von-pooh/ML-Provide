@@ -35,11 +35,15 @@ export function ProblemCard({ bundleId, state }: { bundleId: string; state: Prob
     >
       {linked ? (
         <div className="space-y-2 text-sm">
-          <p className="text-xs text-ink-3">
-            推論の意思決定と結論の決め方は, この問題の設定の今の値が既定です. 問題の設定を
-            ML-Pathfinder で直すと, 次にこの画面を開いたときから使います.
-          </p>
-          <p>{linked.text}</p>
+          {linked.handled ? (
+            <p className="text-xs text-ink-3">
+              推論の意思決定と結論の決め方は, この問題の設定の今の値が既定です. 問題の設定を
+              ML-Pathfinder で直すと, 次にこの画面を開いたときから使います.
+            </p>
+          ) : (
+            <p className="text-xs text-ink-2">受け持ち: {linked.role}</p>
+          )}
+          <p className={linked.handled ? undefined : 'text-warning-text'}>{linked.text}</p>
           {linked.basis ? (
             <p className="text-xs text-ink-2">損得の根拠: {linked.basis}</p>
           ) : (

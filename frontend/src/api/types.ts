@@ -245,7 +245,14 @@ export interface LinkedProblem {
   /** 問題の設定のファイルの中身の印 (変わったら既定を読み直す) */
   version: string
   created_at: string
-  /** 意思決定 (意思決定しない問題の設定は null) */
+  /** 機械学習の受け持ちの名前 (作る, 正解の種類は画像 など) */
+  role: string
+  /**
+   * 推論の結論を扱う受け持ちか (列の予測だけ). 扱わない受け持ちは意思決定が null で,
+   * 結論の決め方は一式の既定値のまま
+   */
+  handled: boolean
+  /** 意思決定 (意思決定しない問題の設定と, 扱わない受け持ちは null) */
   decision: Decision | null
   /** 一式の既定値に問題の設定の値を重ねた結論の決め方 */
   conclusion: Rules
