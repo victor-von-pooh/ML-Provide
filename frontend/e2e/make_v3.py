@@ -3,7 +3,8 @@
 
 正解の無い表から, 領域 (正解は今の処理の出力) とベクトルを出す小さなモデルの
 一式を作る. 後から手順を登録簿に無いものに書き換える一式と, その
-inference.yaml も並べる
+inference.yaml も並べる. 自作の部品 (e2e_units) を使う一式と, 部品を登録
+されていない名前に書き換えたモデルの定義も並べる
 """
 
 import shutil
@@ -94,6 +95,22 @@ def main(root: Path) -> None:
             root / name, spec, root / "dataset", weights,
             name=f"版 3 の{name}", **options
         )
+
+    # 自作の部品を使う一式 (起動の設定と同じモジュールから登録)
+    ml_inference.register_units(["e2e_units"])
+    spec = spec_of(4)
+    spec["nodes"]["lab"] = {"unit": "e2e.Twice", "inputs": "x",
+                            "params": {"features": 3}}
+    spec["nodes"]["head"]["inputs"] = "lab"
+    torch.save(build_model(spec, seed=0).state_dict(), root / "unit.pt")
+    ml_inference.make_bundle(
+        root / "unit", spec, root / "dataset", root / "unit.pt",
+        name="版 3 の自作の部品", form="vector", role="group"
+    )
+    spec["nodes"]["lab"]["unit"] = "e2e_missing.Block"
+    (root / "unit-missing-spec.yaml").write_text(
+        yaml.safe_dump(spec), encoding="utf-8"
+    )
 
     # 後から手順を登録簿に無いものに書き換える一式
     shutil.copytree(root / "vector", root / "later")

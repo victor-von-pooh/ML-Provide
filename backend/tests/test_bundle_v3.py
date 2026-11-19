@@ -823,3 +823,112 @@ def test_procedures_from_startup_setting(
                                                  "name": "again"})
     assert response.status_code == 400
     assert "起動の設定" in response.json()["detail"]
+
+
+# 自作の部品を宣言するモジュールの中身 ({unit} は部品の名前)
+UNIT_CODE = '''
+from torch import nn
+
+
+class Twice(nn.Module):
+    def __init__(self, features: int = 3):
+        super(Twice, self).__init__()
+        self.fc = nn.Linear(features, features)
+
+    def forward(self, x):
+        out = self.fc(x) * 2.0
+        return out
+
+
+UNITS = [{{"cls": Twice, "name": "{unit}"}}]
+'''
+
+
+def test_units_from_startup_setting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    自作の部品は起動の設定で明示したモジュールだけから登録し, 登録されて
+    いない部品の一式は設定を案内して止まることを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    monkeypatch: pytest.MonkeyPatch
+        import の場所と環境変数を替える
+
+    Returns
+    ----------
+    None
+    """
+    # 読めないモジュールと, 部品を宣言していないモジュールは起動を止める
+    folder = tmp_path / "modules"
+    folder.mkdir()
+    monkeypatch.syspath_prepend(str(folder))
+    module = f"provide_units_{tmp_path.name.replace('-', '_')}"
+    (folder / f"{module}_empty.py").write_text("VALUE = 1\n")
+    with pytest.raises(RuntimeError, match="no_such_units"):
+        create_app(data_dir=tmp_path / "home", token=TOKEN,
+                   units=["no_such_units"])
+    with pytest.raises(RuntimeError, match=f"{module}_empty"):
+        create_app(data_dir=tmp_path / "home", token=TOKEN,
+                   units=[f"{module}_empty"])
+
+    # 環境変数で明示したモジュールを起動のときに読む
+    unit = f"{module}.Twice"
+    (folder / f"{module}.py").write_text(
+        UNIT_CODE.format(unit=unit), encoding="utf-8"
+    )
+    monkeypatch.setenv("ML_PROVIDE_UNITS", f" {module} ,")
+    app = create_app(data_dir=tmp_path / "home", token=TOKEN,
+                     allowed_hosts=["testserver"], procedures=[])
+    client = TestClient(app, headers={"x-provide-token": TOKEN})
+    info = client.get("/api/info").json()
+    assert info["unit_modules"] == [{"name": module, "units": [unit]}]
+
+    # 自作の部品の一式を登録して推論する
+    paths = write_unlabeled(tmp_path / "data")
+    spec = head_spec(4)
+    spec["nodes"]["lab"] = {"unit": unit, "params": {"features": 3},
+                            "inputs": "x"}
+    spec["nodes"]["head"]["inputs"] = "lab"
+    path = make_v3(tmp_path, paths, "lab", spec, form="vector",
+                   role="group")
+    bundle = register(client, path)
+    assert bundle["ok"] is True
+    url = f"/api/bundles/{bundle['id']}/predict"
+    response = client.post(url, json={"source": str(paths["csv"])})
+    assert response.status_code == 201, response.text
+
+    # 登録されていない部品は, 名前と起動の設定を案内 (定義の名前は読まない)
+    file = path / "model_spec.yaml"
+    written = yaml.safe_load(file.read_text(encoding="utf-8"))
+    written["nodes"]["lab"]["unit"] = "never_lab.Block"
+    file.write_text(yaml.safe_dump(written), encoding="utf-8")
+    view = client.get(f"/api/bundles/{bundle['id']}").json()
+    assert view["ok"] is False
+    assert "'never_lab.Block'" in view["error"]
+    assert "ML_PROVIDE_UNITS" in view["error"]
+    listed = client.get("/api/bundles").json()
+    assert any("ML_PROVIDE_UNITS" in (item["error"] or "")
+               for item in listed)
+    response = client.post(url, json={"source": str(paths["csv"])})
+    assert response.status_code == 400
+    assert "--units" in response.json()["detail"]
+    response = client.post("/api/bundles", json={"path": str(path),
+                                                 "name": "again"})
+    assert response.status_code == 400
+    assert "never_lab.Block" in response.json()["detail"]
+    assert "never_lab" not in sys.modules
+
+    # 画面で作る一式も, 登録されていない部品なら同じ案内
+    spec_file = tmp_path / "missing.yaml"
+    spec_file.write_text(yaml.safe_dump(written), encoding="utf-8")
+    response = client.post("/api/bundles/create", json={
+        "name": "missing", "spec": str(spec_file),
+        "dataset": str(paths["dataset"]), "weights": str(tmp_path / "lab.pt"),
+        "form": "vector", "role": "group",
+    })
+    assert response.status_code == 400
+    assert "ML_PROVIDE_UNITS" in response.json()["detail"]

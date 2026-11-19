@@ -33,6 +33,7 @@ from ml_provide.previews import PREVIEW_LIMIT, array_preview, dtype_problem
 from ml_provide.procedures import missing_procedure, registered
 from ml_provide.samples import write_samples
 from ml_provide.store import Store
+from ml_provide.units import unit_hint
 
 router = APIRouter(prefix="/api")
 
@@ -139,11 +140,33 @@ def user_error(error: Exception) -> HTTPException:
     exception: HTTPException
         400 の例外 (文は元の誤りの文)
     """
-    # SpecError などの誤りの文をそのまま
-    message = str(error) or type(error).__name__
+    # SpecError などの誤りの文をそのまま (登録されていない部品は起動の
+    # 設定の案内付き)
+    message = unit_hint(error) or str(error) or type(error).__name__
     exception = HTTPException(400, message)
 
     return exception
+
+
+def join_hints(*hints: Optional[str]) -> Optional[str]:
+    """
+    起動の設定の案内をつなぐ関数
+
+    Parameters
+    ----------
+    *hints: Optional[str]
+        案内 (無いものは None)
+
+    Returns
+    ----------
+    message: Optional[str]
+        つないだ案内 (全て無ければ None)
+    """
+    # 部品と手順の案内を 1 つの文に
+    parts = [hint for hint in hints if hint]
+    message = " / ".join(parts) if parts else None
+
+    return message
 
 
 def bundle_error(path: str, error: Exception) -> HTTPException:
@@ -162,8 +185,9 @@ def bundle_error(path: str, error: Exception) -> HTTPException:
     exception: HTTPException
         400 の例外
     """
-    # 自作の手順は起動の設定での登録 (一式のコードは読まない)
-    message = missing_procedure(path)
+    # 自作の部品と手順は起動の設定での登録 (一式のコードは読まない. 両方
+    # 無ければ両方の案内)
+    message = join_hints(unit_hint(error), missing_procedure(path))
     if message is None:
         exception = user_error(error)
         return exception
@@ -222,7 +246,9 @@ def bundle_view(entry: dict[str, Any]) -> dict[str, Any]:
         description, loaded = describe(str(entry["path"]))
         view.update(description=description, model_loaded=loaded)
     except Exception as error:
-        message = missing_procedure(str(entry["path"])) or str(error)
+        message = join_hints(
+            unit_hint(error), missing_procedure(str(entry["path"]))
+        ) or str(error)
         view.update(ok=False, error=message, description=None)
 
     return view
@@ -243,7 +269,8 @@ def get_info(request: Request) -> dict[str, Any]:
     info: dict[str, Any]
         version, rule_keys, result_version (読める結果の形の版まで),
         procedures (繰り返しの手順の登録簿), procedure_modules (起動の
-        設定で読んだ手順のモジュール)
+        設定で読んだ手順のモジュール), unit_modules (起動の設定で読んだ
+        部品のモジュールと登録した部品の名前)
     """
     info = {
         "version": ml_inference.__version__,
@@ -252,6 +279,9 @@ def get_info(request: Request) -> dict[str, Any]:
         "procedures": registered(),
         "procedure_modules": list(
             getattr(request.app.state, "procedure_modules", [])
+        ),
+        "unit_modules": list(
+            getattr(request.app.state, "unit_modules", [])
         ),
     }
 
