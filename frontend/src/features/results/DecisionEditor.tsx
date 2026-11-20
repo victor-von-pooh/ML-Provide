@@ -1,5 +1,11 @@
 import type { DecisionForm } from '../../lib/decision'
-import { DECISION_TYPES, NUMBER_ONLY, visibleFields } from '../../lib/decision'
+import {
+  DECISION_TYPES,
+  NUMBER_ONLY,
+  activeBaseline,
+  baselineText,
+  visibleFields,
+} from '../../lib/decision'
 
 const field = 'h-8 rounded-lg border border-line bg-surface px-2 text-sm'
 
@@ -124,8 +130,30 @@ export function DecisionEditor({
                       values: { ...form.values, [item.key]: event.target.value },
                     })
                   }
+                  aria-describedby={
+                    item.key === 'current' && form.type === 'quantity' && form.baseline
+                      ? `${idBase}-baseline`
+                      : undefined
+                  }
                   className={`${field} w-56`}
                 />
+              )}
+              {item.key === 'current' && form.type === 'quantity' && form.baseline && (
+                <p id={`${idBase}-baseline`} className="mt-1 max-w-56 text-xs text-ink-3">
+                  {activeBaseline(form)
+                    ? `空なので, 問題の設定の今のやり方 (${baselineText(form.baseline)}) で比べます. `
+                    : `列を書いたので, 問題の設定の今のやり方 (${baselineText(form.baseline)}) は使いません. `}
+                  {activeBaseline(form) && (
+                    <button
+                      type="button"
+                      className="underline"
+                      aria-label="問題の設定の今のやり方を使わない"
+                      onClick={() => onChange({ ...form, baseline: null })}
+                    >
+                      使わない
+                    </button>
+                  )}
+                </p>
               )}
             </div>
           ))}

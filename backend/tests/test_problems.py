@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from ml_quest.examples import example_problem
 
 from ml_provide.app import create_app
+from ml_provide.problems import with_baseline
 
 # テストで使うトークン
 TOKEN = "test-token"
@@ -210,6 +211,107 @@ def test_link_and_predict(client: TestClient, tmp_path: Path) -> None:
     state = client.put(url, json={"path": None}).json()
     assert state["path"] is None and state["hint"] is not None
     assert "problem" not in client.get("/api/bundles").json()[0]
+
+
+def test_current_from_problem(client: TestClient, tmp_path: Path) -> None:
+    """
+    問題の設定の今のやり方 (k 期前) を意思決定の current に入れ, 列を足さずに
+    たどり直しで比べられることを確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    tmp_path: Path
+        一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 前の週の同じ曜日と同じ量 (7 期前). 時刻の列と店の系列を足した決まり
+    added = client.post("/api/samples").json()
+    daily = next(b for b in added if "日々の売上" in b["name"])
+    project, bundle = project_bundle(client, tmp_path, daily["path"])
+    problem = ml_quest.answer(
+        ml_quest.load_problem(project), "action.current",
+        {"type": "lag", "periods": 7},
+    )
+    problem["data"] = {**(problem.get("data") or {}),
+                       "interval_seconds": 86400.0}
+    ml_quest.save_problem(problem, project)
+    url = f"/api/bundles/{bundle['id']}/problem"
+    linked = client.put(
+        url, json={"path": str(project / "problem.yaml")}
+    ).json()["linked"]
+    assert linked["decision"]["current"] == {
+        "type": "lag", "periods": 7, "time": "date", "by": ["shop"],
+        "freq": "86400s",
+    }
+    assert linked["issues"] == []
+
+    # 過去のデータ (今のやり方の列は無い) で推論してたどり直す
+    result = client.post(f"/api/bundles/{bundle['id']}/predict", json={
+        "source": daily["sample_past"], "decision": linked["decision"],
+        "rules": linked["conclusion"],
+    })
+    assert result.status_code == 201, result.text
+    replay = client.post(f"/api/results/{result.json()['id']}/backtest")
+    assert replay.status_code == 200, replay.text
+    backtest = replay.json()["backtest"]
+    assert "今のやり方" in backtest["policies"]
+    assert any("7 期前の値と同じ量" in s for s in backtest["sentences"])
+
+    # 列の今のやり方は列の決まり (置いた後の量)
+    column = ml_quest.answer(problem, "action.current",
+                             {"type": "column", "column": "sales"})
+    ml_quest.save_problem(column, project)
+    linked = client.get(url).json()["linked"]
+    assert linked["decision"]["current"] == {"type": "column",
+                                             "column": "sales"}
+
+    # 学習のデータに無い列の決まりは, つなぐときに知らせる
+    missing = ml_quest.answer(problem, "information.columns",
+                              ["date", "shop", "sales", "planned"])
+    missing = ml_quest.answer(missing, "action.current",
+                              {"type": "column", "column": "planned"})
+    ml_quest.save_problem(missing, project)
+    linked = client.get(url).json()["linked"]
+    assert any("今のやり方" in i and "planned" in i
+               for i in linked["issues"])
+
+
+def test_baseline_needs_time() -> None:
+    """
+    時刻の列の無い問題の設定の k 期前は入れずに知らせ, 選ぶと振り分けは
+    受け渡しのままにすることを確かめる関数
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    ----------
+    None
+    """
+    # 時刻の列を消した問題の設定と, 量の意思決定
+    problem = ml_quest.answer(shop_problem(), "action.current",
+                              {"type": "mean", "periods": 3})
+    problem = ml_quest.answer(problem, "ml.parts.0.time_column", None)
+    quantity = {"type": "quantity", "under_cost": 2, "over_cost": 1}
+    decision, notes = with_baseline(problem, quantity)
+    assert decision == quantity
+    assert any("時刻の列" in note for note in notes)
+
+    # 一式の過去の値の手順の時刻の列で補う (系列は ML-Inference が補う)
+    decision, notes = with_baseline(problem, quantity, "date")
+    assert decision == {**quantity, "current": {
+        "type": "mean", "periods": 3, "time": "date",
+    }}
+    assert notes == []
+    triage = {"type": "triage", "positive": "a", "current": "done"}
+    assert with_baseline(problem, triage) == (triage, [])
+    assert with_baseline(problem, None) == (None, [])
 
 
 def test_link_problems(client: TestClient, tmp_path: Path) -> None:

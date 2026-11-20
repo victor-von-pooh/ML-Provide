@@ -14,7 +14,7 @@ mkdir -p "$WORK"
 cd ../../backend
 
 # 問題の設定の見本 (総菜の作る量) を, 日々の売上の見本の列 (日付, 店, 売上) に合わせて保存する.
-# 受け持ちを作るにした問題の設定も並べて保存する
+# 今のやり方は前の週の同じ曜日と同じ量 (7 期前). 受け持ちを作るにした問題の設定も並べて保存する
 uv run python - "$WORK/problem" <<'PY'
 import sys
 
@@ -27,6 +27,7 @@ for key, value in (
     ("ml.parts.0.series_by", ["shop"]),
     ("information.known", ["shop"]),
     ("information.unknown", None),
+    ("action.current", {"type": "lag", "periods": 7}),
 ):
     problem = ml_quest.answer(problem, key, value)
 ml_quest.save_problem(problem, sys.argv[1])
