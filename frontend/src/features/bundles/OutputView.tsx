@@ -63,7 +63,7 @@ export function OutputView({
 }) {
   const form = description.output?.form
   const column = isColumnOutput(description)
-  const details = outputDetails(description.output)
+  const details = outputDetails(description.output, description.items?.values)
   const target = description.target_info
   const procedure = description.procedure
   const pretrained = description.pretrained ?? []

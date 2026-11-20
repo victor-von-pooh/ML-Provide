@@ -8,7 +8,7 @@ import { api } from '../../api/client'
 import type { Counts, Result } from '../../api/types'
 import { Button, Card, ErrorBox, PageHeader, Spinner, StatTile } from '../../components/ui'
 import { formatPercent, formatValue } from '../../lib/format'
-import { FORM_LABELS } from '../../lib/outputs'
+import { FORM_LABELS, maskNames } from '../../lib/outputs'
 import { fromForm, toForm, type RulesForm } from '../../lib/rules'
 import { OutputNotices } from '../bundles/OutputView'
 import { ArtifactCard } from './ArtifactCard'
@@ -521,7 +521,12 @@ export function ResultPage() {
             result={data}
             row={artifactRow}
             onRow={setArtifactRow}
-            names={bundle.data?.description?.output?.classes ?? []}
+            names={maskNames(bundle.data?.description)}
+            note={
+              bundle.data?.description?.items?.restore === 'shift'
+                ? '点は元の座標 (正規化の平行移動を戻した, 撮影の世界の座標) です'
+                : null
+            }
           />
         )}
         {/* 出し直した後は, 絞り込みとページを初めに戻す */}

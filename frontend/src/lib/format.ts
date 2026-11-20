@@ -73,6 +73,7 @@ export const KIND_LABELS: Record<string, string> = {
   image: '画像',
   text: '文',
   pointcloud: '点群',
+  items: 'ファイルの組',
 }
 
 /** タスクの日本語の名前 */

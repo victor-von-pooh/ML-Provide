@@ -1,4 +1,13 @@
-import { isColumnOutput, licenseText, originNote, outputDetails, placeText } from './outputs'
+import type { Description } from '../api/types'
+import {
+  isColumnOutput,
+  licenseText,
+  maskNames,
+  originNote,
+  outputDetails,
+  placeText,
+  sourceLabel,
+} from './outputs'
 
 describe('受け持ちと出力の形', () => {
   it('版 2 までの一式と項目の無い説明は列の出力', () => {
@@ -44,5 +53,39 @@ describe('受け持ちと出力の形', () => {
       licenseText({ node: 'a', place: 'bundle', redistributable: true, license: 'mit' }),
     ).toEqual({ text: 'mit (再配布できる)', warn: false })
     expect(licenseText({ node: 'a', place: 'bundle' }).warn).toBe(true)
+  })
+
+  it('版 2 のデータセットの一式の領域は, 番号でなく領域の値ごとの名前', () => {
+    const output = { form: 'mask', classes: ['background', 'circle', 'square'] }
+    expect(outputDetails(output, [0, 128, 255])).toEqual([
+      '値ごとの名前 0: background, 128: circle, 255: square',
+    ])
+    const items = {
+      input: 'image',
+      target: 'mask',
+      prepare: 'image',
+      options: {},
+      values: [0, 128, 255],
+      restore: null,
+    }
+    expect(maskNames({ output, items } as unknown as Description)).toEqual({
+      0: 'background',
+      128: 'circle',
+      255: 'square',
+    })
+    // 版 3 の一式は番号のまま
+    expect(maskNames({ output } as unknown as Description)).toEqual({
+      0: 'background',
+      1: 'circle',
+      2: 'square',
+    })
+    expect(maskNames(undefined)).toEqual({})
+  })
+
+  it('推論するデータの欄の名前は, 版 4 の一式なら入力の項目の種類から', () => {
+    expect(sourceLabel('image')).toContain('画像のファイル')
+    expect(sourceLabel('capture')).toContain('撮影のディレクトリ')
+    expect(sourceLabel('point_cloud')).toContain('点群のファイル')
+    expect(sourceLabel(undefined)).toContain('同じ列のファイル')
   })
 })

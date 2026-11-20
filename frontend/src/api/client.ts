@@ -2,6 +2,7 @@ import type {
   ArtifactPreview,
   Bundle,
   BundleCreateBody,
+  DatasetDescription,
   Decision,
   ExperimentList,
   Listing,
@@ -65,6 +66,8 @@ export const api = {
   createBundle: (body: BundleCreateBody) =>
     request<Bundle>('/api/bundles/create', json('POST', body)),
   experiments: () => request<ExperimentList>('/api/experiments'),
+  describeDataset: (path: string) =>
+    request<DatasetDescription>(`/api/datasets/describe?path=${encodeURIComponent(path)}`),
   addSamples: () => request<Bundle[]>('/api/samples', json('POST', {})),
   restoreUncertainty: (id: string) =>
     request<Bundle>(`/api/bundles/${id}/restore-uncertainty`, json('POST', {})),

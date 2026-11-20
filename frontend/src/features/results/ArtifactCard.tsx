@@ -102,8 +102,16 @@ function PointsPlot({ preview }: { preview: ArtifactPreview }) {
   )
 }
 
-/** 1 件の配列の見せ方 (形ごと) */
-export function ArtifactBody({ preview, names }: { preview: ArtifactPreview; names: string[] }) {
+/** 1 件の配列の見せ方 (形ごと. names は領域の格子の値から名前) */
+export function ArtifactBody({
+  preview,
+  names,
+  note,
+}: {
+  preview: ArtifactPreview
+  names: Record<number, string>
+  note?: string | null
+}) {
   // 描く画素は見本が変わったときだけ作り直す
   const gridImage = useMemo(() => (preview.grid ? gridPixels(preview.grid) : null), [preview.grid])
   const photo = useMemo(() => (preview.image ? imagePixels(preview.image) : null), [preview.image])
@@ -137,6 +145,7 @@ export function ArtifactBody({ preview, names }: { preview: ArtifactPreview; nam
         <PixelCanvas pixels={photo} label={`画像 (${preview.row} 行目, ${shape})`} />
       )}
       {preview.view === 'points' && <PointsPlot preview={preview} />}
+      {preview.view === 'points' && note && <p className="text-xs text-ink-2">{note}</p>}
       {preview.view === 'values' && (
         <div>
           <p className="mb-1 text-xs text-ink-3">
@@ -157,11 +166,13 @@ export function ArtifactCard({
   row,
   onRow,
   names,
+  note,
 }: {
   result: Result
   row: number | null
   onRow: (row: number) => void
-  names: string[]
+  names: Record<number, string>
+  note?: string | null
 }) {
   // 行を選んでいなければ, 推論した最初の行
   const first = useQuery({
@@ -219,7 +230,7 @@ export function ArtifactCard({
       )}
       {preview.isPending && shown !== null && <Spinner />}
       {preview.error && <ErrorBox error={preview.error} live={false} />}
-      {preview.data && <ArtifactBody preview={preview.data} names={names} />}
+      {preview.data && <ArtifactBody preview={preview.data} names={names} note={note} />}
     </Card>
   )
 }
