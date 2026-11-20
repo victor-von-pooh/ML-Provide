@@ -790,13 +790,17 @@ all = [
     { name = "pyarrow", version = "26.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "tokenizers" },
 ]
+parquet = [
+    { name = "pyarrow", version = "25.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "pyarrow", version = "26.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
 
 [[package]]
 name = "ml-inference"
 version = "0.1.0"
 source = { editable = "../ML-Inference" }
 dependencies = [
-    { name = "ml-eda" },
+    { name = "ml-eda", extra = ["parquet"] },
     { name = "ml-modelcontrol" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
@@ -817,8 +821,8 @@ all = [
 
 [package.metadata]
 requires-dist = [
-    { name = "ml-eda", git = "https://github.com/victor-von-pooh/ML-EDA.git" },
     { name = "ml-eda", extras = ["all"], marker = "extra == 'all'", git = "https://github.com/victor-von-pooh/ML-EDA.git" },
+    { name = "ml-eda", extras = ["parquet"], git = "https://github.com/victor-von-pooh/ML-EDA.git" },
     { name = "ml-modelcontrol", git = "https://github.com/victor-von-pooh/ML-ModelControl.git" },
     { name = "numpy" },
     { name = "pandas", specifier = ">=2.0" },
