@@ -771,7 +771,7 @@ wheels = [
 [[package]]
 name = "ml-eda"
 version = "0.1.0"
-source = { git = "https://github.com/victor-von-pooh/ML-EDA.git#603d0342eb7a230977f220bff3c0f5f3951964b6" }
+source = { git = "https://github.com/victor-von-pooh/ML-EDA.git#4f9fb0d9756de22196d67290880415625121f136" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
@@ -906,7 +906,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "ml-eda", extras = ["image"], marker = "extra == 'data'", git = "https://github.com/victor-von-pooh/ML-EDA.git?rev=1e79f34" },
+    { name = "ml-eda", extras = ["image"], marker = "extra == 'data'", git = "https://github.com/victor-von-pooh/ML-EDA.git?rev=603d034" },
     { name = "pandas", specifier = ">=2.0" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pyyaml" },
