@@ -6,14 +6,7 @@ from typing import Any
 import ml_inference
 import numpy as np
 import pandas as pd
-import torch
 import yaml
-from ml_eda import Dataset, export_dataset, load_data, load_dataset
-from ml_modelcontrol import build_model
-from torch import nn, optim
-
-# 見本ごとの学習の回数 (全ての行を 1 度に使う)
-STEPS = 300
 
 # 見本の作り方の版 (作り方を変えたら上げ, 置き場の古い見本を作り直す)
 SAMPLES_VERSION = 3
@@ -278,101 +271,6 @@ SAMPLES: dict[str, tuple[Callable[..., pd.DataFrame], dict[str, Any]]] = {
 }
 
 
-def model_spec(dataset: Dataset, outputs: int) -> dict[str, Any]:
-    """
-    見本のデータセットに合わせた小さなモデルの定義を返す関数
-
-    Parameters
-    ----------
-    dataset: Dataset
-        ML-EDA のデータセット
-    outputs: int
-        出力の幅 (分類はクラスの数, 回帰は 1)
-
-    Returns
-    ----------
-    spec: dict[str, Any]
-        ML-ModelControl の定義 (文は埋め込みの平均, 表は全結合 2 層)
-    """
-    # 文は番号の並び, 表は学習に使う列
-    if dataset.info["kind"] == "text":
-        length = int(dataset.info["splits"]["train"]["shape"][1])
-        vocabulary = next(
-            len(step["state"]["vocabulary"])
-            for step in dataset.recipe["item_steps"]
-            if step["op"] == "vocabulary"
-        )
-        nodes: dict[str, Any] = {
-            "bag": {"unit": "nn.EmbeddingBag",
-                    "params": {"num_embeddings": vocabulary,
-                               "embedding_dim": 16, "mode": "mean",
-                               "padding_idx": 0},
-                    "inputs": {"input": "ids"}},
-            "head": {"unit": "nn.Linear",
-                     "params": {"in_features": 16, "out_features": outputs},
-                     "inputs": "bag"},
-        }
-        inputs = {"ids": {"shape": [2, length], "dtype": "int64",
-                          "fill": "ones"}}
-    else:
-        width = len(dataset.features)
-        nodes = {
-            "fc": {"unit": "nn.Linear",
-                   "params": {"in_features": width, "out_features": 16},
-                   "inputs": "x"},
-            "act": {"unit": "nn.ReLU", "inputs": "fc"},
-            "head": {"unit": "nn.Linear",
-                     "params": {"in_features": 16, "out_features": outputs},
-                     "inputs": "act"},
-        }
-        inputs = {"x": {"shape": [2, width]}}
-    spec = {"format_version": 1, "name": "sample", "inputs": inputs,
-            "nodes": nodes, "outputs": {"y": "head"}}
-
-    return spec
-
-
-def train(
-    spec: dict[str, Any], dataset: Dataset
-) -> tuple[nn.Module, dict[str, float]]:
-    """
-    見本のモデルを学習用の分割で学習する関数
-
-    Parameters
-    ----------
-    spec: dict[str, Any]
-        モデルの定義
-    dataset: Dataset
-        ML-EDA のデータセット
-
-    Returns
-    ----------
-    result: tuple[nn.Module, dict[str, float]]
-        学習したモデルと, 目的の値の中心と幅 (回帰. 分類は空)
-    """
-    # 回帰の目的の値の標準化 (一式の target_scale で戻す)
-    model = build_model(spec, seed=0)
-    x, y = dataset.tensors("train")
-    scale: dict[str, float] = {}
-    if dataset.info["task"] == "classification":
-        loss_fn: nn.Module = nn.CrossEntropyLoss()
-    else:
-        scale = {"center": y.mean().item(), "scale": y.std().item()}
-        y = ((y - scale["center"]) / scale["scale"]).unsqueeze(1)
-        loss_fn = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.02)
-    model.train()
-    for _ in range(STEPS):
-        optimizer.zero_grad()
-        loss = loss_fn(model(x), y)
-        loss.backward()
-        optimizer.step()
-    model.eval()
-    result = (model, scale)
-
-    return result
-
-
 def write_sample(
     root: Path, name: str, number: int, seed: int
 ) -> tuple[Path, Path, Path]:
@@ -416,23 +314,16 @@ def write_sample(
     )
     past.to_csv(place / "past.csv", index=False)
 
-    # 前処理して書き出し, 小さなモデルを学習して一式に
+    # 前処理, 小さなモデルの学習, 一式づくり (ML-Inference の見本の一式)
     recipe = {
-        "format_version": 1, "target": settings["target"],
-        "task": settings["task"], "steps": settings["steps"],
+        "target": settings["target"], "task": settings["task"],
+        "steps": settings["steps"],
         "item_steps": settings.get("item_steps", []),
         "split": settings["split"],
     }
-    data = load_data(place / "train.csv", **settings["options"])
-    export_dataset(data, recipe, place / "dataset")
-    dataset = load_dataset(place / "dataset")
-    classes = dataset.info["classes"]
-    spec = model_spec(dataset, len(classes) if classes else 1)
-    model, scale = train(spec, dataset)
-    torch.save(model.state_dict(), place / "weights.pt")
-    ml_inference.make_bundle(
-        place / "bundle", spec, place / "dataset", place / "weights.pt",
-        target_scale=scale or None, conclusion=settings["conclusion"],
+    ml_inference.make_sample_bundle(
+        place / "bundle", place / "train.csv", recipe,
+        options=settings["options"], conclusion=settings["conclusion"],
         decision=settings.get("decision"), name=name
     )
     (place / "sample.yaml").write_text(

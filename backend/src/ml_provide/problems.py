@@ -8,8 +8,8 @@ import yaml
 from fastapi import APIRouter, HTTPException, Request
 from ml_quest.check import is_column_part
 from ml_quest.handoff import decision_text
-from ml_quest.problem import active_value
-from ml_quest.questions import ROLES, TARGET_KINDS
+from ml_quest.problem import active_value, get_value
+from ml_quest.questions import PART, ROLES, TARGET_KINDS
 from pydantic import BaseModel, Field
 
 from ml_provide.api import find_bundle, get_store
@@ -276,6 +276,64 @@ def issues_of(
     return issues
 
 
+def with_baseline(
+    problem: dict[str, Any], decision: Optional[dict[str, Any]]
+) -> tuple[Optional[dict[str, Any]], list[str]]:
+    """
+    問題の設定の今のやり方 (action.current) を, たどり直しで比べる今のやり方
+    の決まりとして意思決定の current に入れる関数
+
+    量を決める型は, 列, k 期前, 平均を ML-Inference の決まりにする (決まり
+    の値は置いた後の量なので, 今ある量があっても意味が同じ). 選ぶと振り分け
+    は受け渡しの列の名前のまま
+
+    Parameters
+    ----------
+    problem: dict[str, Any]
+        問題の設定
+    decision: Optional[dict[str, Any]]
+        受け渡しの意思決定 (ML-Inference の形)
+
+    Returns
+    ----------
+    result: tuple[Optional[dict[str, Any]], list[str]]
+        今のやり方を入れた意思決定と, 入れられなかった理由の文
+    """
+    # 量を決める型で, 今のやり方を書いた場合だけ
+    current = active_value(problem, "action.current")
+    notes: list[str] = []
+    if not decision or decision.get("type") != "quantity" or not (
+        isinstance(current, dict)
+    ):
+        result = (decision, notes)
+        return result
+    if current.get("type") == "column":
+        rule: dict[str, Any] = {"type": "column",
+                                "column": current.get("column")}
+        result = ({**decision, "current": rule}, notes)
+        return result
+
+    # k 期前と平均: 時刻の列, 系列を分ける列, 1 期の間隔 (データを入れた
+    # ときに求めた値. 無ければ推論するデータの時刻の差から)
+    time = active_value(problem, f"{PART}.time_column")
+    if not time:
+        notes.append(
+            "今のやり方 (k 期前と平均) は時刻の列で数えるので, 問題の設定に"
+            "時刻の列が無いと, たどり直しで比べません"
+        )
+        result = (decision, notes)
+        return result
+    rule = {"type": current.get("type"), "periods": current.get("periods"),
+            "time": time,
+            "by": list(active_value(problem, f"{PART}.series_by") or [])}
+    seconds = get_value(problem, "data.interval_seconds")
+    if isinstance(seconds, (int, float)) and seconds >= 1:
+        rule["freq"] = f"{int(seconds)}s"
+    result = ({**decision, "current": rule}, notes)
+
+    return result
+
+
 def part_name(part: dict[str, Any]) -> str:
     """
     受け渡しの受け持ちを, 画面に出す短い名前にする関数
@@ -348,7 +406,9 @@ def linked_view(
     # 結論の決め方は一式の既定値に重ね, 意思決定は問題の設定のまま
     inference = stages["inference"]
     role = part_name(stages["part"])
-    decision = inference["decision"] if handled else None
+    decision, notes = with_baseline(
+        problem, inference["decision"] if handled else None
+    )
     conclusion = {
         **(bundle.info.get("conclusion") or {}), **inference["conclusion"]
     }
@@ -370,7 +430,7 @@ def linked_view(
         "horizon": inference["horizon"],
         "basis": active_value(problem, "action.basis") if handled else None,
         "text": text,
-        "issues": issues_of(
+        "issues": notes + issues_of(
             bundle, stages["data"]["target"], decision, conclusion
         ) if handled else [],
     }

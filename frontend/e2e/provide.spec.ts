@@ -189,7 +189,9 @@ test('日々の売上の見本の過去のデータで, 7 段先までの外れ�
   await expect(page.getByText(/何段も先の外れ方は 7 段目まで段ごと/)).toBeVisible()
 })
 
-test('日々の売上の見本に問題の設定をつなぐと, 損得と根拠が既定になる', async ({ page }) => {
+test('日々の売上の見本に問題の設定をつなぐと, 損得, 根拠, 今のやり方が既定になる', async ({
+  page,
+}) => {
   await page.goto('/')
   await page.getByRole('link', { name: '見本: 日々の売上の予測 (時系列, 先の予測)' }).click()
   // 一式の既定値 (欠品 3, 余り 1)
@@ -205,11 +207,19 @@ test('日々の売上の見本に問題の設定をつなぐと, 損得と根拠
   await expect(page.getByText('損得の根拠: 欠品は粗利 200 円, 廃棄は原価 150 円')).toBeVisible()
   await expect(under).toHaveValue('200')
   await expect(page.getByText(/問題の設定「総菜の作る量」の損得/)).toBeVisible()
+  // 今のやり方は列を足さずに, 問題の設定の決まり (7 期前) で比べる
+  await expect(
+    page.getByText('空なので, 問題の設定の今のやり方 (7 期前の値と同じ量) で比べます.'),
+  ).toBeVisible()
 
-  // その値で推論できる
+  // その値で推論し, 今のやり方の列の無い過去のデータでたどり直せる
   await page.getByRole('button', { name: /見本の過去のデータ/ }).click()
   await page.getByRole('button', { name: '推論する' }).click()
   await expect(page.getByText(/件のうち/).first()).toBeVisible({ timeout: 30_000 })
+  await page.getByRole('button', { name: '過去のデータでたどり直す' }).click()
+  const replay = page.getByRole('region', { name: 'たどり直し' })
+  await expect(replay).toContainText('今のやり方', { timeout: 30_000 })
+  await expect(replay).toContainText('7 期前の値と同じ量')
 
   // 外すと一式の既定値に戻る
   await page

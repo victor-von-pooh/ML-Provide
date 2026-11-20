@@ -1,4 +1,4 @@
-import { fromDecisionForm, toDecisionForm, visibleFields } from './decision'
+import { baselineText, fromDecisionForm, toDecisionForm, visibleFields } from './decision'
 
 describe('意思決定の編集', () => {
   it('数と列の名前を分けて渡す', () => {
@@ -19,6 +19,21 @@ describe('意思決定の編集', () => {
     expect(problems).toContain('当たりのクラスを選んでください')
     expect(problems.some((p) => p.includes('費用'))).toBe(true)
     expect(problems.some((p) => p.includes('数で書いて'))).toBe(true)
+  })
+
+  it('問題の設定の今のやり方の決まりは, 列を書かなければそのまま渡す', () => {
+    const rule = { type: 'lag' as const, periods: 7, time: 'date', by: ['shop'] }
+    const decision = { type: 'quantity' as const, under_cost: 3, over_cost: 1, current: rule }
+    const form = toDecisionForm(decision)
+    expect(form.values.current).toBeUndefined()
+    expect(baselineText(form.baseline!)).toBe('7 期前の値と同じ量')
+    expect(fromDecisionForm(form, []).decision).toEqual(decision)
+    // 列を書けば列, 使わないなら外す, 型を変えれば渡さない
+    const typed = { ...form, values: { ...form.values, current: 'now' } }
+    expect(fromDecisionForm(typed, []).decision?.current).toBe('now')
+    expect(fromDecisionForm({ ...form, baseline: null }, []).decision?.current).toBeUndefined()
+    const triage = { ...form, type: 'triage' as const, positive: 'a', values: {} }
+    expect(fromDecisionForm(triage, ['a', 'b']).decision?.current).toBeUndefined()
   })
 
   it('行き来できる', () => {

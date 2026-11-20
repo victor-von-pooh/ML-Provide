@@ -89,21 +89,55 @@ export function visibleFields(form: DecisionForm): DecisionField[] {
   )
 }
 
-/** 画面で編集する意思決定 (欄は文字で持つ) */
+/**
+ * 今のやり方の決まり (問題の設定の今のやり方. k 期前, 平均, 列).
+ * 時刻の列, 系列を分ける列, 1 期の間隔も持つ (ML-Inference の決まりの形)
+ */
+export interface Baseline {
+  type: 'lag' | 'mean' | 'column'
+  periods?: number
+  column?: string
+  [key: string]: unknown
+}
+
+/** 画面で編集する意思決定 (欄は文字で持つ. 決まりの今のやり方は別に持つ) */
 export interface DecisionForm {
   type: Decision['type'] | ''
   positive: string
   values: Record<string, string>
+  baseline?: Baseline | null
+}
+
+/** 今のやり方の決まりを短い言葉にする */
+export function baselineText(baseline: Baseline): string {
+  if (baseline.type === 'lag') return `${baseline.periods} 期前の値と同じ量`
+  if (baseline.type === 'mean') return `直前の ${baseline.periods} 期の値の平均の量`
+  return `列 ${baseline.column} の値の量`
+}
+
+/** 決まりを使える型か (k 期前と平均は量だけ. 列の決まりは量だけで使う) */
+function usesBaseline(form: DecisionForm): boolean {
+  return form.type === 'quantity' && !!form.baseline
 }
 
 /** 意思決定を編集の形にする */
 export function toDecisionForm(decision: Decision | null | undefined): DecisionForm {
   if (!decision) return { type: '', positive: '', values: {} }
   const values: Record<string, string> = {}
+  let baseline: Baseline | null = null
   for (const [key, value] of Object.entries(decision)) {
+    if (key === 'current' && value !== null && typeof value === 'object') {
+      baseline = value as Baseline
+      continue
+    }
     if (key !== 'type' && key !== 'positive' && value != null) values[key] = String(value)
   }
-  return { type: decision.type, positive: String(decision.positive ?? ''), values }
+  return { type: decision.type, positive: String(decision.positive ?? ''), values, baseline }
+}
+
+/** 今のやり方の欄が空のときに使う決まり (無ければ null) */
+export function activeBaseline(form: DecisionForm): Baseline | null {
+  return usesBaseline(form) && !(form.values.current ?? '').trim() ? (form.baseline ?? null) : null
 }
 
 /** 数なら数, それ以外は列の名前として渡す (全角の数字やカンマもそろえる) */
@@ -166,5 +200,8 @@ export function fromDecisionForm(
     }
     decision[field.key] = value
   }
+  // 今のやり方の列を書かなければ, 問題の設定の決まりで比べる
+  const baseline = activeBaseline(form)
+  if (baseline) decision.current = baseline
   return { decision, problems }
 }
