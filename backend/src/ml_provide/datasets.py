@@ -37,10 +37,14 @@ def entry_rows(info: dict[str, Any]) -> list[dict[str, Any]]:
     rows = []
     for name, entry in info["entries"].items():
         kind = entry.get("kind")
+        # 手順は辞書の並びだけ (崩れた dataset.yaml の文字などは無いものに)
+        steps = entry.get("steps")
+        steps = ([step for step in steps if isinstance(step, dict)]
+                 if isinstance(steps, list) else [])
         rows.append({
             "name": str(name), "kind": kind, "role": entry.get("role"),
             "shape": entry.get("shape"), "points": kind in POINT_KINDS,
-            "steps": list(entry.get("steps") or []),
+            "steps": steps,
         })
 
     return rows
