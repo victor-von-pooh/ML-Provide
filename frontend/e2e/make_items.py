@@ -1,7 +1,9 @@
 """
-画面の通しのテスト用に, 版 2 のデータセットと, そこで学習した実験を作る
+画面の通しのテスト用に, 版 2 と版 3 のデータセットと, そこで学習した実験を
+作る
 
-ML-EDA の合成の見本から画像と領域, 撮影と点群の版 2 のデータセットを書き
+ML-EDA の合成の見本から画像と領域, 撮影と点群の版 2 のデータセットと,
+大きさの違う画像を中身の手順で 16 x 16 にそろえた版 3 のデータセットを書き
 出し, ML-ModelControl の見本の定義 (unet_segmentation,
 point_cloud_predictor) を 2 エポックだけ学習した ML-Found の形の実験
 (final_model.pt と run.json) を作る. 骨組みのプロジェクトの実験の中に
@@ -36,7 +38,8 @@ SEED = 0
 
 def write_datasets(root: Path) -> dict[str, Path]:
     """
-    合成の見本から版 2 のデータセットを 2 つ書き出す関数
+    合成の見本から版 2 のデータセットを 2 つと, 版 3 のデータセットを 1 つ
+    書き出す関数
 
     Parameters
     ----------
@@ -63,10 +66,22 @@ def write_datasets(root: Path) -> dict[str, Path]:
         root / "raw_c" / "captures", root / "raw_c" / "clouds",
         root / "clouds", split=split
     )
+
+    # 24 x 24 の画像を中身の手順で 16 x 16 にそろえた版 3 (版 2 の領域の
+    # 実験の重みがそのまま使える大きさ)
+    write_image_masks(root / "raw_m3", count=8, size=(24, 24))
+    export_image_masks(
+        root / "raw_m3" / "images", root / "raw_m3" / "masks",
+        root / "masks_v3", split=split,
+        classes={0: "background", 1: "circle", 2: "square"},
+        item_steps={"image": [{"op": "resize", "width": 16,
+                               "height": 16}]}
+    )
     paths = {
         "images": root / "raw_m" / "images",
         "captures": root / "raw_c" / "captures",
         "masks": root / "masks", "clouds": root / "clouds",
+        "masks_v3": root / "masks_v3",
     }
 
     return paths

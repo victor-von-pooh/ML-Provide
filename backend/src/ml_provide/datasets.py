@@ -19,7 +19,8 @@ READ_ERRORS = (
 
 def entry_rows(info: dict[str, Any]) -> list[dict[str, Any]]:
     """
-    版 2 のデータセットの項目を, 画面のための行にする関数
+    ファイルの組のデータセット (版 2 と版 3) の項目を, 画面のための行に
+    する関数
 
     Parameters
     ----------
@@ -29,7 +30,8 @@ def entry_rows(info: dict[str, Any]) -> list[dict[str, Any]]:
     Returns
     ----------
     rows: list[dict[str, Any]]
-        name, kind, role, shape, points (点を選ぶ数が要るか) の並び
+        name, kind, role, shape, points (点を選ぶ数が要るか), steps (書き
+        出しでかけた中身の手順. 版 2 と手順の無い項目は空) の並び
     """
     # 書き出した順のまま
     rows = []
@@ -38,6 +40,7 @@ def entry_rows(info: dict[str, Any]) -> list[dict[str, Any]]:
         rows.append({
             "name": str(name), "kind": kind, "role": entry.get("role"),
             "shape": entry.get("shape"), "points": kind in POINT_KINDS,
+            "steps": list(entry.get("steps") or []),
         })
 
     return rows
@@ -79,7 +82,8 @@ def mask_classes(info: dict[str, Any]) -> list[dict[str, Any]]:
 @router.get("/datasets/describe")
 def describe_dataset(path: str) -> dict[str, Any]:
     """
-    一式を作る画面のために, データセットの版と版 2 の項目を返す関数
+    一式を作る画面のために, データセットの版とファイルの組の項目を返す
+    関数
 
     Parameters
     ----------
@@ -89,7 +93,7 @@ def describe_dataset(path: str) -> dict[str, Any]:
     Returns
     ----------
     description: dict[str, Any]
-        path, format_version. 版 2 なら name, role, target (kind,
+        path, format_version. 版 2 と版 3 なら name, role, target (kind,
         entries, origin), entries (entry_rows), splits (分割ごとの件数),
         classes (領域の値と名前), normalized (撮影の正規化があるか)
 
@@ -115,7 +119,7 @@ def describe_dataset(path: str) -> dict[str, Any]:
         }
         return description
 
-    # 版 2 (と知らない版) は ML-EDA の読み込みで確かめる
+    # 版 2 と版 3 (と知らない版) は ML-EDA の読み込みで確かめる
     try:
         dataset = load_items(root)
     except READ_ERRORS as error:

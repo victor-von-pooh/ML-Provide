@@ -83,10 +83,22 @@ def items(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
         root / "clouds", split=split
     )
 
+    # 版 3: 24 x 24 の画像を中身の手順で 16 x 16 にそろえたデータセット
+    synthetic.write_image_masks(root / "raw_m3", count=8, size=(24, 24))
+    export_image_masks(
+        root / "raw_m3" / "images", root / "raw_m3" / "masks",
+        root / "masks_v3", split=split,
+        classes={0: "background", 1: "circle", 2: "square"},
+        item_steps={"image": [{"op": "resize", "width": 16,
+                               "height": 16}]}
+    )
+
     # 見本の定義 (領域は背景を含む 3 クラス) と乱数の初期値の重み
     paths = {
         "images": root / "raw_m" / "images", "masks": root / "masks",
         "captures": root / "raw_c" / "captures", "clouds": root / "clouds",
+        "images_v3": root / "raw_m3" / "images",
+        "masks_v3": root / "masks_v3",
     }
     unet = load_example("unet_segmentation")
     unet["nodes"]["head"]["params"]["out_channels"] = 3
@@ -197,12 +209,24 @@ def test_describe_dataset(
     assert masks["splits"] == {"train": 4, "valid": 2, "test": 2}
     assert masks["normalized"] is False
 
+    assert [e["steps"] for e in masks["entries"]] == [[], []]
+
     # 撮影と点群: 入力の撮影は点を選ぶ数が要る. 正規化あり
     clouds = client.get("/api/datasets/describe",
                         params={"path": str(items["clouds"])}).json()
     assert clouds["target"]["kind"] == "point_cloud"
     assert clouds["entries"][0]["points"] is True
     assert clouds["classes"] == [] and clouds["normalized"] is True
+
+    # 版 3: 版 2 と同じ項目に, 書き出しでかけた中身の手順 (領域は ML-EDA
+    # が画像に合わせた resize_mask)
+    resized = client.get("/api/datasets/describe",
+                         params={"path": str(items["masks_v3"])}).json()
+    assert resized["format_version"] == 3
+    assert resized["target"]["kind"] == "mask"
+    steps = {e["name"]: e["steps"] for e in resized["entries"]}
+    assert steps["image"] == [{"op": "resize", "width": 16, "height": 16}]
+    assert [step["op"] for step in steps["mask"]] == ["resize_mask"]
 
     # 版 1 は版だけ, 無い場所は 404, 知らない版は ML-EDA の文で 400
     old = tmp_path / "old"
@@ -285,6 +309,52 @@ def test_mask_bundle_from_run(
               "rules": {"min_confidence": 0.5}}
     )
     assert response.status_code == 400
+
+
+def test_mask_bundle_version3(
+    client: TestClient, items: dict[str, Path], tmp_path: Path
+) -> None:
+    """
+    版 3 (中身の手順で大きさをそろえた) のデータセットからも版 4 の一式を
+    作り, 大きさの違う元の画像を推論すると手順をかけた大きさの領域が返る
+    ことを確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    items: dict[str, Path]
+        見本の場所
+    tmp_path: Path
+        一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 版 2 と同じ欄で作れる
+    run = fake_run(tmp_path / "run", items["mask_weights"], "valid/loss")
+    response = client.post("/api/bundles/create", json={
+        "name": "版 3 の領域", "spec": str(items["mask_spec"]),
+        "dataset": str(items["masks_v3"]), "weights": str(run),
+    })
+    assert response.status_code == 201, response.text
+    description = response.json()["description"]
+    assert description["format_version"] == 4
+    assert description["kind"] == "items"
+    assert description["check"]["metric"] == "iou"
+
+    # 24 x 24 の元の画像は, 一式が手順をかけて 16 x 16 の領域になる
+    bundle_id = response.json()["id"]
+    response = client.post(f"/api/bundles/{bundle_id}/predict",
+                           json={"source": str(items["images_v3"])})
+    assert response.status_code == 201, response.text
+    result = response.json()
+    assert result["summary"] == {"rows": 8, "predicted": 8, "skipped": 0}
+    preview = client.get(
+        f"/api/results/{result['id']}/artifacts/0"
+    ).json()
+    assert preview["view"] == "grid" and preview["shape"] == [16, 16]
 
 
 def test_cloud_bundle_needs_points(

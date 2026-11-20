@@ -1,4 +1,4 @@
-import type { Description, PretrainedRecord, TargetInfo } from '../api/types'
+import type { Description, ItemStep, PretrainedRecord, TargetInfo } from '../api/types'
 
 /** 受け持ちの日本語の名前 (ML-Quest と同じ言葉) */
 export const ROLE_LABELS: Record<string, string> = {
@@ -143,4 +143,17 @@ export function sourceLabel(inputKind: string | null | undefined): string {
   if (inputKind === 'point_cloud')
     return '推論するデータ (点群のファイルかディレクトリ. 版 2 のデータセットも)'
   return '推論するデータ (学習のときと同じ列のファイルか, 画像などのディレクトリ)'
+}
+
+/** 中身の手順の並びを, 名前と引数の文にする (resize (width 64, height 64), grayscale) */
+export function stepsText(steps: ItemStep[]): string {
+  return steps
+    .map((step) => {
+      const values = Object.entries(step)
+        .filter(([key]) => key !== 'op')
+        .map(([key, value]) => `${key} ${String(value)}`)
+        .join(', ')
+      return values ? `${step.op} (${values})` : step.op
+    })
+    .join(', ')
 }

@@ -523,6 +523,38 @@ test('版 2 の撮影と点群のデータセットは選ぶ点の数を求め, 
     await page.request.delete(`/api/bundles/${id}`)
   }
 })
+test('版 3 のデータセットは中身の手順を見せ, 大きさの違う画像も手順をかけて推論する', async ({
+  page,
+}) => {
+  const root = path.resolve(import.meta.dirname, '.work', 'items')
+  await page.goto('/')
+  await page.getByRole('button', { name: '学習の結果から作る' }).click()
+  const dialog = page.getByRole('dialog', { name: '学習の結果から一式を作る' })
+  await dialog.getByLabel('名前', { exact: true }).fill('版 3 の領域')
+  await dialog.getByLabel('モデルの定義 (YAML か JSON)').fill(path.join(root, 'mask_spec.yaml'))
+  await dialog.getByLabel(/^データセット/).fill(path.join(root, 'masks_v3'))
+  // 版 2 と同じ要約に, 書き出しでかけた中身の手順
+  const summary = dialog.getByRole('note', { name: '版 3 のデータセット' })
+  await expect(summary).toContainText('image (画像, 入力)')
+  await expect(summary).toContainText('中身の手順 (image): resize (width 16, height 16)')
+  await expect(summary).toContainText('中身の手順 (mask): resize_mask')
+  await dialog.getByLabel(/^実験のディレクトリ/).fill(path.join(root, 'runs', 'mask'))
+  await dialog.getByRole('button', { name: '作る' }).click()
+
+  await expect(page.getByRole('heading', { name: '版 3 の領域' })).toBeVisible({ timeout: 30_000 })
+  const id = new URL(page.url()).pathname.split('/').pop() ?? ''
+  try {
+    // 24 x 24 の元の画像は, 一式が手順をかけて推論する
+    await page
+      .getByLabel(/推論するデータ \(画像のファイル/)
+      .fill(path.join(root, 'raw_m3', 'images'))
+    await page.getByRole('button', { name: '推論する' }).click()
+    await expect(page.getByText('8 件のうち 8 件を推論')).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole('img', { name: /^領域/ })).toBeVisible()
+  } finally {
+    await page.request.delete(`/api/bundles/${id}`)
+  }
+})
 
 test('骨組みの学習が実験の中に作った版 4 の一式を, 実験の一覧から登録する', async ({ page }) => {
   await page.goto('/')
