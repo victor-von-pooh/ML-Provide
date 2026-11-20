@@ -15,6 +15,18 @@ ML-Inference を使って, 学習したモデルで新しいデータを推論�
 - TypeScript: Prettier と oxlint に従い, `strict` で型検査を通す. コメントは日本語で書く
 - ドキュメントとコードのコメントでは, 「機械学習を全て GUI 上で行う」という目的のために開発しているリポジトリ (今は ML-Found, ML-Dashboard, ML-ModelControl, ML-CreateArchitecture, ML-EDA, ML-Fathom, ML-Inference, ML-Provide, ML-Quest, ML-Pathfinder, ML_tester) 以外に触れない. ローカルのディレクトリ構成やパスも書かない
 
+## 文書
+
+| ファイル | 中身 |
+| --- | --- |
+| README.md | 何のアプリか, 画面の例, できること, 使い方 (必要なもの, 導入と起動), 文書, 開発, ライセンス |
+| docs/GUIDE.md | 画面の順の操作ガイド (番号付きの章) |
+| docs/DESIGN.md | 今の設計と決まり. 1. 役割と位置づけ, 2. 使うライブラリと約束, 3. 画面, 4. API, その後にこのリポジトリに固有の節 |
+| TODO.md | まだやっていないこと (優先度の順. 形はファイルの頭に書いてある) |
+
+- まだやっていないことは TODO.md だけに置く. DESIGN.md と README には書かない
+- 文書には今の動きと決まりだけを書く. 日付, 経緯 (以前は…だった, …を直した), 解決した問題は書かない. 決まりには短い理由を添える
+
 ## 進める流れ
 
 1. 方針を変える場合や新しい機能を加える場合は, 先に docs/DESIGN.md を直す

@@ -36,7 +36,12 @@
 
 ## 使い方
 
-必要なもの: [uv](https://docs.astral.sh/uv/) (Python は uv が用意する. 3.10 以上), Node.js 24 以上と [pnpm](https://pnpm.io/) 11 以上 (`corepack enable` で `package.json` の版が入る).
+### 必要なもの
+
+- [uv](https://docs.astral.sh/uv/) (Python は uv が用意する. 3.10 以上)
+- Node.js 24 以上と [pnpm](https://pnpm.io/) 11 以上 (`corepack enable` で `package.json` の版が入る)
+
+### 導入と起動
 
 ```bash
 git clone --recursive https://github.com/victor-von-pooh/ML-Provide.git
@@ -49,10 +54,13 @@ make serve   # 画面をビルドして http://127.0.0.1:8769 で起動 (Ctrl+C 
 
 開いたら「見本の一式を入れる」を押し, 見本の一式の画面で「見本の新しいデータを使う」→「推論する」で試せる.
 
-- [操作ガイド](docs/GUIDE.md): 画面ごとの手順, 自分の一式の作り方, 意思決定, 起動の設定 (自作の手順と部品, モデルを覚える数), 置き場
-- [設計](docs/DESIGN.md): 方針, API, 一式と問題の設定の版の扱い, 次の段階
-
 画面は API を使って動くが, API は画面のためのもので, スクリプトから推論する場合は ML-Inference を直接使う.
+
+## 文書
+
+- [操作ガイド](docs/GUIDE.md): 画面の順の操作ガイド (自分の一式の作り方, 意思決定, 起動の設定 (自作の手順と部品, モデルを覚える数), 置き場)
+- [設計](docs/DESIGN.md): 今の設計と決まり (ML-Inference と ML-Quest との約束, 画面, API, 一式と問題の設定の版の扱い)
+- [TODO](TODO.md): まだやっていないこと (優先度の順)
 
 ## 開発
 
@@ -72,4 +80,4 @@ cd frontend && pnpm e2e   # 画面の通しのテスト
 
 ## ライセンス
 
-MIT
+[MIT](LICENSE)

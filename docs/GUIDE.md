@@ -143,7 +143,7 @@ ML-Inference の一式の版 3 で, 出力の形が領域, 点群, ベクトル,
 - **自作の部品**: ML-ModelControl の `register_unit` で登録する部品を使う一式も同じく, 部品を宣言したモジュール (`UNITS` か `register_units(register)`. 書き方は ML-ModelControl の README の「自作の部品」) を起動の設定に書く (`uv run ml-provide --units my_package.units` か, 環境変数 `ML_PROVIDE_UNITS=my_package.units`. `,` で区切って複数). 読めないモジュールがあれば起動しない. 一式のモデルの定義に書かれた名前からは何も読み込まず, 登録されていない部品を使う一式は, 部品の名前と起動の設定への足し方が一式の画面, 登録, 画面で作る一式, 推論の誤りに出る. 読んだモジュールと部品は `/api/info` の `unit_modules` で分かる
 - **覚えるモデルの数**: 推論に使う一式は組み立てたモデルごと 4 つまで覚えて使い回す. 大きなモデルでメモリが足りない場合は環境変数 `ML_PROVIDE_MODEL_CACHE=1` で減らす
 
-## 置き場
+## 10. 置き場
 
 既定は `~/.ml-provide/` (環境変数 `ML_PROVIDE_HOME` で変えられる).
 
