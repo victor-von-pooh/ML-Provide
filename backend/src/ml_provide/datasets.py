@@ -12,7 +12,9 @@ router = APIRouter(prefix="/api")
 POINT_KINDS = ("capture", "point_cloud")
 
 # データセットを読めないときの例外
-READ_ERRORS = (OSError, ValueError, TypeError, KeyError, yaml.YAMLError)
+READ_ERRORS = (
+    OSError, ValueError, TypeError, KeyError, AttributeError, yaml.YAMLError
+)
 
 
 def entry_rows(info: dict[str, Any]) -> list[dict[str, Any]]:
