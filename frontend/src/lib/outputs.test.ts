@@ -7,6 +7,7 @@ import {
   outputDetails,
   placeText,
   sourceLabel,
+  stepsText,
 } from './outputs'
 
 describe('受け持ちと出力の形', () => {
@@ -87,5 +88,14 @@ describe('受け持ちと出力の形', () => {
     expect(sourceLabel('capture')).toContain('撮影のディレクトリ')
     expect(sourceLabel('point_cloud')).toContain('点群のファイル')
     expect(sourceLabel(undefined)).toContain('同じ列のファイル')
+  })
+})
+
+describe('中身の手順', () => {
+  it('手順の名前と引数をかける順に並べる', () => {
+    expect(stepsText([{ op: 'resize', width: 64, height: 48 }, { op: 'grayscale' }])).toBe(
+      'resize (width 64, height 48), grayscale',
+    )
+    expect(stepsText([])).toBe('')
   })
 })

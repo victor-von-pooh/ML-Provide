@@ -6,7 +6,13 @@ import type { Bundle, DatasetDescription } from '../../api/types'
 import { Dialog } from '../../components/Dialog'
 import { PathField } from '../../components/PathPicker'
 import { Button, ErrorBox } from '../../components/ui'
-import { ENTRY_KIND_LABELS, FORM_LABELS, ORIGIN_LABELS, ROLE_LABELS } from '../../lib/outputs'
+import {
+  ENTRY_KIND_LABELS,
+  FORM_LABELS,
+  ORIGIN_LABELS,
+  ROLE_LABELS,
+  stepsText,
+} from '../../lib/outputs'
 import { useDebounced } from '../../lib/useDebounced'
 
 const field = 'h-8 rounded-lg border border-line bg-surface px-2 text-sm'
@@ -18,21 +24,26 @@ function notCount(value: string, positive = false): boolean {
   return !Number.isInteger(number) || number < (positive ? 1 : 0)
 }
 
-/** 版 2 のデータセットの要約 (受け持ち, 正解, 項目, 分割, 領域の値の名前) */
+/** ファイルの組のデータセットの版 (版 3 は版 2 に項目ごとの中身の手順を足した版) */
+const ITEMS_VERSIONS = [2, 3]
+
+/** ファイルの組のデータセットの要約 (受け持ち, 正解, 項目, 中身の手順, 分割, 領域の値の名前) */
 function ItemsSummary({ described }: { described: DatasetDescription }) {
   const target = described.target
   const origin = target?.origin?.type
   const splits = Object.entries(described.splits ?? {})
   const classes = described.classes ?? []
+  const stepped = (described.entries ?? []).filter((entry) => (entry.steps ?? []).length > 0)
   return (
     <div
       role="note"
-      aria-label="版 2 のデータセット"
+      aria-label={`版 ${described.format_version} のデータセット`}
       className="rounded-lg border border-line p-2 text-xs text-ink-2"
     >
       <p>
-        版 2 のデータセット (ファイルの組): {ROLE_LABELS[described.role ?? ''] ?? described.role},
-        正解 {FORM_LABELS[target?.kind ?? ''] ?? target?.kind}
+        版 {described.format_version} のデータセット (ファイルの組):{' '}
+        {ROLE_LABELS[described.role ?? ''] ?? described.role}, 正解{' '}
+        {FORM_LABELS[target?.kind ?? ''] ?? target?.kind}
         {origin && ` (出どころ: ${ORIGIN_LABELS[origin] ?? origin})`}
       </p>
       <p>
@@ -46,6 +57,11 @@ function ItemsSummary({ described }: { described: DatasetDescription }) {
           )
           .join(', ')}
       </p>
+      {stepped.map((entry) => (
+        <p key={entry.name}>
+          中身の手順 ({entry.name}): {stepsText(entry.steps ?? [])}
+        </p>
+      ))}
       {splits.length > 0 && (
         <p>件数: {splits.map(([name, count]) => `${name} ${count ?? '–'}`).join(', ')}</p>
       )}
@@ -81,7 +97,7 @@ export function CreateBundleDialog({
   // 受け持ちと出力の形 (空はタスクから. 正解の無いデータセットは出力の形が要る)
   const [role, setRole] = useState('')
   const [form, setForm] = useState('')
-  // 版 2 のデータセットは, 選んだときに項目を読み, 1 件の扱いの欄を出す
+  // ファイルの組のデータセットは, 選んだときに項目を読み, 1 件の扱いの欄を出す
   const datasetPath = useDebounced(dataset.trim())
   const described = useQuery({
     queryKey: ['dataset', datasetPath],
@@ -89,7 +105,10 @@ export function CreateBundleDialog({
     enabled: !!datasetPath,
     retry: false,
   })
-  const itemsData = described.data?.format_version === 2 ? described.data : null
+  const itemsData =
+    described.data && ITEMS_VERSIONS.includes(described.data.format_version) ? described.data : null
+  // 説明で止めたデータセット (読めない, 一式を作れない版) は作れない
+  const describeFailed = !!described.error && datasetPath === dataset.trim()
   const itemInputs = (itemsData?.entries ?? []).filter((entry) => entry.role === 'input')
   const [itemInput, setItemInput] = useState('')
   const chosenInput = itemInputs.find((entry) => entry.name === itemInput) ?? itemInputs[0]
@@ -150,7 +169,7 @@ export function CreateBundleDialog({
     },
     onSuccess: onCreated,
   })
-  // 片方だけの欄と数でない値は, 送る前に知らせる (版 2 のデータセットは点の欄だけ)
+  // 片方だけの欄と数でない値は, 送る前に知らせる (ファイルの組のデータセットは点の欄だけ)
   const problems: string[] = []
   const ids = prepend.split(/[\s,]+/).filter(Boolean)
   if (itemsData) {
@@ -171,7 +190,12 @@ export function CreateBundleDialog({
       problems.push('幅は正の数にしてください')
   }
   const ready =
-    name.trim() && spec.trim() && dataset.trim() && weights.trim() && problems.length === 0
+    name.trim() &&
+    spec.trim() &&
+    dataset.trim() &&
+    weights.trim() &&
+    problems.length === 0 &&
+    !describeFailed
   return (
     <Dialog title="学習の結果から一式を作る" onClose={onClose}>
       <form
@@ -183,7 +207,7 @@ export function CreateBundleDialog({
       >
         <p className="text-xs text-ink-2">
           モデルの定義, ML-EDA (ML-Fathom の画面) で書き出したデータセット (列のデータセットか,
-          画像と領域, 撮影と点群の版 2 のデータセット), ML-Found の実験 (か重みのファイル)
+          画像と領域, 撮影と点群の版 2 か版 3 のデータセット), ML-Found の実験 (か重みのファイル)
           を選びます. 学習用の見本を推論できることを確かめてから, このアプリの置き場に作ります
           (元のファイルは変えません).
         </p>
@@ -214,9 +238,7 @@ export function CreateBundleDialog({
           pickFiles={false}
         />
         {itemsData && <ItemsSummary described={itemsData} />}
-        {described.error && datasetPath === dataset.trim() && (
-          <p className="text-xs text-warning-text">{described.error.message}</p>
-        )}
+        {describeFailed && <p className="text-xs text-warning-text">{described.error?.message}</p>}
         {itemsData && (itemInputs.length > 1 || needsPoints) && (
           <fieldset className="grid gap-3 rounded-lg border border-line p-3 md:grid-cols-2">
             <legend className="px-1 text-xs font-semibold text-ink-2">

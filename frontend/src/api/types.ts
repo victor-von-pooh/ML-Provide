@@ -113,15 +113,28 @@ export interface ItemsInfo {
   restore: string | null
 }
 
-/** データセットの説明 (一式を作る画面で, 版 2 の項目を見せるため) */
+/** 書き出しでかけた中身の手順 (ML-EDA の版 3 の項目の steps. op と引数) */
+export interface ItemStep {
+  op: string
+  [key: string]: unknown
+}
+
+/** データセットの説明 (一式を作る画面で, ファイルの組 (版 2 と版 3) の項目を見せるため) */
 export interface DatasetDescription {
   path: string
   format_version: number
   name?: string | null
   role?: string | null
   target?: { kind: string | null; entries: string[]; origin: TargetOrigin | null }
-  /** 項目 (points は点を選ぶ数が要る入力の種類か) */
-  entries?: { name: string; kind: string; role: string; shape: number[] | null; points: boolean }[]
+  /** 項目 (points は点を選ぶ数が要る入力の種類か, steps は版 3 の中身の手順) */
+  entries?: {
+    name: string
+    kind: string
+    role: string
+    shape: number[] | null
+    points: boolean
+    steps?: ItemStep[]
+  }[]
   /** 分割ごとの件数 */
   splits?: Record<string, number | null>
   /** 領域の値と名前 */

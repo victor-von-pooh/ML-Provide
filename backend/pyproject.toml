@@ -11,7 +11,7 @@ license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.115",
-    # 一式を作る画面で版 2 のデータセットの項目を読む (load_items)
+    # 一式を作る画面でファイルの組のデータセットの項目を読む (load_items)
     "ml-eda",
     "ml-inference[all]",
     "ml-quest",
