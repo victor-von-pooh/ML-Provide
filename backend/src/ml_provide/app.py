@@ -13,6 +13,7 @@ from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 
 from ml_provide.api import router
+from ml_provide.experiments import router as experiment_router
 from ml_provide.problems import router as problem_router
 from ml_provide.procedures import configured_modules, load_modules
 from ml_provide.settings import get_data_dir
@@ -359,6 +360,7 @@ def create_app(
     # API と画面の登録
     app.include_router(router)
     app.include_router(problem_router)
+    app.include_router(experiment_router)
     mount_frontend(app, STATIC_DIR)
 
     return app

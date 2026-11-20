@@ -91,6 +91,7 @@ export function ProblemCard({ bundleId, state }: { bundleId: string; state: Prob
           {hint && (
             <div className="rounded-lg border border-line p-3 text-xs">
               <p className="text-ink-2">一式の上のディレクトリに問題の設定がありました.</p>
+              {state.hint_note && <p className="mt-1 text-ink-2">{state.hint_note}</p>}
               <p id="problem-hint" className="mt-1 truncate font-mono text-ink-3" title={hint}>
                 {hint}
               </p>

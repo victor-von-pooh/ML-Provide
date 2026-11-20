@@ -48,11 +48,36 @@ for key, value in (
 ml_quest.save_problem(other, sys.argv[1] + "-generate")
 PY
 
+# ML-Pathfinder の置き場の問題の設定と, そこから書き出した骨組みのプロジェクト.
+# 実験 (outputs/<名前>/<日付>/<時刻>) は, 学習のスクリプトのように問題の設定の写しと
+# 推論の一式 (inference. 日々の売上の見本) を持つ. 写しは元の場所 (origin) を持つ
+uv run python - "$WORK" <<'PY'
+import shutil
+import sys
+from pathlib import Path
+
+import ml_quest
+from ml_provide.samples import SAMPLES, write_sample
+
+work = Path(sys.argv[1])
+problem = ml_quest.load_problem(work / "problem")
+store = work / "pathfinder" / "problems" / "p1"
+project = work / "project"
+ml_quest.save_problem(problem, store)
+ml_quest.make_project(problem, project, origin=store)
+ml_quest.save_problem(ml_quest.record_project(problem, project), store)
+name = next(key for key in SAMPLES if "日々の売上" in key)
+bundle, _, _ = write_sample(work / "experiment-source", name, 3, 0)
+run = project / "outputs" / "sales" / "2026-01-02" / "09-00-00"
+shutil.copytree(bundle, run / "inference")
+shutil.copy(project / "problem.yaml", run / "problem.yaml")
+PY
+
 # 推論の一式の版 3 (列の出力でない一式. 領域とベクトル)
 uv run python ../frontend/e2e/make_v3.py "$WORK/v3"
 
 # 決まったトークンで起動. 自作の部品は起動の設定 (環境変数) で明示した
 # 見本のモジュール (e2e/e2e_units.py) だけを読む
 PYTHONPATH="$E2E_DIR${PYTHONPATH:+:$PYTHONPATH}" ML_PROVIDE_UNITS=e2e_units \
-  ML_PROVIDE_HOME="$WORK/home" ML_PROVIDE_TOKEN=e2e-token \
+  ML_PROVIDE_HOME="$WORK/home" ML_PATHFINDER_HOME="$WORK/pathfinder" ML_PROVIDE_TOKEN=e2e-token \
   exec uv run ml-provide --port "$PORT"

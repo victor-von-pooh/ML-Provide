@@ -387,6 +387,34 @@ export interface ProblemState {
   linked: LinkedProblem | null
   /** つないだ問題の設定を読めない理由 */
   error: string | null
-  /** つないでいない一式の, 上のディレクトリで見つけた候補 */
+  /** つないでいない一式の, 上のディレクトリで見つけた候補 (元の場所を持つ写しなら元) */
   hint: string | null
+  /** 候補が元の問題の設定か, 学習の時点の写しかを伝える文 */
+  hint_note: string | null
+}
+
+/** 問題の設定に記録したプロジェクトの, 推論の一式を持つ実験 */
+export interface ExperimentRow {
+  /** 一式のディレクトリ (実験の inference) */
+  path: string
+  /** プロジェクトのディレクトリ */
+  project: string
+  /** プロジェクトを記録した問題の設定の名前 */
+  problem: string
+  /** 出力先からの実験の場所 (名前/日付/時刻) */
+  experiment: string
+  /** 一式の更新の時刻 */
+  modified: string
+  /** 登録済みならその id */
+  bundle_id: string | null
+}
+
+export interface ExperimentList {
+  /** 探した問題の設定の置き場 (ML-Pathfinder) */
+  problems: string
+  /** 見たプロジェクトの数 */
+  projects: number
+  experiments: ExperimentRow[]
+  /** 上限で打ち切ったか */
+  truncated: boolean
 }
