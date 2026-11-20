@@ -58,8 +58,8 @@ make serve   # 画面をビルドして http://127.0.0.1:8769 で起動 (Ctrl+C 
 
 ## 文書
 
-- [操作ガイド](docs/GUIDE.md): 画面の順の操作ガイド (自分の一式の作り方, 意思決定, 起動の設定 (自作の手順と部品, モデルを覚える数), 置き場)
-- [設計](docs/DESIGN.md): 今の設計と決まり (ML-Inference と ML-Quest との約束, 画面, API, 一式と問題の設定の版の扱い)
+- [操作ガイド](docs/GUIDE.md): 画面の順の操作ガイド (自分の一式の作り方, 意思決定, 起動の設定). 最後の章が「困ったとき」
+- [設計](docs/DESIGN.md): 今の設計と決まり (ML-Inference と ML-Quest との約束, 画面, API, 用語, 置き場, 安全)
 - [TODO](TODO.md): まだやっていないこと (優先度の順)
 
 ## 開発
@@ -75,8 +75,9 @@ cd frontend && pnpm e2e   # 画面の通しのテスト
 | --- | --- |
 | `backend/` | API (Python, FastAPI). ML-Inference を呼び, 登録した一式と結果を保存する |
 | `frontend/` | 画面 (TypeScript, React, Vite) |
-| `ML-Inference/`, `ML-Quest/` | submodule |
-| `docs/` | 操作ガイドと設計 |
+| `ML-Inference/` | submodule (推論のライブラリ) |
+| `ML-Quest/` | submodule (問題の設定を読むため) |
+| `docs/` | 操作ガイド, 設計, README の画面の例 (`images/`) |
 
 ## ライセンス
 
