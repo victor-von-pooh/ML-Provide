@@ -171,7 +171,7 @@ def test_link_and_predict(client: TestClient, tmp_path: Path) -> None:
     daily = next(b for b in added if "日々の売上" in b["name"])
     state = client.get(f"/api/bundles/{daily['id']}/problem").json()
     assert state == {"path": None, "linked": None, "error": None,
-                     "hint": None}
+                     "hint": None, "hint_note": None}
     project, bundle = project_bundle(client, tmp_path, daily["path"])
     url = f"/api/bundles/{bundle['id']}/problem"
     state = client.get(url).json()
@@ -542,3 +542,62 @@ def test_other_role(client: TestClient, tmp_path: Path) -> None:
     assert client.get(
         f"/api/bundles/{other['id']}/problem"
     ).json()["hint"] is None
+
+
+def test_origin_hint(client: TestClient, tmp_path: Path) -> None:
+    """
+    実験に写した問題の設定が元の場所を持てば元を候補にし, 元が無ければ
+    写しを文付きで候補にすることを確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    tmp_path: Path
+        一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 元 (置き場) と, 骨組みのように元の場所を持つプロジェクトの写し
+    added = client.post("/api/samples").json()
+    daily = next(b for b in added if "日々の売上" in b["name"])
+    original = tmp_path / "pathfinder" / "problems" / "one"
+    ml_quest.save_problem(shop_problem(), original)
+    project = tmp_path / "project"
+    ml_quest.save_problem(
+        {**shop_problem(), "origin": str(original / "problem.yaml")},
+        project
+    )
+    place = project / "outputs" / "run" / "inference"
+    shutil.copytree(daily["path"], place)
+    bundle = client.post("/api/bundles", json={"path": str(place)}).json()
+    url = f"/api/bundles/{bundle['id']}/problem"
+    state = client.get(url).json()
+    assert state["hint"] == str((original / "problem.yaml").resolve())
+    assert "元の問題の設定です" in state["hint_note"]
+
+    # つないだ元を直すと, 次に読むときから使う
+    client.put(url, json={"path": state["hint"]})
+    problem = ml_quest.answer(
+        ml_quest.load_problem(original), "action.decision",
+        {"type": "quantity", "under_cost": 300, "over_cost": 150},
+    )
+    ml_quest.save_problem(problem, original)
+    linked = client.get(url).json()["linked"]
+    assert linked["decision"]["under_cost"] == 300
+    assert linked["path"] == state["hint"]
+
+    # 元が消えれば写しを候補にし, 届かないと伝える
+    client.put(url, json={"path": None})
+    shutil.rmtree(original)
+    state = client.get(url).json()
+    assert state["hint"] == str((project / "problem.yaml").resolve())
+    assert "届きません" in state["hint_note"]
+
+    # 元の場所を持たない写しも, 届かないと伝える
+    ml_quest.save_problem(shop_problem(), project)
+    state = client.get(url).json()
+    assert state["hint"] == str((project / "problem.yaml").resolve())
+    assert "場所を持ちません" in state["hint_note"]

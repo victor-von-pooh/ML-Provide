@@ -149,12 +149,88 @@ def version_of(path: Path) -> str:
     return version
 
 
-def find_hint(bundle_path: Path, home: Path) -> Optional[str]:
+def is_usable(path: Path) -> bool:
+    """
+    推論に渡せる列の予測の問題の設定のファイルかを確かめる関数
+
+    Parameters
+    ----------
+    path: Path
+        problem.yaml
+
+    Returns
+    ----------
+    usable: bool
+        読めて, 受け渡しが通り, 受け持ちが列の予測なら True
+    """
+    # 読めないファイルと, 推論の結論を扱わない受け持ちは使わない
+    try:
+        if not path.is_file():
+            return False
+        problem = read_problem(path)
+        ml_quest.handoff(problem)
+        usable = bool(is_column_part(problem))
+    except (HTTPException, OSError, *SHAPE_ERRORS):
+        usable = False
+
+    return usable
+
+
+def origin_hint(copy: Path) -> tuple[str, str]:
+    """
+    写した問題の設定から, 候補に出す問題の設定と添える文を決める関数
+
+    骨組みのプロジェクトと実験の problem.yaml は学習の時点の写しで, 元の
+    問題の設定 (ML-Pathfinder の置き場) の場所を origin に持つ
+
+    Parameters
+    ----------
+    copy: Path
+        一式の上で見つけた problem.yaml
+
+    Returns
+    ----------
+    hint: tuple[str, str]
+        候補の場所と, 写しか元かを伝える文
+    """
+    # 元の場所があり, 推論に渡せるなら元. 無いか使えなければ写し
+    try:
+        origin = ml_quest.problem_origin(read_problem(copy))
+    except HTTPException:
+        origin = None
+    if origin is None:
+        hint = (
+            str(copy),
+            "この問題の設定は元の場所を持ちません (origin が無い). 写しの場合は"
+            ", ML-Pathfinder で直した損得は届かないので, 元があれば元を"
+            "つないでください"
+        )
+        return hint
+    if Path(origin) != copy and is_usable(Path(origin)):
+        hint = (
+            origin,
+            f"学習の時点の写し ({copy}) が指す元の問題の設定です. "
+            "ML-Pathfinder で直した損得が推論に届きます"
+        )
+        return hint
+    hint = (
+        str(copy),
+        f"写しが指す元の問題の設定 ({origin}) が無いか推論に渡せないので, "
+        "学習の時点の写しを候補にしました. ML-Pathfinder で直した損得は"
+        "届きません"
+    )
+
+    return hint
+
+
+def find_hint(
+    bundle_path: Path, home: Path
+) -> tuple[Optional[str], Optional[str]]:
     """
     一式の場所から上にたどり, 問題の設定のファイルの候補を探す関数
 
     骨組みのプロジェクトは problem.yaml を持ち, 学習の実験の中に一式を
-    作るため
+    作るため. 見つけたファイルが元の場所を持つ写しなら, 元を候補にする
 
     Parameters
     ----------
@@ -165,34 +241,28 @@ def find_hint(bundle_path: Path, home: Path) -> Optional[str]:
 
     Returns
     ----------
-    hint: Optional[str]
+    found: tuple[Optional[str], Optional[str]]
         最初に見つけた, 推論に渡せる列の予測の問題の設定のファイルの場所
-        (無ければ None)
+        (元の場所を持つ写しなら元) と, 写しか元かを伝える文 (無ければ
+        どちらも None)
     """
     # 置き場の中とホームより上は探さない. 推論に渡せるものだけ
-    hint: Optional[str] = None
+    found: tuple[Optional[str], Optional[str]] = (None, None)
     top = Path.home().resolve()
     place = bundle_path.resolve()
     if place.is_relative_to(home.resolve()):
-        return hint
+        return found
     for _ in range(HINT_DEPTH + 1):
         if place == top or place == place.parent:
             break
         candidate = place / "problem.yaml"
         place = place.parent
-        try:
-            if not candidate.is_file():
-                continue
-            problem = read_problem(candidate)
-            ml_quest.handoff(problem)
-            if not is_column_part(problem):
-                continue
-        except (HTTPException, OSError, *SHAPE_ERRORS):
+        if not is_usable(candidate):
             continue
-        hint = str(candidate)
-        return hint
+        found = origin_hint(candidate)
+        return found
 
-    return hint
+    return found
 
 
 def training_columns(bundle: ml_inference.Bundle) -> Optional[list[str]]:
@@ -498,18 +568,21 @@ def problem_state(entry: dict[str, Any], home: Path) -> dict[str, Any]:
     ----------
     state: dict[str, Any]
         path (つないだ場所. 無ければ None), linked (読んだ値. 読めなければ
-        None), error (読めない理由), hint (つないでいない場合の候補)
+        None), error (読めない理由), hint (つないでいない場合の候補),
+        hint_note (候補が写しか元かを伝える文)
     """
     # つないでいなければ候補だけ
     text = entry.get("problem")
     state: dict[str, Any]
     if not isinstance(text, str):
+        hint, note = find_hint(Path(str(entry["path"])), home)
         state = {"path": None, "linked": None, "error": None,
-                 "hint": find_hint(Path(str(entry["path"])), home)}
+                 "hint": hint, "hint_note": note}
         return state
 
     # 置き換わったか読めなくなった場合は理由 (つなぎは外さない)
-    state = {"path": text, "linked": None, "error": None, "hint": None}
+    state = {"path": text, "linked": None, "error": None, "hint": None,
+             "hint_note": None}
     try:
         path = problem_file(text)
         problem = read_problem(path)
@@ -541,7 +614,7 @@ def get_problem(request: Request, bundle_id: str) -> dict[str, Any]:
     Returns
     ----------
     state: dict[str, Any]
-        path, linked, error, hint
+        path, linked, error, hint, hint_note
     """
     # 推論のたびの読み直し (覚えない)
     state = problem_state(
@@ -570,7 +643,7 @@ def link_problem(
     Returns
     ----------
     state: dict[str, Any]
-        つないだ後の状態 (path, linked, error, hint)
+        つないだ後の状態 (path, linked, error, hint, hint_note)
 
     Raises
     ----------

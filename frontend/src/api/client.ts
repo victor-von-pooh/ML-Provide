@@ -3,6 +3,7 @@ import type {
   Bundle,
   BundleCreateBody,
   Decision,
+  ExperimentList,
   Listing,
   ProblemState,
   Remeasure,
@@ -63,6 +64,7 @@ export const api = {
     request<Bundle>('/api/bundles', json('POST', { path, name })),
   createBundle: (body: BundleCreateBody) =>
     request<Bundle>('/api/bundles/create', json('POST', body)),
+  experiments: () => request<ExperimentList>('/api/experiments'),
   addSamples: () => request<Bundle[]>('/api/samples', json('POST', {})),
   restoreUncertainty: (id: string) =>
     request<Bundle>(`/api/bundles/${id}/restore-uncertainty`, json('POST', {})),

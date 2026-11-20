@@ -390,6 +390,53 @@ test('起動の設定で読んだ自作の部品の一式を推論し, 登録さ
   }
 })
 
+test('実験の一覧から一式を登録し, 写しが指す元の問題の設定をつなぐと, 元を直した損得が既定になる', async ({
+  page,
+}) => {
+  const work = path.resolve(import.meta.dirname, '.work')
+  const run = path.join(work, 'project', 'outputs', 'sales', '2026-01-02', '09-00-00')
+  const original = path.join(work, 'pathfinder', 'problems', 'p1', 'problem.yaml')
+  await page.goto('/')
+  await page.getByRole('button', { name: '実験の一覧から登録' }).click()
+  const dialog = page.getByRole('dialog', { name: '実験の一覧から登録' })
+  const table = dialog.getByRole('table', { name: '推論の一式を持つ実験' })
+  await expect(table).toContainText('sales/2026-01-02/09-00-00')
+  await expect(table).toContainText(path.join(run, 'inference'))
+  await dialog
+    .getByRole('button', { name: '総菜の作る量 (sales/2026-01-02/09-00-00) を登録' })
+    .click()
+
+  // 一式の画面に移り, 候補は実験の写しでなく ML-Pathfinder の置き場の元
+  await expect(
+    page.getByRole('heading', { name: '総菜の作る量 (sales/2026-01-02/09-00-00)' }),
+  ).toBeVisible({ timeout: 30_000 })
+  await expect(page.locator('#problem-hint')).toHaveText(original)
+  await expect(page.getByText(/が指す元の問題の設定です/)).toBeVisible()
+  await page.getByRole('button', { name: 'これをつなぐ' }).click()
+  await expect(page.getByRole('heading', { name: '問題の設定: 総菜の作る量' })).toBeVisible()
+  const under = page.getByLabel('1 単位足りないときの損 (欠品の利益など)')
+  await expect(under).toHaveValue('200')
+
+  // 元を直すと (ML-Pathfinder で損得を変えたように), 開き直したときの既定に入る
+  const before = fs.readFileSync(original, 'utf-8')
+  try {
+    fs.writeFileSync(original, before.replace('under_cost: 200', 'under_cost: 260'))
+    await page.reload()
+    await expect(under).toHaveValue('260')
+  } finally {
+    fs.writeFileSync(original, before)
+  }
+
+  // 一覧では登録済みと出る
+  await page.goto('/')
+  await page.getByRole('button', { name: '実験の一覧から登録' }).click()
+  await expect(
+    page
+      .getByRole('dialog', { name: '実験の一覧から登録' })
+      .getByRole('link', { name: '登録済み' }),
+  ).toBeVisible()
+})
+
 /** 同じ場所の登録を外してから, 場所で一式を登録して id を返す */
 async function registerFresh(request: APIRequestContext, place: string): Promise<string> {
   const listed = (await (await request.get('/api/bundles')).json()) as {

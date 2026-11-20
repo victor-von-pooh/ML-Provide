@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FlaskConical, FolderInput, Package, Plus } from 'lucide-react'
+import { FlaskConical, FolderInput, ListChecks, Package, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 
@@ -10,6 +10,7 @@ import { Button, Card, EmptyState, ErrorBox, PageHeader, Spinner } from '../../c
 import { formatNumber, KIND_LABELS, TASK_LABELS } from '../../lib/format'
 import { FORM_LABELS, isColumnOutput, ROLE_LABELS } from '../../lib/outputs'
 import { CreateBundleDialog } from './CreateBundleDialog'
+import { ExperimentsDialog } from './ExperimentsDialog'
 
 /** 一式の行の, 種類とタスクとクラス */
 function bundleSummary(bundle: Bundle): string {
@@ -37,11 +38,13 @@ export function BundlesPage() {
   const navigate = useNavigate()
   const client = useQueryClient()
   const bundles = useQuery({ queryKey: ['bundles'], queryFn: api.bundles })
-  const [dialog, setDialog] = useState<'register' | 'create' | null>(null)
+  const [dialog, setDialog] = useState<'register' | 'experiments' | 'create' | null>(null)
   const register = useMutation({
-    mutationFn: (path: string) => api.registerBundle(path),
+    mutationFn: ({ path, name }: { path: string; name?: string }) => api.registerBundle(path, name),
     onSuccess: (bundle) => {
+      setDialog(null)
       client.invalidateQueries({ queryKey: ['bundles'] })
+      client.invalidateQueries({ queryKey: ['experiments'] })
       navigate(`/bundles/${bundle.id}`)
     },
   })
@@ -60,6 +63,16 @@ export function BundlesPage() {
     <>
       <Button icon={FlaskConical} disabled={samples.isPending} onClick={() => samples.mutate()}>
         {samples.isPending ? '見本を学習しています…' : '見本の一式を入れる'}
+      </Button>
+      <Button
+        icon={ListChecks}
+        onClick={() => {
+          register.reset()
+          setDialog('experiments')
+        }}
+        data-return="experiments"
+      >
+        実験の一覧から登録
       </Button>
       <Button icon={FolderInput} onClick={() => setDialog('register')} data-return="register">
         場所で登録
@@ -101,10 +114,10 @@ export function BundlesPage() {
       {bundles.error && <ErrorBox error={bundles.error} />}
       {bundles.data?.length === 0 && (
         <EmptyState icon={Package} title="一式がありません">
-          学習のスクリプトが作った一式 (inference.yaml を持つディレクトリ) を場所で登録するか,
-          モデルの定義, データセット, 実験から作ります. 試すだけなら「見本の一式を入れる」で,
-          小さな見本のデータで学習した一式 (表の分類, 表の回帰, 時系列の先の予測, 文の分類)
-          を入れられます.
+          学習のスクリプトが作った一式 (inference.yaml を持つディレクトリ)
+          を実験の一覧か場所で登録するか, モデルの定義, データセット, 実験から作ります.
+          試すだけなら「見本の一式を入れる」で, 小さな見本のデータで学習した一式 (表の分類,
+          表の回帰, 時系列の先の予測, 文の分類) を入れられます.
         </EmptyState>
       )}
       {bundles.data && bundles.data.length > 0 && (
@@ -164,8 +177,16 @@ export function BundlesPage() {
           onClose={() => setDialog(null)}
           onPick={(path) => {
             setDialog(null)
-            register.mutate(path)
+            register.mutate({ path })
           }}
+        />
+      )}
+      {dialog === 'experiments' && (
+        <ExperimentsDialog
+          pending={register.isPending}
+          error={register.error}
+          onClose={() => setDialog(null)}
+          onRegister={(path, name) => register.mutate({ path, name })}
         />
       )}
       {dialog === 'create' && (
