@@ -61,7 +61,7 @@ cd frontend && pnpm e2e   # 画面の通しのテスト
 | `backend/` | API (Python, FastAPI). ML-Inference を呼び, 登録した一式と結果を保存する |
 | `frontend/` | 画面 (TypeScript, React, Vite) |
 | `ML-Inference/` | submodule |
-| `docs/DESIGN.md` | 設計の方針と段階 |
+| `docs/DESIGN.md` | 設計の方針と次の段階 |
 
 ## ライセンス
 
