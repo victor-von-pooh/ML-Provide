@@ -270,6 +270,16 @@ def test_current_from_problem(client: TestClient, tmp_path: Path) -> None:
     assert linked["decision"]["current"] == {"type": "column",
                                              "column": "sales"}
 
+    # 学習のデータに無い列の決まりは, つなぐときに知らせる
+    missing = ml_quest.answer(problem, "information.columns",
+                              ["date", "shop", "sales", "planned"])
+    missing = ml_quest.answer(missing, "action.current",
+                              {"type": "column", "column": "planned"})
+    ml_quest.save_problem(missing, project)
+    linked = client.get(url).json()["linked"]
+    assert any("今のやり方" in i and "planned" in i
+               for i in linked["issues"])
+
 
 def test_baseline_needs_time() -> None:
     """
@@ -292,6 +302,13 @@ def test_baseline_needs_time() -> None:
     decision, notes = with_baseline(problem, quantity)
     assert decision == quantity
     assert any("時刻の列" in note for note in notes)
+
+    # 一式の過去の値の手順の時刻の列で補う (系列は ML-Inference が補う)
+    decision, notes = with_baseline(problem, quantity, "date")
+    assert decision == {**quantity, "current": {
+        "type": "mean", "periods": 3, "time": "date",
+    }}
+    assert notes == []
     triage = {"type": "triage", "positive": "a", "current": "done"}
     assert with_baseline(problem, triage) == (triage, [])
     assert with_baseline(problem, None) == (None, [])

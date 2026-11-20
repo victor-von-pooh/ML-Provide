@@ -275,7 +275,8 @@ def write_sample(
     root: Path, name: str, number: int, seed: int
 ) -> tuple[Path, Path, Path]:
     """
-    見本の 1 つ (データ, データセット, 一式, 新しいデータ) を書く関数
+    見本の 1 つ (学習用のデータ, 一式, 新しいデータ, 過去のデータ) を書く
+    関数
 
     Parameters
     ----------

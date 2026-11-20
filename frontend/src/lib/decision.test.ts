@@ -34,6 +34,14 @@ describe('意思決定の編集', () => {
     expect(fromDecisionForm({ ...form, baseline: null }, []).decision?.current).toBeUndefined()
     const triage = { ...form, type: 'triage' as const, positive: 'a', values: {} }
     expect(fromDecisionForm(triage, ['a', 'b']).decision?.current).toBeUndefined()
+    // 量でない型の列の決まりは列の名前の欄に入る
+    const flagged = toDecisionForm({
+      type: 'triage',
+      positive: 'a',
+      current: { type: 'column', column: 'done' },
+    })
+    expect(flagged.values.current).toBe('done')
+    expect(flagged.baseline).toBeNull()
   })
 
   it('行き来できる', () => {

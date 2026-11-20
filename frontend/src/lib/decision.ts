@@ -112,7 +112,7 @@ export interface DecisionForm {
 export function baselineText(baseline: Baseline): string {
   if (baseline.type === 'lag') return `${baseline.periods} 期前の値と同じ量`
   if (baseline.type === 'mean') return `直前の ${baseline.periods} 期の値の平均の量`
-  return `列 ${baseline.column} の値の量`
+  return `列 ${baseline.column} の値`
 }
 
 /** 決まりを使える型か (k 期前と平均は量だけ. 列の決まりは量だけで使う) */
@@ -127,7 +127,10 @@ export function toDecisionForm(decision: Decision | null | undefined): DecisionF
   let baseline: Baseline | null = null
   for (const [key, value] of Object.entries(decision)) {
     if (key === 'current' && value !== null && typeof value === 'object') {
-      baseline = value as Baseline
+      const rule = value as Baseline
+      // 量の決まりは決まりのまま. 他の型の列の決まりは列の名前の欄に
+      if (decision.type === 'quantity') baseline = rule
+      else if (rule.type === 'column' && rule.column) values.current = rule.column
       continue
     }
     if (key !== 'type' && key !== 'positive' && value != null) values[key] = String(value)
