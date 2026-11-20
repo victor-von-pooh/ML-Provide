@@ -76,6 +76,10 @@ PY
 # 推論の一式の版 3 (列の出力でない一式. 領域とベクトル)
 uv run python ../frontend/e2e/make_v3.py "$WORK/v3"
 
+# 版 2 のデータセット (画像と領域, 撮影と点群) と, 見本の定義を 2 エポック学習した実験.
+# 骨組みのプロジェクトの実験の中にも, 学習のスクリプトのように推論の一式 (版 4) を作る
+uv run python ../frontend/e2e/make_items.py "$WORK/items" "$WORK/project"
+
 # 決まったトークンで起動. 自作の部品は起動の設定 (環境変数) で明示した
 # 見本のモジュール (e2e/e2e_units.py) だけを読む
 PYTHONPATH="$E2E_DIR${PYTHONPATH:+:$PYTHONPATH}" ML_PROVIDE_UNITS=e2e_units \

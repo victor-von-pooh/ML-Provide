@@ -9,7 +9,14 @@ import { PathField } from '../../components/PathPicker'
 import { Button, Card, ErrorBox, PageHeader, Spinner } from '../../components/ui'
 import { formatNumber, KIND_LABELS, TASK_LABELS } from '../../lib/format'
 import { fromDecisionForm, toDecisionForm, type DecisionForm } from '../../lib/decision'
-import { FORM_LABELS, isColumnOutput } from '../../lib/outputs'
+import {
+  ENTRY_KIND_LABELS,
+  FORM_LABELS,
+  isColumnOutput,
+  METRIC_LABELS,
+  PREPARE_LABELS,
+  sourceLabel,
+} from '../../lib/outputs'
 import { fromForm, toForm, withCleared, type RulesForm } from '../../lib/rules'
 import { DecisionEditor } from '../results/DecisionEditor'
 import { ResultList } from '../results/ResultList'
@@ -27,17 +34,52 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   )
 }
 
+/** 版 2 のデータセットの一式 (版 4) の 1 件の扱い */
+function ItemsRows({ items }: { items: NonNullable<Description['items']> }) {
+  const kind = items.input_kind ?? ''
+  const options = Object.entries(items.options)
+  return (
+    <>
+      <Row label="データ">版 2 のデータセット (ファイルの組)</Row>
+      <Row label="1 件の扱い">
+        <span className="font-mono text-xs">{items.input}</span> ({ENTRY_KIND_LABELS[kind] ?? kind})
+        → {PREPARE_LABELS[items.prepare] ?? items.prepare}
+        {options.length > 0 && (
+          <span className="font-mono text-xs">
+            {' '}
+            ({options.map(([key, value]) => `${key}: ${String(value)}`).join(', ')})
+          </span>
+        )}
+      </Row>
+      {items.target && (
+        <Row label="正解の項目">
+          <span className="font-mono text-xs">{items.target}</span>
+        </Row>
+      )}
+      {items.restore === 'shift' && (
+        <Row label="出力の座標">元の座標 (正規化の平行移動を戻した, 撮影の世界の座標)</Row>
+      )}
+    </>
+  )
+}
+
 /** 一式の説明 (何を入れると何が出るか, どの学習の結果か) */
 function DescriptionView({ description }: { description: Description }) {
   const run = description.run
   const inputs = Object.entries(description.model.inputs)
+  const items = description.items
+  const unit = items ? '件' : '行'
   return (
     <dl className="text-sm">
-      <Row label="データとタスク">
-        {KIND_LABELS[description.kind] ?? description.kind} /{' '}
-        {TASK_LABELS[description.task] ?? description.task}
-        {description.target && ` (目的の列 ${description.target})`}
-      </Row>
+      {items ? (
+        <ItemsRows items={items} />
+      ) : (
+        <Row label="データとタスク">
+          {KIND_LABELS[description.kind] ?? description.kind} /{' '}
+          {TASK_LABELS[description.task] ?? description.task}
+          {description.target && ` (目的の列 ${description.target})`}
+        </Row>
+      )}
       {description.classes.length > 0 && <Row label="クラス">{description.classes.join(', ')}</Row>}
       {description.features.length > 0 && (
         <Row label={`学習に使う列 (${description.features.length})`}>
@@ -45,18 +87,22 @@ function DescriptionView({ description }: { description: Description }) {
         </Row>
       )}
       {description.text_column && <Row label="文の列">{description.text_column}</Row>}
-      <Row label="読み込み">
-        <span className="font-mono text-xs">
-          {description.reading.loader ?? '自動'}{' '}
-          {Object.keys(description.reading.options).length > 0 &&
-            JSON.stringify(description.reading.options)}
-        </span>
-      </Row>
-      <Row label="前処理">
-        <span className="font-mono text-xs">
-          {[...description.steps, ...description.item_steps].join(' → ') || 'なし'}
-        </span>
-      </Row>
+      {!items && (
+        <>
+          <Row label="読み込み">
+            <span className="font-mono text-xs">
+              {description.reading.loader ?? '自動'}{' '}
+              {Object.keys(description.reading.options).length > 0 &&
+                JSON.stringify(description.reading.options)}
+            </span>
+          </Row>
+          <Row label="前処理">
+            <span className="font-mono text-xs">
+              {[...description.steps, ...description.item_steps].join(' → ') || 'なし'}
+            </span>
+          </Row>
+        </>
+      )}
       <Row label="モデルの入力">
         <span className="font-mono text-xs">
           {inputs
@@ -81,8 +127,8 @@ function DescriptionView({ description }: { description: Description }) {
       )}
       {description.check && (
         <Row label="一式での評価">
-          {description.check.split} の {description.check.rows.toLocaleString()} 行で{' '}
-          {description.check.metric === 'acc' ? '正解率' : '平均絶対誤差'}{' '}
+          {description.check.split} の {description.check.rows.toLocaleString()} {unit}で{' '}
+          {METRIC_LABELS[description.check.metric] ?? description.check.metric}{' '}
           {formatNumber(description.check.value)}
           {description.check.recorded != null && (
             <>
@@ -209,10 +255,14 @@ function PredictCard({
           <div>
             <PathField
               id="predict-source"
-              label="推論するデータ (学習のときと同じ列のファイルか, 画像などのディレクトリ)"
+              label={sourceLabel(description.items?.input_kind)}
               value={source}
               onChange={setSource}
-              hint="目的の列は有っても無くてもかまいません. 学習のときと同じ読み込みで読みます"
+              hint={
+                description.items
+                  ? '学習のときと同じ 1 件の扱いをかけます (撮影は同じ正規化も). 読めない件は理由を付けて飛ばします'
+                  : '目的の列は有っても無くてもかまいません. 学習のときと同じ読み込みで読みます'
+              }
             />
             {bundle.sample_input && (
               <p className="mt-1 text-xs text-ink-2">

@@ -771,7 +771,7 @@ wheels = [
 [[package]]
 name = "ml-eda"
 version = "0.1.0"
-source = { git = "https://github.com/victor-von-pooh/ML-EDA.git#05b1cf53d329143265decc463a1eab87c3fea8e9" }
+source = { git = "https://github.com/victor-von-pooh/ML-EDA.git#f6ac30817842839f3c4fdccbb8d76db49e73bf84" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
@@ -835,7 +835,7 @@ provides-extras = ["all", "dev"]
 [[package]]
 name = "ml-modelcontrol"
 version = "0.1.0"
-source = { git = "https://github.com/victor-von-pooh/ML-ModelControl.git#cd9c451926679336ed4b14c9e67f7bd8ecc5ebe4" }
+source = { git = "https://github.com/victor-von-pooh/ML-ModelControl.git#7c1c1b5aec1b9cc65777f8683df7fa2c232b0914" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
@@ -854,6 +854,7 @@ source = { editable = "." }
 dependencies = [
     { name = "fastapi", version = "0.162.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "fastapi", version = "0.163.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "ml-eda" },
     { name = "ml-inference", extra = ["all"] },
     { name = "ml-quest" },
     { name = "pydantic" },
@@ -879,6 +880,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "ml-eda", git = "https://github.com/victor-von-pooh/ML-EDA.git" },
     { name = "ml-inference", extras = ["all"], editable = "../ML-Inference" },
     { name = "ml-quest", editable = "../ML-Quest" },
     { name = "pydantic", specifier = ">=2.9" },

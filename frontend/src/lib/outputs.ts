@@ -77,18 +77,70 @@ export function licenseText(record: PretrainedRecord): { text: string; warn: boo
   return { text: `${license} (再配布できるか不明)`, warn: true }
 }
 
-/** 出力の形ごとの欄の文 (分布の水準, 領域のクラス, 1 件の形) */
-export function outputDetails(output: Description['output']): string[] {
+/**
+ * 出力の形ごとの欄の文 (分布の水準, 領域のクラス, 1 件の形).
+ * 版 2 のデータセットの一式の領域は, 番号でなく領域の値ごとの名前
+ */
+export function outputDetails(output: Description['output'], values?: number[] | null): string[] {
   if (!output) return []
   const details: string[] = []
   if (output.quantiles && output.quantiles.length > 0) {
     details.push(`水準 ${output.quantiles.join(', ')}`)
   }
   if (output.classes && output.classes.length > 0) {
-    details.push(`番号ごとの名前 ${output.classes.map((name, i) => `${i}: ${name}`).join(', ')}`)
+    const pairs = output.classes.map((name, i) => `${values?.[i] ?? i}: ${name}`)
+    details.push(`${values ? '値' : '番号'}ごとの名前 ${pairs.join(', ')}`)
   }
   if (output.shape && output.shape.length > 0) {
     details.push(`1 件の形 (${output.shape.join(', ')})`)
   }
   return details
+}
+
+/**
+ * 領域の格子の値から名前 (版 2 のデータセットの一式は領域の値, 他はクラスの番号).
+ * 凡例で使う
+ */
+export function maskNames(description: Description | null | undefined): Record<number, string> {
+  const names: Record<number, string> = {}
+  const classes = description?.output?.classes ?? []
+  const values = description?.items?.values
+  classes.forEach((name, i) => {
+    names[values?.[i] ?? i] = name
+  })
+  return names
+}
+
+/** 一式での評価の指標の名前 */
+export const METRIC_LABELS: Record<string, string> = {
+  acc: '正解率',
+  mae: '平均絶対誤差',
+  iou: 'IoU (背景を除くクラスの平均)',
+  chamfer: 'Chamfer 距離',
+}
+
+/** 版 2 のデータセットの項目の種類の名前 */
+export const ENTRY_KIND_LABELS: Record<string, string> = {
+  image: '画像',
+  mask: '領域',
+  capture: '撮影',
+  point_cloud: '点群',
+}
+
+/** 1 件の扱い方の文 (ML-Inference の items.prepare) */
+export const PREPARE_LABELS: Record<string, string> = {
+  image: '画素を 0 から 1 にする',
+  capture_points: '深度から点に戻して決まった数を選ぶ',
+  points: '決まった数の点を選ぶ',
+}
+
+/** 推論するデータの欄の名前 (版 4 の一式は入力の項目の種類から) */
+export function sourceLabel(inputKind: string | null | undefined): string {
+  if (inputKind === 'image')
+    return '推論するデータ (画像のファイルか, 画像を並べたディレクトリ. 版 2 のデータセットも)'
+  if (inputKind === 'capture')
+    return '推論するデータ (撮影のディレクトリか, 撮影を並べたディレクトリ. 版 2 のデータセットも)'
+  if (inputKind === 'point_cloud')
+    return '推論するデータ (点群のファイルかディレクトリ. 版 2 のデータセットも)'
+  return '推論するデータ (学習のときと同じ列のファイルか, 画像などのディレクトリ)'
 }

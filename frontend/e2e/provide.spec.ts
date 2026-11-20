@@ -437,6 +437,109 @@ test('実験の一覧から一式を登録し, 写しが指す元の問題の設
   ).toBeVisible()
 })
 
+test('版 2 の画像と領域のデータセットと実験から一式を作り, 新しい画像の領域を値の名前で見る', async ({
+  page,
+}) => {
+  const root = path.resolve(import.meta.dirname, '.work', 'items')
+  await page.goto('/')
+  await page.getByRole('button', { name: '学習の結果から作る' }).click()
+  const dialog = page.getByRole('dialog', { name: '学習の結果から一式を作る' })
+  await dialog.getByLabel('名前', { exact: true }).fill('版 2 の領域')
+  await dialog.getByLabel('モデルの定義 (YAML か JSON)').fill(path.join(root, 'mask_spec.yaml'))
+  await dialog.getByLabel(/^データセット/).fill(path.join(root, 'masks'))
+  // 版 2 のデータセットは項目と値の名前を見せ, 列のデータセットの欄は出さない
+  const summary = dialog.getByRole('note', { name: '版 2 のデータセット' })
+  await expect(summary).toContainText('image (画像, 入力)')
+  await expect(summary).toContainText('1: circle')
+  await expect(dialog.getByLabel('入力から選ぶ点の数 (要る)')).toHaveCount(0)
+  await dialog.getByText('出力が複数のモデル (あれば)').click()
+  await expect(dialog.getByLabel('受け持ち')).toHaveCount(0)
+  await dialog.getByLabel(/^実験のディレクトリ/).fill(path.join(root, 'runs', 'mask'))
+  await dialog.getByRole('button', { name: '作る' }).click()
+
+  // 一式の画面: 版 4, 1 件の扱い, 値ごとの名前, IoU
+  await expect(page.getByRole('heading', { name: '版 2 の領域' })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText('画素を 0 から 1 にする')).toBeVisible()
+  await expect(page.getByText(/値ごとの名前 0: background, 1: circle, 2: square/)).toBeVisible()
+  await expect(page.getByText(/IoU \(背景を除くクラスの平均\)/)).toBeVisible()
+  const id = new URL(page.url()).pathname.split('/').pop() ?? ''
+  try {
+    // 新しい画像のディレクトリを推論すると, 件数と 1 件の領域 (凡例は値の名前)
+    await page
+      .getByLabel(/推論するデータ \(画像のファイル/)
+      .fill(path.join(root, 'raw_m', 'images'))
+    await page.getByRole('button', { name: '推論する' }).click()
+    await expect(page.getByText('8 件のうち 8 件を推論')).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole('heading', { name: '1 件の出力 (領域)' })).toBeVisible()
+    await expect(page.getByRole('img', { name: /^領域/ })).toBeVisible()
+    await expect(page.getByRole('list', { name: '領域の番号ごとの画素' })).toContainText(
+      /\((background|circle|square)\)/,
+    )
+  } finally {
+    await page.request.delete(`/api/bundles/${id}`)
+  }
+})
+
+test('版 2 の撮影と点群のデータセットは選ぶ点の数を求め, 新しい撮影の点群を元の座標で見る', async ({
+  page,
+}) => {
+  const root = path.resolve(import.meta.dirname, '.work', 'items')
+  await page.goto('/')
+  await page.getByRole('button', { name: '学習の結果から作る' }).click()
+  const dialog = page.getByRole('dialog', { name: '学習の結果から一式を作る' })
+  await dialog.getByLabel('名前', { exact: true }).fill('版 2 の点群')
+  await dialog.getByLabel('モデルの定義 (YAML か JSON)').fill(path.join(root, 'cloud_spec.yaml'))
+  await dialog.getByLabel(/^データセット/).fill(path.join(root, 'clouds'))
+  await dialog.getByLabel(/^実験のディレクトリ/).fill(path.join(root, 'runs', 'cloud'))
+  await expect(dialog.getByRole('note', { name: '版 2 のデータセット' })).toContainText(
+    'capture (撮影, 入力)',
+  )
+
+  // 選ぶ点の数が無いと作れない
+  await expect(dialog.getByText(/選ぶ点の数 \(学習と同じ数\)/)).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '作る' })).toBeDisabled()
+  await dialog.getByLabel('入力から選ぶ点の数 (要る)').fill('128')
+  await dialog.getByLabel(/確かめで正解から選ぶ点の数/).fill('64')
+  await dialog.getByRole('button', { name: '作る' }).click()
+
+  // 一式の画面: 1 件の扱いと元の座標, Chamfer 距離
+  await expect(page.getByRole('heading', { name: '版 2 の点群' })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText(/深度から点に戻して決まった数を選ぶ/)).toBeVisible()
+  await expect(page.getByText(/points: 128, target_points: 64/)).toBeVisible()
+  await expect(page.getByText(/^元の座標/)).toBeVisible()
+  await expect(page.getByText(/Chamfer 距離/)).toBeVisible()
+  const id = new URL(page.url()).pathname.split('/').pop() ?? ''
+  try {
+    // 新しい撮影のディレクトリを推論すると, 1 件の点群の散布図 (元の座標)
+    await page
+      .getByLabel(/推論するデータ \(撮影のディレクトリ/)
+      .fill(path.join(root, 'raw_c', 'captures'))
+    await page.getByRole('button', { name: '推論する' }).click()
+    await expect(page.getByText('6 件のうち 6 件を推論')).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole('heading', { name: '1 件の出力 (点群)' })).toBeVisible()
+    await expect(page.getByRole('img', { name: /点群の散布図 \(256 点\)/ })).toBeVisible()
+    await expect(page.getByText(/点は元の座標/)).toBeVisible()
+  } finally {
+    await page.request.delete(`/api/bundles/${id}`)
+  }
+})
+
+test('骨組みの学習が実験の中に作った版 4 の一式を, 実験の一覧から登録する', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: '実験の一覧から登録' }).click()
+  const dialog = page.getByRole('dialog', { name: '実験の一覧から登録' })
+  const table = dialog.getByRole('table', { name: '推論の一式を持つ実験' })
+  await expect(table).toContainText('masks/2026-01-03/09-00-00')
+  await dialog
+    .getByRole('button', { name: '総菜の作る量 (masks/2026-01-03/09-00-00) を登録' })
+    .click()
+  await expect(
+    page.getByRole('heading', { name: '総菜の作る量 (masks/2026-01-03/09-00-00)' }),
+  ).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText(/値ごとの名前 0: background/)).toBeVisible()
+  await expect(page.getByText('画素を 0 から 1 にする')).toBeVisible()
+})
+
 /** 同じ場所の登録を外してから, 場所で一式を登録して id を返す */
 async function registerFresh(request: APIRequestContext, place: string): Promise<string> {
   const listed = (await (await request.get('/api/bundles')).json()) as {

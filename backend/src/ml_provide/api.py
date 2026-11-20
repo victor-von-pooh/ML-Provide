@@ -82,6 +82,7 @@ class BundleCreate(BaseModel):
     form: Optional[str] = None
     output_options: Optional[dict[str, Any]] = None
     procedure: Optional[dict[str, Any]] = None
+    items: Optional[dict[str, Any]] = None
 
 
 class PredictRequest(BaseModel):
@@ -413,7 +414,8 @@ def create_bundle(request: Request, body: BundleCreate) -> dict[str, Any]:
     request: Request
         リクエスト
     body: BundleCreate
-        名前, 定義, データセット, 重みか実験, つなぎ方, 結論の既定値
+        名前, 定義, データセット, 重みか実験, つなぎ方, 結論の既定値, 版 2
+        のデータセットの 1 件の扱い (items)
 
     Returns
     ----------
@@ -437,7 +439,7 @@ def create_bundle(request: Request, body: BundleCreate) -> dict[str, Any]:
             conclusion=body.conclusion, name=body.name,
             copy_weights=body.copy_weights, role=body.role or None,
             form=body.form or None, output_options=body.output_options,
-            procedure=body.procedure
+            procedure=body.procedure, items=body.items
         )
     except Exception as error:
         raise user_error(error) from error

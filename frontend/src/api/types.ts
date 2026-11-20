@@ -92,6 +92,42 @@ export interface Description {
   pretrained?: PretrainedRecord[]
   /** 出どころから読んだ重みの警告 (モデルを組み立てた後に出る) */
   pretrained_warnings?: string[]
+  /** 版 2 のデータセットの一式 (版 4) の 1 件の扱い */
+  items?: ItemsInfo | null
+}
+
+/** 版 4 の一式の 1 件の扱い (学習のスクリプトと同じ扱いを推論でかける) */
+export interface ItemsInfo {
+  /** モデルに渡す入力の項目の名前と種類 (image, capture, point_cloud) */
+  input: string
+  input_kind?: string | null
+  /** 正解の項目 (一式の確かめで使う) */
+  target: string | null
+  /** 扱い方 (image, capture_points, points) */
+  prepare: string
+  /** 扱い方の設定 (点を選ぶ数 points, 正解から選ぶ数 target_points, 種 seed) */
+  options: Record<string, unknown>
+  /** 領域だけ: 出力のクラスの番号ごとの領域の値 */
+  values: number[] | null
+  /** 点群だけ: shift なら正規化の平行移動を戻して元の座標にする */
+  restore: string | null
+}
+
+/** データセットの説明 (一式を作る画面で, 版 2 の項目を見せるため) */
+export interface DatasetDescription {
+  path: string
+  format_version: number
+  name?: string | null
+  role?: string | null
+  target?: { kind: string | null; entries: string[]; origin: TargetOrigin | null }
+  /** 項目 (points は点を選ぶ数が要る入力の種類か) */
+  entries?: { name: string; kind: string; role: string; shape: number[] | null; points: boolean }[]
+  /** 分割ごとの件数 */
+  splits?: Record<string, number | null>
+  /** 領域の値と名前 */
+  classes?: { value: number; name: string | null }[]
+  /** 撮影の正規化があるか */
+  normalized?: boolean
 }
 
 /** 出力の形 (class, value, distribution, mask, point_cloud, vector, text, image) と形ごとの欄 */
@@ -163,7 +199,8 @@ export interface UncertaintySummary {
 export interface RunCheck {
   split: string
   rows: number
-  metric: 'acc' | 'mae'
+  /** 正解率, 平均絶対誤差, 領域の IoU, 点群の Chamfer 距離 */
+  metric: 'acc' | 'mae' | 'iou' | 'chamfer'
   value: number
   recorded: number | null
   matches: boolean | null
@@ -340,6 +377,8 @@ export interface BundleCreateBody {
   copy_weights: boolean
   role?: string | null
   form?: string | null
+  /** 版 2 のデータセットの 1 件の扱い (省いた欄はデータセットから) */
+  items?: { input?: string; options?: Record<string, number> } | null
 }
 
 /** 外れ方の測り直し (確かめるだけか, 一式に書き戻したか) */
