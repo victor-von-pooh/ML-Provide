@@ -65,8 +65,13 @@ def known_projects(problems_dir: Path) -> list[dict[str, Any]]:
         ):
             continue
         seen.add(place)
-        projects.append({"path": place, "problem": str(problem.get("name")),
-                         "problem_path": str(file.resolve())})
+        name = problem.get("name")
+        projects.append({
+            "path": place,
+            "problem": name if isinstance(name, str) and name.strip()
+            else file.parent.name,
+            "problem_path": str(file.resolve())
+        })
 
     return projects
 
@@ -87,7 +92,9 @@ def project_bundles(project: Path, limit: int) -> list[Path]:
     bundles: list[Path]
         一式のディレクトリ (inference.yaml を持つ inference)
     """
-    # 出力先の下を決まった深さまで (リンクはたどらない)
+    # 出力先の下を決まった深さまで, 名前の新しい順 (日付と時刻の
+    # ディレクトリ) に. 上限で打ち切っても新しい実験が残るように. リンク
+    # はたどらず, リンクの一式も拾わない
     bundles: list[Path] = []
     root = project / OUTPUTS
     if not root.is_dir():
@@ -95,15 +102,17 @@ def project_bundles(project: Path, limit: int) -> list[Path]:
     for current, dirs, _ in os.walk(root):
         place = Path(current)
         depth = len(place.relative_to(root).parts)
-        if BUNDLE_DIR in dirs and (
-            place / BUNDLE_DIR / "inference.yaml"
+        bundle = place / BUNDLE_DIR
+        if BUNDLE_DIR in dirs and not bundle.is_symlink() and (
+            bundle / "inference.yaml"
         ).is_file():
-            bundles.append(place / BUNDLE_DIR)
+            bundles.append(bundle)
             if len(bundles) >= limit:
                 break
         dirs[:] = sorted(
-            name for name in dirs
-            if name != BUNDLE_DIR and depth + 1 < RUN_DEPTH
+            (name for name in dirs
+             if name != BUNDLE_DIR and depth + 1 < RUN_DEPTH),
+            reverse=True
         )
 
     return bundles
@@ -180,12 +189,16 @@ def list_experiments(request: Request) -> dict[str, Any]:
         if limit <= 0:
             truncated = True
             break
-        for bundle in project_bundles(Path(project["path"]), limit):
+        # 1 つ多く探して, 上限を超えたかを見分ける
+        found = project_bundles(Path(project["path"]), limit + 1)
+        if len(found) > limit:
+            truncated = True
+            found = found[:limit]
+        for bundle in found:
             try:
                 rows.append(experiment_row(bundle, project, registered))
             except (OSError, ValueError):
                 continue
-    truncated = truncated or len(rows) >= MAX_EXPERIMENTS
     rows.sort(key=row_time, reverse=True)
     listing = {"problems": str(problems_dir), "projects": len(projects),
                "experiments": rows, "truncated": truncated}

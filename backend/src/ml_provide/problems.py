@@ -201,8 +201,8 @@ def origin_hint(copy: Path) -> tuple[str, str]:
     if origin is None:
         hint = (
             str(copy),
-            "学習の時点の写しで, 元の問題の設定の場所を持ちません. "
-            "ML-Pathfinder で直した損得は届かないので, 元があれば元を"
+            "この問題の設定は元の場所を持ちません (origin が無い). 写しの場合は"
+            ", ML-Pathfinder で直した損得は届かないので, 元があれば元を"
             "つないでください"
         )
         return hint

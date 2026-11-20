@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from ml_quest.examples import example_problem
 
+from ml_provide import experiments
 from ml_provide.app import create_app
 
 # テストで使うトークン
@@ -104,3 +105,41 @@ def test_list_experiments(client: TestClient, tmp_path: Path) -> None:
     rows = client.get("/api/experiments").json()["experiments"]
     assert rows[0]["bundle_id"] == bundle.json()["id"]
     assert rows[1]["bundle_id"] is None
+
+
+def test_project_bundles_newest_first(tmp_path: Path) -> None:
+    """
+    上限で打ち切っても新しい実験が残り, リンクの一式を拾わないことを
+    確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 日付のディレクトリに一式を 3 つ (古い順に作る)
+    project = tmp_path / "proj"
+    for day in ("2026-01-01", "2026-06-01", "2026-11-20"):
+        bundle = project / "outputs" / "run" / day / "10-00-00" / "inference"
+        bundle.mkdir(parents=True)
+        (bundle / "inference.yaml").write_text("format_version: 3\n")
+
+    # 上限 2 では新しい 2 つ
+    found = experiments.project_bundles(project, 2)
+    days = [path.parent.parent.name for path in found]
+    assert days == ["2026-11-20", "2026-06-01"]
+
+    # リンクの一式は拾わない
+    outside = tmp_path / "outside" / "inference"
+    outside.mkdir(parents=True)
+    (outside / "inference.yaml").write_text("format_version: 3\n")
+    linked = project / "outputs" / "run" / "2026-12-01" / "10-00-00"
+    linked.mkdir(parents=True)
+    (linked / "inference").symlink_to(outside)
+    found = experiments.project_bundles(project, 10)
+    assert all(not path.is_symlink() for path in found)
+    assert len(found) == 3
