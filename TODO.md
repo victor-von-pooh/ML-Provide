@@ -19,6 +19,12 @@
 - 終わりの条件: 結果の一覧から複数を選んで比べる画面があり, 違う列や決め方を目立たせる
 - つながり: 無し
 
+### 見本づくりで ML-EDA と ML-ModelControl を直接使わない
+- 何を: 見本づくり (`backend/src/ml_provide/samples.py`) が直接使っている ML-EDA (`load_data`, `export_dataset`, `load_dataset`, `Dataset`) と ML-ModelControl (`build_model`) をやめ, ML-Inference の見本の一式を作る公開の関数だけを使う. 小さなモデルの定義と学習 (`model_spec`, `train`) も ML-Inference の側へ移す
+- なぜ: 画面は ML-Inference だけを使う方針 (ML_tester の VISION.md の方針の柱 2) と食い違い, ML-EDA と ML-ModelControl の中を変えると見本づくりが壊れうる. 2 つは `pyproject.toml` の依存にも無く, ML-Inference を通して入っているだけ
+- 終わりの条件: `samples.py` が `ml_eda` と `ml_modelcontrol` を読み込まず, 4 つの見本の一式が今と同じ中身で作れる
+- つながり: ML-Inference の「見本の一式を作る公開の関数」
+
 ## 優先度 低
 
 ### 見本の一式に予測以外の受け持ち
