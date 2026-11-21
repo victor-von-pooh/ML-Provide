@@ -244,6 +244,29 @@ def test_noise_limits(
     assert "2 件まで" in response.json()["detail"]
     assert client.post(url, json={"count": 2}).status_code == 201
 
+    # 1 件だけで上限を超える形は別の文で断る
+    monkeypatch.setattr(api_module, "MAX_SAMPLE_VALUES", 10)
+    detail = client.post(url, json={"count": 1}).json()["detail"]
+    assert "大きすぎます" in detail and "[16]" in detail
+
+    # 作るときも, 確かめの 2 件が上限を超える形は作る前に断る
+    # (int64 であふれる大きな形も)
+    monkeypatch.setattr(api_module, "MAX_SAMPLE_VALUES", 40)
+    homes = tmp_path / "home" / "bundles"
+    before = sorted(homes.iterdir())
+    for shape in ([32], [2 ** 40, 2 ** 40]):
+        response = client.post("/api/bundles/create", json={
+            "name": "huge", "spec": paths["spec"],
+            "weights": paths["weights"],
+            "inputs": {"x": {"source": "state"},
+                       "t": {"source": "time"}},
+            "form": "vector", "output_options": {"shape": shape},
+            "procedure": {"name": "ddim", "steps": 5, "seed": 3},
+        })
+        assert response.status_code == 400, shape
+        assert "大きすぎます" in response.json()["detail"]
+    assert sorted(homes.iterdir()) == before
+
     # データセットのある一式には件数と種を渡せない
     data = write_unlabeled(tmp_path / "data")
     path = make_v3(

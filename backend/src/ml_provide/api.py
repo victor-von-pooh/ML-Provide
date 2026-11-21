@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import shutil
 import threading
@@ -63,6 +64,9 @@ MAX_SAMPLES = 1000
 # 雑音だけの一式で一度に作る値 (件数 × 1 件の形の大きさ) の上限
 # (float32 で 400 MB. 始まりの雑音と出力を記憶に持つため)
 MAX_SAMPLE_VALUES = 100_000_000
+
+# 雑音だけの一式を作るときに ML-Inference が確かめで作る件数
+CHECK_SAMPLES = 2
 
 # 推論の誤りとして画面に返す例外
 USER_ERRORS = (
@@ -442,6 +446,17 @@ def create_bundle(request: Request, body: BundleCreate) -> dict[str, Any]:
     """
     # 見本を推論できることまで ML-Inference が確かめる
     # (データセットを省くと雑音だけの一式. 要る欄は ML-Inference が確かめる)
+    # 作るときの確かめも 2 件を作るので, 推論と同じ上限を先に当てる
+    shape = (body.output_options or {}).get("shape")
+    if isinstance(shape, list) and shape and all(
+        isinstance(v, int) and not isinstance(v, bool) and v > 0
+        for v in shape
+    ) and sample_limit(shape) < CHECK_SAMPLES:
+        raise HTTPException(
+            400, f"1 件の形 {shape} が大きすぎます (確かめで作る "
+            f"{CHECK_SAMPLES} 件が値の数の上限 {MAX_SAMPLE_VALUES:,} を"
+            "超えます)"
+        )
     store = get_store(request)
     bundle_id, place = store.new_bundle_dir()
     dataset = (body.dataset or "").strip()
@@ -654,6 +669,37 @@ def text_frame(bundle: ml_inference.Bundle, texts: list[str]) -> pd.DataFrame:
     return frame
 
 
+def sample_limit(shape: list[int]) -> int:
+    """
+    1 件の形から, 一度に作れる件数の上限を求める関数
+
+    Parameters
+    ----------
+    shape: list[int]
+        1 件の形 (空なら 1 つの値)
+
+    Returns
+    ----------
+    most: int
+        件数の上限 (MAX_SAMPLES と, 値の数の上限に収まる件数の小さい方)
+
+    Raises
+    ----------
+    HTTPException
+        1 件だけで値の数の上限を超える場合は 400
+    """
+    # 大きな形でもあふれない Python の整数で数える
+    size = math.prod(shape) if shape else 1
+    if size > MAX_SAMPLE_VALUES:
+        raise HTTPException(
+            400, f"1 件の形 {shape} が大きすぎます (1 件の値の数 {size:,} "
+            f"が上限の {MAX_SAMPLE_VALUES:,} を超えます)"
+        )
+    most = min(MAX_SAMPLES, MAX_SAMPLE_VALUES // size)
+
+    return most
+
+
 def noise_source(
     bundle: ml_inference.Bundle, body: PredictRequest
 ) -> dict[str, int]:
@@ -693,15 +739,12 @@ def noise_source(
         raise HTTPException(400, "作る件数を指定してください")
 
     # 件数の上限 (始まりの雑音を全ての件の分を一度に作るため)
-    if body.count > MAX_SAMPLES:
-        raise HTTPException(400, f"件数は {MAX_SAMPLES} 件までです")
-    shape = bundle.output_info.get("shape") or []
-    size = int(np.prod([int(v) for v in shape])) if shape else 1
-    if body.count * size > MAX_SAMPLE_VALUES:
-        most = max(1, MAX_SAMPLE_VALUES // size)
+    shape = [int(v) for v in bundle.output_info.get("shape") or []]
+    most = sample_limit(shape)
+    if body.count > most:
         raise HTTPException(
-            400, f"1 件の形 {list(shape)} では, 記憶に収まるように"
-            f"件数は {most} 件までです"
+            400, f"1 件の形 {shape} では, 記憶に収まるように件数は "
+            f"{most} 件までです"
         )
     source = {"count": body.count}
     if body.seed is not None:
@@ -778,7 +821,8 @@ def predict(
         remember_warnings(str(entry["path"]), bundle)
     # 雑音だけの一式の入力の文 (「件数 n, 種 s」) は ML-Inference のまま
     result.update(
-        source=described or result.get("source"), bundle_id=bundle_id, task=bundle.task,
+        source=described or result.get("source"),
+        bundle_id=bundle_id, task=bundle.task,
         classes=bundle.classes, kind=bundle.kind, forecast=body.forecast,
         has_target=bool(
             str(bundle.dataset.info.get("target")) in result["frame"].columns
