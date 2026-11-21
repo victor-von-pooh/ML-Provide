@@ -9,6 +9,7 @@ import {
   placeText,
   ROLE_LABELS,
   TARGET_KIND_LABELS,
+  optionsText,
 } from '../../lib/outputs'
 
 /** 説明の 1 行 */
@@ -104,7 +105,7 @@ export function OutputView({
             <span className="font-mono">{procedure.name}</span>, {procedure.steps} 回, 乱数の種{' '}
             {procedure.seed}
             {procedure.options && Object.keys(procedure.options).length > 0 && (
-              <span className="font-mono text-xs"> {JSON.stringify(procedure.options)}</span>
+              <span className="font-mono text-xs"> (設定: {optionsText(procedure.options)})</span>
             )}
           </span>
         ) : (
