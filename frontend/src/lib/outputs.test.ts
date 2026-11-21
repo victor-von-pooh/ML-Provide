@@ -3,6 +3,7 @@ import {
   isColumnOutput,
   licenseText,
   maskNames,
+  optionsText,
   originNote,
   outputDetails,
   placeText,
@@ -97,5 +98,27 @@ describe('中身の手順', () => {
       'resize (width 64, height 48), grayscale',
     )
     expect(stepsText([])).toBe('')
+  })
+})
+
+describe('optionsText', () => {
+  it('名前と値を並べ, 入れ子と紛れる文字だけ引用符を付ける', () => {
+    expect(
+      optionsText({
+        eta: 0,
+        nested: { a: 1 },
+        list: [1, 2],
+        none: null,
+        flag: true,
+        sep: ',',
+        empty: '',
+        spaced: ' a',
+        words: 'a b',
+        paren: 'f(x)',
+        plain: 'fast',
+      }),
+    ).toBe(
+      'eta 0, nested {"a":1}, list [1,2], none null, flag true, sep ",", empty "", spaced " a", words "a b", paren "f(x)", plain fast',
+    )
   })
 })

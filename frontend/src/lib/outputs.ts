@@ -145,13 +145,17 @@ export function sourceLabel(inputKind: string | null | undefined): string {
   return '推論するデータ (学習のときと同じ列のファイルか, 画像などのディレクトリ)'
 }
 
-/** 設定の辞書を「名前 値」の並びの文にする (eta 0, train_steps 1000. 入れ子の値だけ JSON) */
+/**
+ * 設定の辞書を「名前 値」の並びの文にする (eta 0, train_steps 1000).
+ * 入れ子の値と, 区切りと紛れる文字 (空, 空白, カンマ, 括弧を含む) は JSON で引用符を付ける
+ */
 export function optionsText(options: Record<string, unknown>): string {
   return Object.entries(options)
     .map(([key, value]) => {
-      const text =
-        value !== null && typeof value === 'object' ? JSON.stringify(value) : String(value)
-      return `${key} ${text}`
+      const quoted =
+        (value !== null && typeof value === 'object') ||
+        (typeof value === 'string' && (value === '' || /[\s,()]/.test(value)))
+      return `${key} ${quoted ? JSON.stringify(value) : String(value)}`
     })
     .join(', ')
 }

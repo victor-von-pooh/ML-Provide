@@ -105,7 +105,7 @@ export function OutputView({
             <span className="font-mono">{procedure.name}</span>, {procedure.steps} 回, 乱数の種{' '}
             {procedure.seed}
             {procedure.options && Object.keys(procedure.options).length > 0 && (
-              <span className="text-xs"> (設定: {optionsText(procedure.options)})</span>
+              <span className="font-mono text-xs"> (設定: {optionsText(procedure.options)})</span>
             )}
           </span>
         ) : (
