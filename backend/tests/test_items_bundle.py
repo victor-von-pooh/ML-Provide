@@ -356,6 +356,17 @@ def test_mask_bundle_version3(
         f"/api/results/{result['id']}/artifacts/0"
     ).json()
     assert preview["view"] == "grid" and preview["shape"] == [24, 24]
+    assert {item["label"] for item in preview["labels"]} <= {0, 1, 2}
+
+    # データセットのディレクトリの件は, そろえた 16 x 16 のまま
+    response = client.post(f"/api/bundles/{bundle_id}/predict",
+                           json={"source": str(items["masks_v3"])})
+    assert response.status_code == 201, response.text
+    result = response.json()
+    preview = client.get(
+        f"/api/results/{result['id']}/artifacts/0"
+    ).json()
+    assert preview["shape"] == [16, 16]
 
 
 def test_cloud_bundle_needs_points(
