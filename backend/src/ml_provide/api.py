@@ -1145,8 +1145,20 @@ def read_frame(place: Path, meta: dict[str, Any]) -> pd.DataFrame:
     Returns
     ----------
     frame: pd.DataFrame
-        予測と判断の表 (理由と判断の空は空の文字)
+        予測と判断の表 (理由と判断の空は空の文字. 文の出力の予測した行の
+        空の文と番号も空の文字)
     """
+    # 文の出力の文と番号 (tokens) は ML-Inference の read_result の決まり
+    # (文字のまま読み, 予測した行の空は空の文字) で読む. 番号 1 つの並びや
+    # 数に見える文を数にせず, 決まりを 2 か所に持たないため
+    if meta.get("output_form") == "text":
+        frame: pd.DataFrame = ml_inference.read_result(place)["frame"]
+        for name in ("status", "reason", "decision"):
+            if name in frame.columns:
+                column = frame[name].astype(object)
+                frame[name] = column.where(column.notna(), "").astype(str)
+        return frame
+
     # クラスの名前と判断は文字のまま (数字のクラスも)
     texts = {"status": str, "reason": str, "decision": str}
     if meta.get("task") == "classification":
