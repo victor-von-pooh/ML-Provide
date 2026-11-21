@@ -220,7 +220,12 @@ export function CreateBundleDialog({
     if (needsPoints && notCount(seed))
       problems.push('点を選ぶ乱数の種は 0 以上の整数で書いてください')
   } else {
-    problems.push(...built.problems, ...builtProcedure.problems, ...builtOutput.problems)
+    // 畳んだ欄の誤りは, どの欄かを添える (欄も開く)
+    problems.push(
+      ...builtProcedure.problems.map((problem) => `「繰り返しの手順」: ${problem}`),
+      ...builtOutput.problems.map((problem) => `「受け持ちと出力の形」: ${problem}`),
+      ...built.problems.map((problem) => `「モデルの入力ごとの出どころ」: ${problem}`),
+    )
     if (noData && !procedureForm.name)
       problems.push('雑音だけの一式は, 雑音から始まる手順 (ddim, euler など) を選んでください')
     if (!noData && !trainScale && !!center.trim() !== !!scale.trim())
@@ -405,7 +410,10 @@ export function CreateBundleDialog({
         />
         {!itemsData && (
           <>
-            <details className="rounded-lg border border-line p-3" open={noData}>
+            <details
+              className="rounded-lg border border-line p-3"
+              open={noData || builtProcedure.problems.length > 0}
+            >
               <summary className="cursor-pointer text-xs font-semibold text-ink-2">
                 {noData ? '繰り返しの手順 (要る)' : '繰り返しの手順 (生成のモデル. あれば)'}
               </summary>
@@ -422,7 +430,10 @@ export function CreateBundleDialog({
                 )}
               </div>
             </details>
-            <details className="rounded-lg border border-line p-3" open={noData}>
+            <details
+              className="rounded-lg border border-line p-3"
+              open={noData || builtOutput.problems.length > 0}
+            >
               <summary className="cursor-pointer text-xs font-semibold text-ink-2">
                 {noData ? '出力の形 (要る)' : '受け持ちと出力の形 (あれば)'}
               </summary>
@@ -438,7 +449,10 @@ export function CreateBundleDialog({
                 />
               </div>
             </details>
-            <details className="rounded-lg border border-line p-3" open={noData}>
+            <details
+              className="rounded-lg border border-line p-3"
+              open={noData || built.problems.length > 0}
+            >
               <summary className="cursor-pointer text-xs font-semibold text-ink-2">
                 {noData
                   ? 'モデルの入力ごとの出どころ'
