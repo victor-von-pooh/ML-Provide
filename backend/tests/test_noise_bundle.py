@@ -1,3 +1,4 @@
+import dataclasses
 import io
 from pathlib import Path
 from typing import Any
@@ -7,11 +8,13 @@ import pytest
 import torch
 import yaml
 from fastapi.testclient import TestClient
+from ml_inference import PROCEDURES
 from ml_modelcontrol import build_model, load_example
 from test_bundle_v3 import head_spec, make_v3, register, write_unlabeled
 
 import ml_provide.api as api_module
 from ml_provide.app import create_app
+from ml_provide.procedures import option_names
 
 # テストで使うトークン
 TOKEN = "test-token"
@@ -263,3 +266,47 @@ def test_noise_limits(
     })
     assert response.status_code == 400
     assert "shape" in response.json()["detail"]
+
+
+def test_procedure_options(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    手順の設定の名前を関数の引数から読み, 読めない手順でも登録簿の一覧を
+    返すことを確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    monkeypatch: pytest.MonkeyPatch
+        登録簿に引数を読めない手順を置く
+
+    Returns
+    ----------
+    None
+    """
+    # 設定の無い関数は空, **kwargs と引数を読めない関数は None
+    def plain(model: Any, state: Any, steps: int, generator: Any) -> Any:
+        return state
+
+    def anything(
+        model: Any, state: Any, steps: int, generator: Any, **options: Any
+    ) -> Any:
+        return state
+
+    assert option_names(plain) == []
+    assert option_names(anything) is None
+    assert option_names(max) is None
+
+    # 引数を読めない手順があっても /api/info は返す
+    ddim = PROCEDURES["ddim"]
+    broken = dataclasses.replace(ddim, name="broken", function=max)
+    monkeypatch.setitem(PROCEDURES, "broken", broken)
+    response = client.get("/api/info")
+    assert response.status_code == 200
+    listed = {p["name"]: p for p in response.json()["procedures"]}
+    assert listed["broken"]["options"] is None
+    assert listed["ddim"]["options"] == [
+        "train_steps", "beta_start", "beta_end", "eta"
+    ]

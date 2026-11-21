@@ -6,13 +6,13 @@
 """
 
 import importlib
+import inspect
 import os
 from pathlib import Path
 from typing import Any, Optional
 
 import yaml
 from ml_inference import PROCEDURES
-from ml_inference.procedures import option_names
 
 # 自作の手順を登録するモジュールを書く環境変数 (, で区切る)
 PROCEDURES_ENV = "ML_PROVIDE_PROCEDURES"
@@ -108,6 +108,33 @@ def load_modules(names: list[str]) -> list[str]:
     return loaded
 
 
+def option_names(function: Any) -> Optional[list[str]]:
+    """
+    手順の関数の設定 (5 つ目からの引数) の名前を返す関数
+
+    Parameters
+    ----------
+    function: Any
+        登録簿の手順の関数 (model, state, steps, generator, 設定...)
+
+    Returns
+    ----------
+    names: Optional[list[str]]
+        設定の名前 (設定の無い手順は空). **kwargs を持つ関数と, 引数を
+        読めない関数は None (画面は名前=値の行で受け取る)
+    """
+    # 引数を読めない呼べるもの (組み込みの関数など) も一覧を止めない
+    try:
+        params = list(inspect.signature(function).parameters.values())[4:]
+    except (TypeError, ValueError):
+        return None
+    names: Optional[list[str]] = [p.name for p in params]
+    if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params):
+        names = None
+
+    return names
+
+
 def registered() -> list[dict[str, Any]]:
     """
     登録簿の手順の一覧を返す関数
@@ -131,7 +158,7 @@ def registered() -> list[dict[str, Any]]:
             "description": item.description,
             "start": item.start,
             "time": bool(item.time),
-            "options": option_names(name),
+            "options": option_names(item.function),
         }
         for name, item in sorted(PROCEDURES.items())
     ]
