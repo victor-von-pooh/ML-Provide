@@ -68,6 +68,7 @@ describe('buildInputs', () => {
     )
     expect(named.problems).toEqual([])
     expect(Object.keys(named.inputs ?? {})).toEqual(['constructor', 'toString', '__proto__'])
+    // __proto__ も送る本体の自分の性質に残る (JSON にして確かめる)
     expect(JSON.parse(JSON.stringify(named.inputs)).__proto__).toEqual({ source: 'features' })
   })
 
