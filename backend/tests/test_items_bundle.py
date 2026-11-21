@@ -316,8 +316,8 @@ def test_mask_bundle_version3(
 ) -> None:
     """
     版 3 (中身の手順で大きさをそろえた) のデータセットからも版 4 の一式を
-    作り, 大きさの違う元の画像を推論すると手順をかけた大きさの領域が返る
-    ことを確かめる関数
+    作り, 大きさの違う元の画像を推論すると元の画像の大きさに戻した領域が
+    返ることを確かめる関数
 
     Parameters
     ----------
@@ -344,7 +344,8 @@ def test_mask_bundle_version3(
     assert description["kind"] == "items"
     assert description["check"]["metric"] == "iou"
 
-    # 24 x 24 の元の画像は, 一式が手順をかけて 16 x 16 の領域になる
+    # 24 x 24 の元の画像は, 一式が手順をかけて 16 x 16 で推論し, 領域を
+    # 元の 24 x 24 に戻して返す
     bundle_id = response.json()["id"]
     response = client.post(f"/api/bundles/{bundle_id}/predict",
                            json={"source": str(items["images_v3"])})
@@ -354,7 +355,18 @@ def test_mask_bundle_version3(
     preview = client.get(
         f"/api/results/{result['id']}/artifacts/0"
     ).json()
-    assert preview["view"] == "grid" and preview["shape"] == [16, 16]
+    assert preview["view"] == "grid" and preview["shape"] == [24, 24]
+    assert {item["label"] for item in preview["labels"]} <= {0, 1, 2}
+
+    # データセットのディレクトリの件は, そろえた 16 x 16 のまま
+    response = client.post(f"/api/bundles/{bundle_id}/predict",
+                           json={"source": str(items["masks_v3"])})
+    assert response.status_code == 201, response.text
+    result = response.json()
+    preview = client.get(
+        f"/api/results/{result['id']}/artifacts/0"
+    ).json()
+    assert preview["shape"] == [16, 16]
 
 
 def test_cloud_bundle_needs_points(
