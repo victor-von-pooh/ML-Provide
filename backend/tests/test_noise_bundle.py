@@ -318,6 +318,32 @@ def test_noise_limits(
     assert response.status_code == 400
     assert "1 件の形" in response.json()["detail"], response.text
 
+    # 重みが定義と合わない誤りには, 1 件の形の案内を添えない
+    other = tmp_path / "other.pt"
+    torch.save(build_model(head_spec(5), seed=0).state_dict(), other)
+    response = client.post("/api/bundles/create", json={
+        "name": "weights", "spec": paths["spec"], "weights": str(other),
+        "inputs": {"x": {"source": "state"}, "t": {"source": "time"}},
+        "form": "vector", "output_options": {"shape": [16]},
+        "procedure": {"name": "ddim", "steps": 5, "seed": 3},
+    })
+    assert response.status_code == 400
+    assert "state_dict" in response.json()["detail"]
+    assert "1 件の形" not in response.json()["detail"]
+
+    # 手順の回数は上限まで
+    response = client.post("/api/bundles/create", json={
+        "name": "long", "spec": paths["spec"],
+        "weights": paths["weights"],
+        "inputs": {"x": {"source": "state"}, "t": {"source": "time"}},
+        "form": "vector", "output_options": {"shape": [16]},
+        "procedure": {"name": "ddim",
+                      "steps": api_module.MAX_PROCEDURE_STEPS + 1,
+                      "seed": 3},
+    })
+    assert response.status_code == 400
+    assert str(api_module.MAX_PROCEDURE_STEPS) in response.json()["detail"]
+
     # 出力の形の誤りなど, 1 件の形でない誤りには案内を添えない
     response = client.post("/api/bundles/create", json={
         "name": "form", "spec": paths["spec"],
