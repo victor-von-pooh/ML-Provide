@@ -26,9 +26,13 @@ import {
   stepsText,
 } from '../../lib/outputs'
 import { useDebounced } from '../../lib/useDebounced'
-import { InputFields, OutputFields, ProcedureFields } from './CreateBundleFields'
+import { AutoDetails, InputFields, OutputFields, ProcedureFields } from './CreateBundleFields'
 
 const field = 'h-8 rounded-lg border border-line bg-surface px-2 text-sm'
+
+/** 畳んだ欄の名前 (受け持ちと出力の形の欄は, 雑音だけかで名前が変わる) */
+const SECTION_PROCEDURE = '繰り返しの手順'
+const SECTION_INPUTS = 'モデルの入力ごとの出どころ'
 
 /** 空でなく, 0 以上の整数でない欄か */
 function notCount(value: string, positive = false): boolean {
@@ -210,6 +214,8 @@ export function CreateBundleDialog({
     },
     onSuccess: onCreated,
   })
+  // 畳んだ欄の名前 (見出しと誤りに添える名前を同じにする)
+  const sectionOutput = noData ? '出力の形' : '受け持ちと出力の形'
   // 片方だけの欄と数でない値は, 送る前に知らせる (ファイルの組のデータセットは点の欄だけ)
   const problems: string[] = []
   if (itemsData) {
@@ -222,9 +228,9 @@ export function CreateBundleDialog({
   } else {
     // 畳んだ欄の誤りは, どの欄かを添える (欄も開く)
     problems.push(
-      ...builtProcedure.problems.map((problem) => `「繰り返しの手順」: ${problem}`),
-      ...builtOutput.problems.map((problem) => `「受け持ちと出力の形」: ${problem}`),
-      ...built.problems.map((problem) => `「モデルの入力ごとの出どころ」: ${problem}`),
+      ...builtProcedure.problems.map((problem) => `「${SECTION_PROCEDURE}」: ${problem}`),
+      ...builtOutput.problems.map((problem) => `「${sectionOutput}」: ${problem}`),
+      ...built.problems.map((problem) => `「${SECTION_INPUTS}」: ${problem}`),
     )
     if (noData && !procedureForm.name)
       problems.push('雑音だけの一式は, 雑音から始まる手順 (ddim, euler など) を選んでください')
@@ -410,58 +416,50 @@ export function CreateBundleDialog({
         />
         {!itemsData && (
           <>
-            <details
-              className="rounded-lg border border-line p-3"
-              open={noData || builtProcedure.problems.length > 0}
+            <AutoDetails
+              summary={
+                noData
+                  ? `${SECTION_PROCEDURE} (要る)`
+                  : `${SECTION_PROCEDURE} (生成のモデル. あれば)`
+              }
+              wantOpen={noData}
+              problems={builtProcedure.problems.length}
             >
-              <summary className="cursor-pointer text-xs font-semibold text-ink-2">
-                {noData ? '繰り返しの手順 (要る)' : '繰り返しの手順 (生成のモデル. あれば)'}
-              </summary>
-              <div className="mt-3">
-                {info.error ? (
-                  <ErrorBox error={info.error} />
-                ) : (
-                  <ProcedureFields
-                    form={procedureForm}
-                    onChange={setProcedureForm}
-                    procedures={procedures}
-                    noData={noData}
-                  />
-                )}
-              </div>
-            </details>
-            <details
-              className="rounded-lg border border-line p-3"
-              open={noData || builtOutput.problems.length > 0}
-            >
-              <summary className="cursor-pointer text-xs font-semibold text-ink-2">
-                {noData ? '出力の形 (要る)' : '受け持ちと出力の形 (あれば)'}
-              </summary>
-              <div className="mt-3">
-                <OutputFields
-                  role={role}
-                  onRole={setRole}
-                  form={form}
-                  onForm={setForm}
-                  fields={outputFields}
-                  onFields={setOutputFields}
+              {info.error ? (
+                <ErrorBox error={info.error} />
+              ) : (
+                <ProcedureFields
+                  form={procedureForm}
+                  onChange={setProcedureForm}
+                  procedures={procedures}
                   noData={noData}
                 />
-              </div>
-            </details>
-            <details
-              className="rounded-lg border border-line p-3"
-              open={noData || built.problems.length > 0}
+              )}
+            </AutoDetails>
+            <AutoDetails
+              summary={noData ? `${sectionOutput} (要る)` : `${sectionOutput} (あれば)`}
+              wantOpen={noData}
+              problems={builtOutput.problems.length}
             >
-              <summary className="cursor-pointer text-xs font-semibold text-ink-2">
-                {noData
-                  ? 'モデルの入力ごとの出どころ'
-                  : 'モデルの入力ごとの出どころ (入力が複数か, 先頭に番号を足した場合)'}
-              </summary>
-              <div className="mt-3">
-                <InputFields rows={inputRows} onChange={setInputRows} noData={noData} />
-              </div>
-            </details>
+              <OutputFields
+                role={role}
+                onRole={setRole}
+                form={form}
+                onForm={setForm}
+                fields={outputFields}
+                onFields={setOutputFields}
+                noData={noData}
+              />
+            </AutoDetails>
+            <AutoDetails
+              summary={
+                noData ? SECTION_INPUTS : `${SECTION_INPUTS} (入力が複数か, 先頭に番号を足した場合)`
+              }
+              wantOpen={noData}
+              problems={built.problems.length}
+            >
+              <InputFields rows={inputRows} onChange={setInputRows} noData={noData} />
+            </AutoDetails>
           </>
         )}
         <details className="rounded-lg border border-line p-3">
@@ -529,11 +527,14 @@ export function CreateBundleDialog({
           />
           重みを一式に写す (外すと実験の重みを指す. 実験を消すと推論できなくなる)
         </label>
-        {problems.map((problem) => (
-          <p key={problem} className="text-xs text-critical-text">
-            {problem}
-          </p>
-        ))}
+        {/* 誤りは打つたびに変わるので, alert でなく polite で読み上げる */}
+        <div aria-live="polite" className="flex flex-col gap-1">
+          {problems.map((problem) => (
+            <p key={problem} className="text-xs text-critical-text">
+              {problem}
+            </p>
+          ))}
+        </div>
         {create.error && create.variables === formKey && <ErrorBox error={create.error} />}
         <div className="flex justify-end">
           <Button type="submit" variant="primary" disabled={!ready || create.isPending}>
