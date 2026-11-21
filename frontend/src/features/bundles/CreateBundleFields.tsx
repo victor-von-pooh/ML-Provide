@@ -21,11 +21,13 @@ export function ProcedureFields({
   onChange,
   procedures,
   noData,
+  maxSteps,
 }: {
   form: ProcedureForm
   onChange: (form: ProcedureForm) => void
   procedures: ProcedureEntry[]
   noData: boolean
+  maxSteps: number
 }) {
   // 雑音だけの一式は雑音から始まる手順だけ
   const choices = noData ? procedures.filter((entry) => entry.start === 'noise') : procedures
@@ -61,12 +63,13 @@ export function ProcedureFields({
         <>
           <div>
             <label htmlFor="bundle-steps" className="mb-1 block text-xs text-ink-2">
-              回数 (要る. 文の生成は足す番号の数の上限)
+              回数 (要る. {maxSteps.toLocaleString()} 回まで. 文の生成は足す番号の数の上限)
             </label>
             <input
               id="bundle-steps"
               type="number"
               min={1}
+              max={maxSteps}
               value={form.steps}
               onChange={(event) => onChange({ ...form, steps: event.target.value })}
               className={`${field} w-full`}

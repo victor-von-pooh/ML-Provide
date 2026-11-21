@@ -65,6 +65,10 @@ MAX_SAMPLES = 1000
 # (float32 で 400 MB. 始まりの雑音と出力を記憶に持つため)
 MAX_SAMPLE_VALUES = 100_000_000
 
+# 画面で作る一式の手順の回数の上限 (拡散の学習の時刻の数の既定と同じ.
+# 回数ごとにモデルを件数分呼ぶので, 作るときの確かめが長く止まらないように)
+MAX_PROCEDURE_STEPS = 1000
+
 # 雑音だけの一式を作るときの形の誤りに添える案内
 NOISE_SHAPE_HINT = (
     "雑音だけの一式では, 出力の形の欄の「1 件の形」が, モデルの定義の"
@@ -294,7 +298,8 @@ def get_info(request: Request) -> dict[str, Any]:
         procedures (繰り返しの手順の登録簿), procedure_modules (起動の
         設定で読んだ手順のモジュール), unit_modules (起動の設定で読んだ
         部品のモジュールと登録した部品の名前), max_samples (雑音だけの
-        一式で一度に作る件数の上限)
+        一式で一度に作る件数の上限), max_procedure_steps (画面で作る一式の
+        手順の回数の上限)
     """
     info = {
         "version": ml_inference.__version__,
@@ -308,6 +313,7 @@ def get_info(request: Request) -> dict[str, Any]:
             getattr(request.app.state, "unit_modules", [])
         ),
         "max_samples": MAX_SAMPLES,
+        "max_procedure_steps": MAX_PROCEDURE_STEPS,
     }
 
     return info
@@ -466,6 +472,12 @@ def create_bundle(request: Request, body: BundleCreate) -> dict[str, Any]:
             f"{CHECK_SAMPLES} 件が値の数の上限 {MAX_SAMPLE_VALUES:,} を"
             "超えます)"
         )
+    # 手順の回数の上限 (作るときの確かめと推論が長く止まらないように)
+    steps = (body.procedure or {}).get("steps")
+    if isinstance(steps, int) and steps > MAX_PROCEDURE_STEPS:
+        raise HTTPException(
+            400, f"手順の回数は {MAX_PROCEDURE_STEPS:,} 回までです"
+        )
     store = get_store(request)
     bundle_id, place = store.new_bundle_dir()
     try:
@@ -484,11 +496,13 @@ def create_bundle(request: Request, body: BundleCreate) -> dict[str, Any]:
         exception = user_error(error)
         # 雑音だけの一式の 1 件の形の誤り (output.shape の誤りと, モデルの
         # 入力と形が合わない実行時の誤り) は, 画面の 1 件の形の欄へ案内
+        # (重みが定義と合わない誤り (state_dict) は形の欄では直らないので除く)
         detail = str(exception.detail)
-        if not dataset and (
-            isinstance(error, RuntimeError) or "output.shape" in detail
-            or "RuntimeError" in detail
-        ):
+        shaped = "output.shape" in detail or (
+            (isinstance(error, RuntimeError) or "RuntimeError" in detail)
+            and "state_dict" not in detail
+        )
+        if not dataset and shaped:
             exception.detail = f"{exception.detail} ({NOISE_SHAPE_HINT})"
         raise exception from error
     entry = store.add(place, body.name, managed=True, bundle_id=bundle_id)

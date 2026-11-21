@@ -318,6 +318,44 @@ def test_noise_limits(
     assert response.status_code == 400
     assert "1 件の形" in response.json()["detail"], response.text
 
+    # 重みが定義と合わない誤りには, 1 件の形の案内を添えない
+    other = tmp_path / "other.pt"
+    torch.save(build_model(head_spec(5), seed=0).state_dict(), other)
+    response = client.post("/api/bundles/create", json={
+        "name": "weights", "spec": paths["spec"], "weights": str(other),
+        "inputs": {"x": {"source": "state"}, "t": {"source": "time"}},
+        "form": "vector", "output_options": {"shape": [16]},
+        "procedure": {"name": "ddim", "steps": 5, "seed": 3},
+    })
+    assert response.status_code == 400
+    assert "state_dict" in response.json()["detail"]
+    assert "1 件の形" not in response.json()["detail"]
+
+    # 手順の回数は上限まで (train_steps を大きくして, ML-Inference の範囲
+    # の内側で画面の上限だけに当てる. ちょうど上限は通る)
+    for steps, status in ((api_module.MAX_PROCEDURE_STEPS + 1, 400),
+                          (api_module.MAX_PROCEDURE_STEPS, 201)):
+        response = client.post("/api/bundles/create", json={
+            "name": f"long{steps}", "spec": paths["spec"],
+            "weights": paths["weights"],
+            "inputs": {"x": {"source": "state"}, "t": {"source": "time"}},
+            "form": "vector", "output_options": {"shape": [16]},
+            "procedure": {"name": "ddim", "steps": steps, "seed": 3,
+                          "options": {"train_steps": 2000}},
+        })
+        assert response.status_code == status, response.text
+    assert response.json()["description"]["procedure"]["steps"] == 1000
+    detail = client.post("/api/bundles/create", json={
+        "name": "longer", "spec": paths["spec"],
+        "weights": paths["weights"],
+        "form": "vector", "output_options": {"shape": [16]},
+        "procedure": {"name": "ddim", "steps": 1001, "seed": 3,
+                      "options": {"train_steps": 2000}},
+    }).json()["detail"]
+    assert detail.startswith("手順の回数は 1,000 回まで")
+    info = client.get("/api/info").json()
+    assert info["max_procedure_steps"] == api_module.MAX_PROCEDURE_STEPS
+
     # 出力の形の誤りなど, 1 件の形でない誤りには案内を添えない
     response = client.post("/api/bundles/create", json={
         "name": "form", "spec": paths["spec"],
