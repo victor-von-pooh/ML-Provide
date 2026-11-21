@@ -1,4 +1,5 @@
 import type {
+  AppInfo,
   ArtifactPreview,
   Bundle,
   BundleCreateBody,
@@ -58,6 +59,7 @@ const json = (method: string, body: unknown): RequestInit => ({
 })
 
 export const api = {
+  info: () => request<AppInfo>('/api/info'),
   browse: (path: string) => request<Listing>(`/api/browse?path=${encodeURIComponent(path)}`),
   bundles: () => request<Bundle[]>('/api/bundles'),
   bundle: (id: string) => request<Bundle>(`/api/bundles/${id}`),
@@ -80,6 +82,9 @@ export const api = {
     body: {
       source?: string
       texts?: string[]
+      /** 雑音だけの一式の件数と種 */
+      count?: number
+      seed?: number
       rules?: Rules
       forecast?: boolean
       decision?: Decision | Record<string, never>

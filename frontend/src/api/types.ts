@@ -376,12 +376,46 @@ export interface Rows {
   rows: Record<string, unknown>[]
 }
 
+/** 繰り返しの手順の登録簿の 1 つ (GET /api/info) */
+export interface ProcedureEntry {
+  name: string
+  builtin: boolean
+  description: string
+  /** 始まり (noise は雑音, given は渡した番号の並び) */
+  start: string
+  /** 時刻をモデルに渡すか */
+  time: boolean
+  /** 設定の名前 (何でも受け取る自作の手順は null) */
+  options: string[] | null
+  /** 設定の既定値 (数, 真偽値, 文字の既定値だけ) */
+  defaults?: Record<string, unknown>
+}
+
+/** ML-Inference の版と, 画面で使う登録簿と上限 */
+export interface AppInfo {
+  version: string
+  rule_keys: string[]
+  result_version: number
+  procedures: ProcedureEntry[]
+  procedure_modules: string[]
+  unit_modules: unknown[]
+  /** 雑音だけの一式で一度に作る件数の上限 */
+  max_samples: number
+}
+
+/** モデルの入力ごとの出どころ (features, items, state, time) と先頭に足す番号 */
+export interface InputSource {
+  source: string
+  prepend?: number[]
+}
+
 export interface BundleCreateBody {
   name: string
   spec: string
-  dataset: string
+  /** 省くと雑音だけの一式 (データセットを持たない) */
+  dataset?: string | null
   weights: string
-  inputs?: Record<string, { source: string; prepend: number[] }> | null
+  inputs?: Record<string, InputSource> | null
   output?: string | null
   kind?: string | null
   /** 中心と幅か, 学習用の分割の平均と標準偏差 (train) */
@@ -390,6 +424,9 @@ export interface BundleCreateBody {
   copy_weights: boolean
   role?: string | null
   form?: string | null
+  /** 出力の形ごとの欄 (分布の水準 quantiles, 領域のクラスの名前 classes, 1 件の形 shape) */
+  output_options?: Record<string, unknown> | null
+  procedure?: Procedure | null
   /** 版 2 のデータセットの 1 件の扱い (省いた欄はデータセットから) */
   items?: { input?: string; options?: Record<string, number> } | null
 }

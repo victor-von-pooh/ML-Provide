@@ -7,6 +7,7 @@ import { api } from '../../api/client'
 import type { Bundle, Description, LinkedProblem, UncertaintySummary } from '../../api/types'
 import { PathField } from '../../components/PathPicker'
 import { Button, Card, ErrorBox, PageHeader, Spinner } from '../../components/ui'
+import { SEED_RANGE_PROBLEM, SHORT_SOURCE_LABELS } from '../../lib/bundleForm'
 import { formatNumber, KIND_LABELS, TASK_LABELS } from '../../lib/format'
 import { fromDecisionForm, toDecisionForm, type DecisionForm } from '../../lib/decision'
 import {
@@ -68,11 +69,15 @@ function DescriptionView({ description }: { description: Description }) {
   const run = description.run
   const inputs = Object.entries(description.model.inputs)
   const items = description.items
+  // 雑音だけの一式はデータセットを持たず, 件数と種から作る
+  const noise = description.kind === 'noise'
   const unit = items ? '件' : '行'
   return (
     <dl className="text-sm">
       {items ? (
         <ItemsRows items={items} />
+      ) : noise ? (
+        <Row label="データ">雑音だけ (データセットなし. 推論は件数と種から作る)</Row>
       ) : (
         <Row label="データとタスク">
           {KIND_LABELS[description.kind] ?? description.kind} /{' '}
@@ -87,7 +92,7 @@ function DescriptionView({ description }: { description: Description }) {
         </Row>
       )}
       {description.text_column && <Row label="文の列">{description.text_column}</Row>}
-      {!items && (
+      {!items && !noise && (
         <>
           <Row label="読み込み">
             <span className="font-mono text-xs">
@@ -108,7 +113,7 @@ function DescriptionView({ description }: { description: Description }) {
           {inputs
             .map(
               ([name, plan]) =>
-                `${name} ← ${plan.source === 'features' ? '表の列' : '中身'}${
+                `${name} ← ${SHORT_SOURCE_LABELS[plan.source] ?? plan.source}${
                   plan.prepend.length > 0 ? ` (先頭に ${plan.prepend.join(', ')})` : ''
                 }`,
             )
@@ -174,6 +179,12 @@ function PredictCard({
   const navigate = useNavigate()
   const client = useQueryClient()
   const textual = description.kind === 'text' && !!description.text_column
+  // 雑音だけの一式はファイルと文の代わりに件数と種 (種は空なら一式の手順の種)
+  const noise = description.kind === 'noise'
+  const info = useQuery({ queryKey: ['info'], queryFn: api.info, staleTime: Infinity })
+  const maxSamples = info.data?.max_samples ?? 1000
+  const [count, setCount] = useState('4')
+  const [noiseSeed, setNoiseSeed] = useState('')
   // 列の出力でない一式 (領域, 点群, ベクトル, 画像, 文) は結論が件数だけ
   const column = isColumnOutput(description)
   const outputForm = description.output?.form ?? ''
@@ -206,37 +217,55 @@ function PredictCard({
     description.classes,
   )
   const problems = column ? [...ruleProblems, ...decisionProblems] : []
+  if (noise) {
+    const number = Number(count)
+    if (!/^\d+$/.test(count.trim()) || number < 1 || number > maxSamples)
+      problems.push(`件数は 1 から ${maxSamples} の整数で書いてください`)
+    if (noiseSeed.trim() && !/^-?\d+$/.test(noiseSeed.trim()))
+      problems.push('種は整数で書いてください')
+    else if (noiseSeed.trim() && !Number.isSafeInteger(Number(noiseSeed)))
+      problems.push(SEED_RANGE_PROBLEM)
+  }
   const predict = useMutation({
-    mutationFn: () =>
+    // 送ったときの欄の印 (欄を変えたら前の誤りを出さないため)
+    mutationFn: (_key: string) =>
       api.predict(
         bundle.id,
-        !column
-          ? mode === 'texts'
-            ? { texts: texts.split('\n') }
-            : { source: source.trim() }
-          : mode === 'texts'
-            ? { texts: texts.split('\n'), rules: withCleared(rules), decision: decision ?? {} }
-            : {
-                source: source.trim(),
-                rules: withCleared(rules),
-                forecast: canForecast && ahead,
-                // 意思決定しない場合は空 (省くと一式の既定値になる)
-                decision: decision ?? {},
-              },
+        noise
+          ? {
+              count: Number(count),
+              ...(noiseSeed.trim() ? { seed: Number(noiseSeed) } : {}),
+            }
+          : !column
+            ? mode === 'texts'
+              ? { texts: texts.split('\n') }
+              : { source: source.trim() }
+            : mode === 'texts'
+              ? { texts: texts.split('\n'), rules: withCleared(rules), decision: decision ?? {} }
+              : {
+                  source: source.trim(),
+                  rules: withCleared(rules),
+                  forecast: canForecast && ahead,
+                  // 意思決定しない場合は空 (省くと一式の既定値になる)
+                  decision: decision ?? {},
+                },
       ),
     onSuccess: (result) => {
       client.invalidateQueries({ queryKey: ['results'] })
       navigate(`/results/${result.id}`)
     },
   })
-  const ready = (mode === 'texts' ? texts.trim() : source.trim()) && problems.length === 0
+  // 欄の中身の印 (送った後に欄を変えたら, 前の誤りを消す)
+  const formKey = JSON.stringify([mode, source, texts, count, noiseSeed, ahead, form, decisionForm])
+  const ready =
+    (noise || (mode === 'texts' ? texts.trim() : source.trim())) && problems.length === 0
   return (
     <Card title="推論する">
       <form
         className="flex flex-col gap-4"
         onSubmit={(event) => {
           event.preventDefault()
-          if (ready) predict.mutate()
+          if (ready) predict.mutate(formKey)
         }}
       >
         {textual && (
@@ -251,7 +280,46 @@ function PredictCard({
             </label>
           </div>
         )}
-        {mode === 'file' ? (
+        {noise ? (
+          <fieldset className="grid gap-3 md:grid-cols-2">
+            <legend className="sr-only">作る件数と種</legend>
+            <div>
+              <label htmlFor="predict-count" className="mb-1 block text-xs font-medium text-ink-2">
+                作る件数 ({maxSamples} 件まで)
+              </label>
+              <input
+                id="predict-count"
+                type="number"
+                min={1}
+                max={maxSamples}
+                value={count}
+                onChange={(event) => setCount(event.target.value)}
+                className="h-8 w-full rounded-lg border border-line bg-surface px-2 text-sm"
+              />
+            </div>
+            <div>
+              <label htmlFor="predict-seed" className="mb-1 block text-xs font-medium text-ink-2">
+                乱数の種 (空なら一式の種 {description.procedure?.seed ?? 0})
+              </label>
+              <input
+                id="predict-seed"
+                type="number"
+                value={noiseSeed}
+                onChange={(event) => setNoiseSeed(event.target.value)}
+                className="h-8 w-full rounded-lg border border-line bg-surface px-2 text-sm"
+              />
+            </div>
+            <p className="text-xs text-ink-3 md:col-span-2">
+              同じ件数と種なら同じ出力になります. 始まりの雑音を全ての件の分を一度に作るので, 1
+              件の形が大きいと受け付ける件数が減ります
+            </p>
+            {problems.map((problem) => (
+              <p key={problem} role="alert" className="text-xs text-critical-text md:col-span-2">
+                {problem}
+              </p>
+            ))}
+          </fieldset>
+        ) : mode === 'file' ? (
           <div>
             <PathField
               id="predict-source"
@@ -390,7 +458,7 @@ function PredictCard({
             ))}
           </section>
         )}
-        {predict.error && <ErrorBox error={predict.error} />}
+        {predict.error && predict.variables === formKey && <ErrorBox error={predict.error} />}
         <div className="flex justify-end">
           <Button
             type="submit"

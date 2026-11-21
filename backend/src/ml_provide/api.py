@@ -65,6 +65,13 @@ MAX_SAMPLES = 1000
 # (float32 で 400 MB. 始まりの雑音と出力を記憶に持つため)
 MAX_SAMPLE_VALUES = 100_000_000
 
+# 雑音だけの一式を作るときの形の誤りに添える案内
+NOISE_SHAPE_HINT = (
+    "雑音だけの一式では, 出力の形の欄の「1 件の形」が, モデルの定義の"
+    "手順の中身の入力の形 (先頭の件数の次元を除く) と合うかを見直して"
+    "ください"
+)
+
 # 雑音だけの一式を作るときに ML-Inference が確かめで作る件数
 CHECK_SAMPLES = 2
 
@@ -474,7 +481,16 @@ def create_bundle(request: Request, body: BundleCreate) -> dict[str, Any]:
             procedure=body.procedure, items=body.items
         )
     except Exception as error:
-        raise user_error(error) from error
+        exception = user_error(error)
+        # 雑音だけの一式の 1 件の形の誤り (output.shape の誤りと, モデルの
+        # 入力と形が合わない実行時の誤り) は, 画面の 1 件の形の欄へ案内
+        detail = str(exception.detail)
+        if not dataset and (
+            isinstance(error, RuntimeError) or "output.shape" in detail
+            or "RuntimeError" in detail
+        ):
+            exception.detail = f"{exception.detail} ({NOISE_SHAPE_HINT})"
+        raise exception from error
     entry = store.add(place, body.name, managed=True, bundle_id=bundle_id)
     view = bundle_view(entry)
 

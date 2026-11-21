@@ -17,7 +17,7 @@ from test_bundle_v3 import head_spec, make_v3, register, write_unlabeled
 
 import ml_provide.api as api_module
 from ml_provide.app import create_app
-from ml_provide.procedures import option_names
+from ml_provide.procedures import option_defaults, option_names
 
 # テストで使うトークン
 TOKEN = "test-token"
@@ -307,6 +307,28 @@ def test_noise_limits(
     assert response.status_code == 400
     assert "shape" in response.json()["detail"]
 
+    # 1 件の形がモデルの入力と合わなければ, 1 件の形の欄へ案内
+    response = client.post("/api/bundles/create", json={
+        "name": "wrong", "spec": paths["spec"],
+        "weights": paths["weights"],
+        "inputs": {"x": {"source": "state"}, "t": {"source": "time"}},
+        "form": "vector", "output_options": {"shape": [5]},
+        "procedure": {"name": "ddim", "steps": 5, "seed": 3},
+    })
+    assert response.status_code == 400
+    assert "1 件の形" in response.json()["detail"], response.text
+
+    # 出力の形の誤りなど, 1 件の形でない誤りには案内を添えない
+    response = client.post("/api/bundles/create", json={
+        "name": "form", "spec": paths["spec"],
+        "weights": paths["weights"],
+        "inputs": {"x": {"source": "state"}, "t": {"source": "time"}},
+        "form": "class", "output_options": {"shape": [16]},
+        "procedure": {"name": "ddim", "steps": 5, "seed": 3},
+    })
+    assert response.status_code == 400
+    assert "1 件の形" not in response.json()["detail"], response.text
+
 
 def test_procedure_options(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
@@ -339,6 +361,19 @@ def test_procedure_options(
     assert option_names(anything) is None
     assert option_names(max) is None
 
+    # 既定値は有限の数, 真偽値, 文字だけ (inf, NaN, None は除く)
+    def limits(
+        model: Any, state: Any, steps: int, generator: Any,
+        low: float = float("-inf"), rate: float = float("nan"),
+        mode: str = "fast", flag: bool = True, size: Any = None,
+        step: float = 0.5,
+    ) -> Any:
+        return state
+
+    assert option_defaults(limits) == {
+        "mode": "fast", "flag": True, "step": 0.5
+    }
+
     # 引数を読めない手順があっても /api/info は返す
     ddim = PROCEDURES["ddim"]
     broken = dataclasses.replace(ddim, name="broken", function=max)
@@ -350,6 +385,11 @@ def test_procedure_options(
     assert listed["ddim"]["options"] == [
         "train_steps", "beta_start", "beta_end", "eta"
     ]
+    assert listed["ddim"]["defaults"] == {
+        "train_steps": 1000, "beta_start": 1e-4, "beta_end": 0.02,
+        "eta": 0.0,
+    }
+    assert listed["broken"]["defaults"] == {}
 
 
 def test_text_output_rows(tmp_path: Path, client: TestClient) -> None:
