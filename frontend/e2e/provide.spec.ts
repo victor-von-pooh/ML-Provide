@@ -601,6 +601,9 @@ test('拡散のモデルの実験から, データセットを使わずに雑音
   await expect(page.getByRole('heading', { name: '拡散の生成' })).toBeVisible({ timeout: 30_000 })
   await expect(page.getByText(/雑音だけ \(データセットなし/)).toBeVisible()
   await expect(page.getByText(/t ← 手順の時刻, x ← 手順の中身/)).toBeVisible()
+  // 手順の設定は読める文で, 雑音だけの一式には問題の設定の欄を出さない
+  await expect(page.getByText('(設定: eta 0)')).toBeVisible()
+  await expect(page.getByRole('heading', { name: /^問題の設定/ })).toHaveCount(0)
   const id = new URL(page.url()).pathname.split('/').pop() ?? ''
   try {
     await expect(page.getByLabel(/^推論するデータ/)).toHaveCount(0)

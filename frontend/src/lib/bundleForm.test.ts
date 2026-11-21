@@ -122,6 +122,13 @@ describe('buildProcedure', () => {
     expect(buildProcedure(form, ddim).problems).toHaveLength(2)
   })
 
+  it('回数は上限まで (ちょうど上限は通る)', () => {
+    const at = (steps: string) =>
+      buildProcedure({ ...EMPTY_PROCEDURE, name: 'ddim', steps }, ddim, 1000).problems
+    expect(at('1000')).toEqual([])
+    expect(at('1001')).toEqual([`手順の回数は ${(1000).toLocaleString()} 回までです`])
+  })
+
   it('何でも受け取る自作の手順は 名前=値 の行', () => {
     const custom = { ...ddim, name: 'lab', builtin: false, options: null }
     const { procedure, problems } = buildProcedure(

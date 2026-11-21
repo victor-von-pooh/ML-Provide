@@ -13,6 +13,7 @@ import {
   buildProcedure,
   EMPTY_OUTPUT,
   EMPTY_PROCEDURE,
+  MAX_PROCEDURE_STEPS,
   newInputRow,
   type InputRow,
   type OutputForm,
@@ -144,7 +145,8 @@ export function CreateBundleDialog({
   const [seed, setSeed] = useState('')
   // 列のデータセットと雑音だけの一式の欄 (ファイルの組のデータセットは 1 件の扱いの欄だけ)
   const built = buildInputs(inputRows, noData, !!procedureForm.name)
-  const builtProcedure = buildProcedure(procedureForm, procedureEntry)
+  const maxSteps = info.data?.max_procedure_steps ?? MAX_PROCEDURE_STEPS
+  const builtProcedure = buildProcedure(procedureForm, procedureEntry, maxSteps)
   const builtOutput = buildOutputOptions(form, outputFields, procedureEntry?.start === 'noise')
   const chooseNoData = (checked: boolean) => {
     setNoData(checked)
@@ -433,6 +435,7 @@ export function CreateBundleDialog({
                   onChange={setProcedureForm}
                   procedures={procedures}
                   noData={noData}
+                  maxSteps={maxSteps}
                 />
               )}
             </AutoDetails>

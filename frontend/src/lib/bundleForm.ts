@@ -59,6 +59,9 @@ export const EMPTY_OUTPUT: OutputForm = { quantiles: '', classes: '', shape: '' 
 
 let lastRowId = 0
 
+/** 手順の回数の上限 (GET /api/info の max_procedure_steps を読む前の値) */
+export const MAX_PROCEDURE_STEPS = 1000
+
 /** 画面で扱える種の範囲を超えたときの文 (JavaScript の数で正確に送れる整数まで) */
 export const SEED_RANGE_PROBLEM = `種が範囲を超えています (-${Number.MAX_SAFE_INTEGER.toLocaleString()} から ${Number.MAX_SAFE_INTEGER.toLocaleString()} の整数にしてください)`
 
@@ -145,11 +148,14 @@ export function buildInputs(
 export function buildProcedure(
   form: ProcedureForm,
   entry: ProcedureEntry | undefined,
+  maxSteps: number = MAX_PROCEDURE_STEPS,
 ): { procedure: Procedure | null; problems: string[] } {
   const problems: string[] = []
   if (!form.name) return { procedure: null, problems }
   if (!isIntegerText(form.steps) || Number(form.steps) < 1)
     problems.push('手順の回数は 1 以上の整数で書いてください')
+  else if (Number(form.steps) > maxSteps)
+    problems.push(`手順の回数は ${maxSteps.toLocaleString()} 回までです`)
   if (form.seed.trim() && !isIntegerText(form.seed))
     problems.push('手順の乱数の種は整数で書いてください')
   const seed = form.seed.trim() ? Number(form.seed) : 0
