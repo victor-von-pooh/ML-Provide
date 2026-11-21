@@ -3,11 +3,14 @@ import io
 from pathlib import Path
 from typing import Any
 
+import ml_inference
 import numpy as np
+import pandas as pd
 import pytest
 import torch
 import yaml
 from fastapi.testclient import TestClient
+from ml_eda import export_dataset, load_data
 from ml_inference import PROCEDURES
 from ml_modelcontrol import build_model, load_example
 from test_bundle_v3 import head_spec, make_v3, register, write_unlabeled
@@ -347,3 +350,77 @@ def test_procedure_options(
     assert listed["ddim"]["options"] == [
         "train_steps", "beta_start", "beta_end", "eta"
     ]
+
+
+def test_text_output_rows(tmp_path: Path, client: TestClient) -> None:
+    """
+    文を出す一式の結果の文と番号を, 数に見えても文字で読み, 予測した行の
+    空の文を空の文字で返すことを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    client: TestClient
+        クライアント
+
+    Returns
+    ----------
+    None
+    """
+    # 文字の語彙で長さ 4 の並びにする文のデータセット
+    texts = ["12", "34", "5.5", "NA"] * 5
+    source = tmp_path / "texts.csv"
+    pd.DataFrame({"text": texts, "label": ["a", "b"] * 10}).to_csv(
+        source, index=False
+    )
+    recipe = {
+        "format_version": 1, "target": "label", "task": "classification",
+        "steps": [],
+        "item_steps": [{"op": "vocabulary", "unit": "char", "length": 4}],
+        "split": {"method": "random", "valid": 0.2, "test": 0.0, "seed": 0},
+    }
+    dataset = tmp_path / "dataset"
+    export_dataset(load_data(source, text_column="text"), recipe, dataset)
+
+    # 番号ごとの埋め込みから次の番号の logits で, 番号を 2 つ足す
+    size = 12
+    spec = {
+        "format_version": 1,
+        "inputs": {"ids": {"shape": [2, 4], "dtype": "int64"}},
+        "nodes": {
+            "embed": {"unit": "nn.Embedding", "inputs": "ids",
+                      "params": {"num_embeddings": size,
+                                 "embedding_dim": 4}},
+            "head": {"unit": "nn.Linear", "inputs": "embed",
+                     "params": {"in_features": 4, "out_features": size}},
+        },
+        "outputs": {"logits": "head"},
+    }
+    weights = tmp_path / "lm.pt"
+    torch.save(build_model(spec, seed=0).state_dict(), weights)
+    path = tmp_path / "lm"
+    ml_inference.make_bundle(
+        path, spec, dataset, weights, form="text", role="generate",
+        inputs={"ids": {"source": "state"}},
+        procedure={"name": "greedy", "steps": 2, "seed": 0}
+    )
+    bundle = register(client, path)
+    response = client.post(f"/api/bundles/{bundle['id']}/predict",
+                           json={"texts": ["12", "NA", "5"]})
+    assert response.status_code == 201, response.text
+    result = response.json()
+    assert "tokens" in result["columns"]
+
+    # 数に見える文と NA の文, 予測した行の空の文と番号は文字のまま
+    place = tmp_path / "home" / "results" / result["id"]
+    table = pd.read_csv(place / "predictions.csv", encoding="utf-8-sig",
+                        dtype=str, keep_default_na=False)
+    table.loc[0, ["prediction", "tokens"]] = ["123", "4"]
+    table.loc[1, "prediction"] = "NA"
+    table.loc[2, ["prediction", "tokens"]] = ["", ""]
+    table.to_csv(place / "predictions.csv", index=False, encoding="utf-8-sig")
+    rows = client.get(f"/api/results/{result['id']}/rows").json()["rows"]
+    assert [row["prediction"] for row in rows] == ["123", "NA", ""]
+    assert rows[0]["tokens"] == "4" and rows[2]["tokens"] == ""
+    assert [row["status"] for row in rows] == ["ok"] * 3
