@@ -56,6 +56,14 @@ MAX_ROWS = 500
 # 名前に使える長さ
 MAX_NAME = 80
 
+# 雑音だけの一式で一度に作る件数の上限
+# (始まりの雑音を全ての件の分を一度に作り, 件ごとに配列を書くため)
+MAX_SAMPLES = 1000
+
+# 雑音だけの一式で一度に作る値 (件数 × 1 件の形の大きさ) の上限
+# (float32 で 400 MB. 始まりの雑音と出力を記憶に持つため)
+MAX_SAMPLE_VALUES = 100_000_000
+
 # 推論の誤りとして画面に返す例外
 USER_ERRORS = (
     ValueError, FileNotFoundError, KeyError, TypeError, yaml.YAMLError
@@ -70,7 +78,7 @@ class BundleRegister(BaseModel):
 class BundleCreate(BaseModel):
     name: str = Field(min_length=1, max_length=MAX_NAME)
     spec: str
-    dataset: str
+    dataset: Optional[str] = None
     weights: str
     inputs: Optional[dict[str, Any]] = None
     output: Optional[str] = None
@@ -88,6 +96,8 @@ class BundleCreate(BaseModel):
 class PredictRequest(BaseModel):
     source: Optional[str] = None
     texts: Optional[list[str]] = None
+    count: Optional[int] = None
+    seed: Optional[int] = None
     options: Optional[dict[str, Any]] = None
     rules: Optional[dict[str, Any]] = None
     forecast: bool = False
@@ -271,7 +281,8 @@ def get_info(request: Request) -> dict[str, Any]:
         version, rule_keys, result_version (読める結果の形の版まで),
         procedures (繰り返しの手順の登録簿), procedure_modules (起動の
         設定で読んだ手順のモジュール), unit_modules (起動の設定で読んだ
-        部品のモジュールと登録した部品の名前)
+        部品のモジュールと登録した部品の名前), max_samples (雑音だけの
+        一式で一度に作る件数の上限)
     """
     info = {
         "version": ml_inference.__version__,
@@ -284,6 +295,7 @@ def get_info(request: Request) -> dict[str, Any]:
         "unit_modules": list(
             getattr(request.app.state, "unit_modules", [])
         ),
+        "max_samples": MAX_SAMPLES,
     }
 
     return info
@@ -414,8 +426,8 @@ def create_bundle(request: Request, body: BundleCreate) -> dict[str, Any]:
     request: Request
         リクエスト
     body: BundleCreate
-        名前, 定義, データセット, 重みか実験, つなぎ方, 結論の既定値, 版 2
-        のデータセットの 1 件の扱い (items)
+        名前, 定義, データセット (省くか空なら雑音だけの一式), 重みか実験,
+        つなぎ方, 結論の既定値, 版 2 のデータセットの 1 件の扱い (items)
 
     Returns
     ----------
@@ -428,12 +440,15 @@ def create_bundle(request: Request, body: BundleCreate) -> dict[str, Any]:
         一式を作れない場合は 400 (理由付き)
     """
     # 見本を推論できることまで ML-Inference が確かめる
+    # (データセットを省くと雑音だけの一式. 要る欄は ML-Inference が確かめる)
     store = get_store(request)
     bundle_id, place = store.new_bundle_dir()
+    dataset = (body.dataset or "").strip()
     try:
         ml_inference.make_bundle(
             place, Path(body.spec).expanduser(),
-            Path(body.dataset).expanduser(), Path(body.weights).expanduser(),
+            Path(dataset).expanduser() if dataset else None,
+            Path(body.weights).expanduser(),
             inputs=body.inputs, output=body.output or None,
             kind=body.kind or None, target_scale=body.target_scale,
             conclusion=body.conclusion, name=body.name,
@@ -638,6 +653,62 @@ def text_frame(bundle: ml_inference.Bundle, texts: list[str]) -> pd.DataFrame:
     return frame
 
 
+def noise_source(
+    bundle: ml_inference.Bundle, body: PredictRequest
+) -> dict[str, int]:
+    """
+    雑音だけの一式に渡す件数と種を確かめる関数
+
+    Parameters
+    ----------
+    bundle: ml_inference.Bundle
+        一式
+    body: PredictRequest
+        件数と種 (種は省くと一式の手順の種)
+
+    Returns
+    ----------
+    source: dict[str, int]
+        ML-Inference の predict に渡す件数と種の辞書
+
+    Raises
+    ----------
+    HTTPException
+        雑音だけの一式でない場合, ファイルか文も渡した場合, 件数が無い
+        場合と上限を超える場合は 400
+    """
+    # 件数と種は雑音だけの一式だけ (データの代わりに受け取るもの)
+    if not bundle.from_noise:
+        raise HTTPException(
+            400, "件数と種で推論できるのは, データセットを持たない"
+            "雑音だけの一式だけです"
+        )
+    if body.source or body.texts is not None:
+        raise HTTPException(
+            400, "雑音だけの一式はファイルや文を読みません. "
+            "件数と種を指定してください"
+        )
+    if body.count is None:
+        raise HTTPException(400, "作る件数を指定してください")
+
+    # 件数の上限 (始まりの雑音を全ての件の分を一度に作るため)
+    if body.count > MAX_SAMPLES:
+        raise HTTPException(400, f"件数は {MAX_SAMPLES} 件までです")
+    shape = bundle.output_info.get("shape") or []
+    size = int(np.prod([int(v) for v in shape])) if shape else 1
+    if body.count * size > MAX_SAMPLE_VALUES:
+        most = max(1, MAX_SAMPLE_VALUES // size)
+        raise HTTPException(
+            400, f"1 件の形 {list(shape)} では, 記憶に収まるように"
+            f"件数は {most} 件までです"
+        )
+    source = {"count": body.count}
+    if body.seed is not None:
+        source["seed"] = body.seed
+
+    return source
+
+
 @router.post("/bundles/{bundle_id}/predict", status_code=201)
 def predict(
     request: Request, bundle_id: str, body: PredictRequest
@@ -652,7 +723,8 @@ def predict(
     bundle_id: str
         一式の id
     body: PredictRequest
-        ファイルの場所か文の並び, 読み込みの設定, 結論の決め方
+        ファイルの場所か文の並び (雑音だけの一式は件数と種), 読み込みの
+        設定, 結論の決め方
 
     Returns
     ----------
@@ -677,8 +749,12 @@ def predict(
         if given or decision or body.forecast:
             raise HTTPException(400, column_only(bundle.form))
         rules, decision = None, None
-    if body.texts is not None:
-        source: Any = text_frame(bundle, body.texts)
+    noise = body.count is not None or body.seed is not None
+    if bundle.from_noise or noise:
+        source: Any = noise_source(bundle, body)
+        described = None
+    elif body.texts is not None:
+        source = text_frame(bundle, body.texts)
         described = f"書いた文 {len(source)} 件"
     elif body.source:
         source = Path(body.source).expanduser().resolve()
@@ -699,8 +775,9 @@ def predict(
             raise user_error(error) from error
         warned = list(bundle.cache.get("pretrained_warnings") or [])
         remember_warnings(str(entry["path"]), bundle)
+    # 雑音だけの一式の入力の文 (「件数 n, 種 s」) は ML-Inference のまま
     result.update(
-        source=described, bundle_id=bundle_id, task=bundle.task,
+        source=described or result.get("source"), bundle_id=bundle_id, task=bundle.task,
         classes=bundle.classes, kind=bundle.kind, forecast=body.forecast,
         has_target=bool(
             str(bundle.dataset.info.get("target")) in result["frame"].columns

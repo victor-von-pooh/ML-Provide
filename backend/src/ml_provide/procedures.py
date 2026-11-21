@@ -12,6 +12,7 @@ from typing import Any, Optional
 
 import yaml
 from ml_inference import PROCEDURES
+from ml_inference.procedures import option_names
 
 # 自作の手順を登録するモジュールを書く環境変数 (, で区切る)
 PROCEDURES_ENV = "ML_PROVIDE_PROCEDURES"
@@ -118,14 +119,19 @@ def registered() -> list[dict[str, Any]]:
     Returns
     ----------
     procedures: list[dict[str, Any]]
-        name, builtin, description (名前の順)
+        name, builtin, description, start (始まり. noise は雑音, given は
+        渡した番号の並び), time (時刻を渡すか), options (設定の名前. 何でも
+        受け取る自作の手順は None) (名前の順)
     """
-    # 画面で一式の手順と見比べるため
+    # 画面で一式の手順と見比べ, 一式を作る欄で選ぶため
     procedures = [
         {
             "name": name,
             "builtin": bool(item.builtin),
             "description": item.description,
+            "start": item.start,
+            "time": bool(item.time),
+            "options": option_names(name),
         }
         for name, item in sorted(PROCEDURES.items())
     ]

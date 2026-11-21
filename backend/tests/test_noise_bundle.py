@@ -1,0 +1,257 @@
+import io
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pytest
+import torch
+import yaml
+from fastapi.testclient import TestClient
+from ml_modelcontrol import build_model, load_example
+from test_bundle_v3 import head_spec, make_v3, register, write_unlabeled
+
+import ml_provide.api as api_module
+from ml_provide.app import create_app
+
+# テストで使うトークン
+TOKEN = "test-token"
+
+
+@pytest.fixture
+def client(tmp_path: Path) -> TestClient:
+    """
+    一時ディレクトリを置き場にしたアプリのクライアントを作る関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+
+    Returns
+    ----------
+    client: TestClient
+        トークン付きのクライアント
+    """
+    app = create_app(
+        data_dir=tmp_path / "home", token=TOKEN, allowed_hosts=["testserver"],
+        procedures=[]
+    )
+    client = TestClient(app, headers={"x-provide-token": TOKEN})
+
+    return client
+
+
+def diffusion_files(root: Path) -> dict[str, str]:
+    """
+    拡散のモデルの雑音の予測器の定義と重みを書く関数
+
+    Parameters
+    ----------
+    root: Path
+        書くディレクトリ
+
+    Returns
+    ----------
+    paths: dict[str, str]
+        spec (定義のファイル) と weights (重みのファイル)
+    """
+    # ML-ModelControl の見本の定義と, 乱数の初期値のままの重み
+    root.mkdir(parents=True, exist_ok=True)
+    spec = load_example("diffusion_denoiser")
+    spec_file = root / "denoiser.yaml"
+    spec_file.write_text(yaml.safe_dump(spec), encoding="utf-8")
+    weights = root / "denoiser.pt"
+    torch.save(build_model(spec, seed=0).state_dict(), weights)
+    paths = {"spec": str(spec_file), "weights": str(weights)}
+
+    return paths
+
+
+def create_noise(
+    client: TestClient, paths: dict[str, str], **extra: Any
+) -> dict[str, Any]:
+    """
+    画面と同じ API で雑音だけの一式を作る関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    paths: dict[str, str]
+        diffusion_files の場所
+    **extra: Any
+        要求に重ねる欄
+
+    Returns
+    ----------
+    bundle: dict[str, Any]
+        登録と説明
+    """
+    # 雑音の中身 x と時刻 t, DDIM の 5 回, 1 件の形は 16 の値
+    body = {
+        "name": "diffusion", "spec": paths["spec"],
+        "weights": paths["weights"],
+        "inputs": {"x": {"source": "state"}, "t": {"source": "time"}},
+        "form": "vector", "output_options": {"shape": [16]},
+        "procedure": {"name": "ddim", "steps": 5, "seed": 3},
+        **extra,
+    }
+    response = client.post("/api/bundles/create", json=body)
+    assert response.status_code == 201, response.text
+    bundle: dict[str, Any] = response.json()
+
+    return bundle
+
+
+def outputs(client: TestClient, result_id: str, count: int) -> np.ndarray:
+    """
+    結果の件ごとの配列を並べる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    result_id: str
+        結果の id
+    count: int
+        件数
+
+    Returns
+    ----------
+    arrays: np.ndarray
+        (件数, 16) の配列
+    """
+    # 行の位置の .npy を順に
+    arrays = np.stack([
+        np.load(io.BytesIO(client.get(
+            f"/api/results/{result_id}/artifacts/{row}/file"
+        ).content))
+        for row in range(count)
+    ])
+
+    return arrays
+
+
+def test_noise_bundle(tmp_path: Path, client: TestClient) -> None:
+    """
+    データセットを省いて雑音だけの一式を作り, 件数と種で推論できることを
+    確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    client: TestClient
+        クライアント
+
+    Returns
+    ----------
+    None
+    """
+    # データセットを省くか空にすると雑音だけの一式 (版 5)
+    paths = diffusion_files(tmp_path / "model")
+    bundle = create_noise(client, paths)
+    assert create_noise(client, paths, dataset="")["ok"] is True
+    description = bundle["description"]
+    assert description["kind"] == "noise"
+    assert description["format_version"] == 5
+    assert description["role"] == "generate"
+    assert description["output"] == {"form": "vector", "shape": [16]}
+    assert description["target"] is None
+    assert description["procedure"]["name"] == "ddim"
+
+    # 件数と種で推論し, 件ごとの配列を持つ (結論は件数だけ)
+    url = f"/api/bundles/{bundle['id']}/predict"
+    response = client.post(url, json={"count": 4, "seed": 7})
+    assert response.status_code == 201, response.text
+    result = response.json()
+    assert result["source"] == "件数 4, 種 7"
+    assert result["kind"] == "noise"
+    assert result["column_output"] is False
+    assert result["summary"] == {"rows": 4, "predicted": 4, "skipped": 0}
+    assert result["artifacts"]["form"] == "vector"
+    rows = client.get(f"/api/results/{result['id']}/rows").json()["rows"]
+    assert [row["sample"] for row in rows] == [0, 1, 2, 3]
+    assert {row["seed"] for row in rows} == {7}
+    first = outputs(client, result["id"], 4)
+    assert first.shape == (4, 16)
+
+    # 同じ種なら同じ出力, 種を省くと一式の手順の種
+    again = client.post(url, json={"count": 4, "seed": 7}).json()
+    assert np.array_equal(outputs(client, again["id"], 4), first)
+    default = client.post(url, json={"count": 2}).json()
+    assert default["source"] == "件数 2, 種 3"
+
+    # 件数が無い, 1 より小さい, 上限を超える, ファイルや文を渡すと断る
+    for body in ({}, {"seed": 1}, {"count": 0},
+                 {"count": api_module.MAX_SAMPLES + 1},
+                 {"count": 2, "source": str(tmp_path)},
+                 {"count": 2, "texts": ["a"]},
+                 {"source": str(tmp_path)}):
+        response = client.post(url, json=body)
+        assert response.status_code == 400, body
+    detail = client.post(url, json={"count": 0}).json()["detail"]
+    assert "1 以上" in detail
+    big = client.post(url, json={"count": api_module.MAX_SAMPLES + 1})
+    assert str(api_module.MAX_SAMPLES) in big.json()["detail"]
+
+    # 記憶の上限は 1 件の形の大きさから件数を決める
+    info = client.get("/api/info").json()
+    assert info["max_samples"] == api_module.MAX_SAMPLES
+    ddim = next(p for p in info["procedures"] if p["name"] == "ddim")
+    assert ddim["start"] == "noise" and ddim["time"] is True
+    assert "eta" in ddim["options"]
+
+
+def test_noise_limits(
+    tmp_path: Path, client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    件数と種を雑音だけの一式にだけ受け付け, 値の上限で件数を絞ることを
+    確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    client: TestClient
+        クライアント
+    monkeypatch: pytest.MonkeyPatch
+        上限を小さくする
+
+    Returns
+    ----------
+    None
+    """
+    # 1 件 16 の値で 40 個までなら 2 件まで
+    paths = diffusion_files(tmp_path / "model")
+    bundle = create_noise(client, paths)
+    monkeypatch.setattr(api_module, "MAX_SAMPLE_VALUES", 40)
+    url = f"/api/bundles/{bundle['id']}/predict"
+    response = client.post(url, json={"count": 3})
+    assert response.status_code == 400
+    assert "2 件まで" in response.json()["detail"]
+    assert client.post(url, json={"count": 2}).status_code == 201
+
+    # データセットのある一式には件数と種を渡せない
+    data = write_unlabeled(tmp_path / "data")
+    path = make_v3(
+        tmp_path, data, "embed", head_spec(5), form="vector", role="group"
+    )
+    other = register(client, path)
+    url = f"/api/bundles/{other['id']}/predict"
+    for body in ({"count": 2}, {"seed": 1, "source": str(data["csv"])}):
+        response = client.post(url, json=body)
+        assert response.status_code == 400
+        assert "雑音だけの一式" in response.json()["detail"]
+
+    # 手順が雑音から始まらないか, 1 件の形が無い一式は作らない
+    response = client.post("/api/bundles/create", json={
+        "name": "broken", "spec": paths["spec"],
+        "weights": paths["weights"],
+        "inputs": {"x": {"source": "state"}, "t": {"source": "time"}},
+        "form": "vector",
+        "procedure": {"name": "ddim", "steps": 5, "seed": 3},
+    })
+    assert response.status_code == 400
+    assert "shape" in response.json()["detail"]
