@@ -15,6 +15,7 @@ import {
   FORM_LABELS,
   isColumnOutput,
   METRIC_LABELS,
+  optionsText,
   PREPARE_LABELS,
   sourceLabel,
 } from '../../lib/outputs'
@@ -98,7 +99,7 @@ function DescriptionView({ description }: { description: Description }) {
             <span className="font-mono text-xs">
               {description.reading.loader ?? '自動'}{' '}
               {Object.keys(description.reading.options).length > 0 &&
-                JSON.stringify(description.reading.options)}
+                `(${optionsText(description.reading.options)})`}
             </span>
           </Row>
           <Row label="前処理">
@@ -481,9 +482,12 @@ export function BundlePage() {
   const client = useQueryClient()
   const bundle = useQuery({ queryKey: ['bundles', id], queryFn: () => api.bundle(id) })
   const results = useQuery({ queryKey: ['results', id], queryFn: () => api.results(id) })
+  // 雑音だけの一式はデータも正解も無く, 問題の設定の結論を扱わないので問題の設定を読まない
+  const noise = bundle.data?.description?.kind === 'noise'
   const problem = useQuery({
     queryKey: ['bundle-problem', id],
     queryFn: () => api.bundleProblem(id),
+    enabled: !!bundle.data && !noise,
   })
   const remove = useMutation({
     mutationFn: () => api.deleteBundle(id),
@@ -544,7 +548,7 @@ export function BundlePage() {
               target={data.description.target_info}
               warnings={data.description.pretrained_warnings}
             />
-            {problem.isPending && (
+            {!noise && problem.isPending && (
               <p role="status" className="text-xs text-ink-3">
                 問題の設定を読んでいます…
               </p>
@@ -563,13 +567,13 @@ export function BundlePage() {
                 </p>
               </ErrorBox>
             )}
-            {problem.data && <ProblemCard bundleId={data.id} state={problem.data} />}
+            {!noise && problem.data && <ProblemCard bundleId={data.id} state={problem.data} />}
             {/* 問題の設定を読み終えてから, その値を既定にして出す */}
-            {!problem.isPending && (
+            {(noise || !problem.isPending) && (
               <PredictCard
                 bundle={data}
                 description={data.description}
-                linked={problem.data?.linked ?? null}
+                linked={noise ? null : (problem.data?.linked ?? null)}
               />
             )}
             <Card title="一式の説明">

@@ -145,6 +145,17 @@ export function sourceLabel(inputKind: string | null | undefined): string {
   return '推論するデータ (学習のときと同じ列のファイルか, 画像などのディレクトリ)'
 }
 
+/** 設定の辞書を「名前 値」の並びの文にする (eta 0, train_steps 1000. 入れ子の値だけ JSON) */
+export function optionsText(options: Record<string, unknown>): string {
+  return Object.entries(options)
+    .map(([key, value]) => {
+      const text =
+        value !== null && typeof value === 'object' ? JSON.stringify(value) : String(value)
+      return `${key} ${text}`
+    })
+    .join(', ')
+}
+
 /** 中身の手順の並びを, 名前と引数の文にする (resize (width 64, height 64), grayscale) */
 export function stepsText(steps: ItemStep[]): string {
   return steps
