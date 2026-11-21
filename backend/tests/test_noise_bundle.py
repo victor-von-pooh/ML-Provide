@@ -190,6 +190,14 @@ def test_noise_bundle(tmp_path: Path, client: TestClient) -> None:
                  {"source": str(tmp_path)}):
         response = client.post(url, json=body)
         assert response.status_code == 400, body
+    # 真偽値, 文字, 小数の件数と種は整数にせずに断る
+    for body in ({"count": True}, {"count": "3"}, {"count": 3.0},
+                 {"count": 2, "seed": True}, {"count": 2, "seed": "1"},
+                 {"count": 2, "seed": 1.0}):
+        response = client.post(url, json=body)
+        assert response.status_code == 422, body
+    assert client.post(url, json={"count": 2, "seed": 2 ** 63}).status_code \
+        == 201
     detail = client.post(url, json={"count": 0}).json()["detail"]
     assert "1 以上" in detail
     big = client.post(url, json={"count": api_module.MAX_SAMPLES + 1})

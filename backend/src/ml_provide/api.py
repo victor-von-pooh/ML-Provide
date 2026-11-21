@@ -20,7 +20,7 @@ from ml_inference.conclude import (
     sentences_of,
 )
 from ml_inference.predict import target_of
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt
 
 from ml_provide.cache import (
     describe,
@@ -96,8 +96,9 @@ class BundleCreate(BaseModel):
 class PredictRequest(BaseModel):
     source: Optional[str] = None
     texts: Optional[list[str]] = None
-    count: Optional[int] = None
-    seed: Optional[int] = None
+    # 件数と種は整数だけ (真偽値, 文字, 小数を整数にしないため)
+    count: Optional[StrictInt] = None
+    seed: Optional[StrictInt] = None
     options: Optional[dict[str, Any]] = None
     rules: Optional[dict[str, Any]] = None
     forecast: bool = False
