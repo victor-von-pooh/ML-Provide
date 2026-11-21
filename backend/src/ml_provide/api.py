@@ -298,7 +298,8 @@ def get_info(request: Request) -> dict[str, Any]:
         procedures (繰り返しの手順の登録簿), procedure_modules (起動の
         設定で読んだ手順のモジュール), unit_modules (起動の設定で読んだ
         部品のモジュールと登録した部品の名前), max_samples (雑音だけの
-        一式で一度に作る件数の上限)
+        一式で一度に作る件数の上限), max_procedure_steps (画面で作る一式の
+        手順の回数の上限)
     """
     info = {
         "version": ml_inference.__version__,
@@ -312,6 +313,7 @@ def get_info(request: Request) -> dict[str, Any]:
             getattr(request.app.state, "unit_modules", [])
         ),
         "max_samples": MAX_SAMPLES,
+        "max_procedure_steps": MAX_PROCEDURE_STEPS,
     }
 
     return info
@@ -474,7 +476,7 @@ def create_bundle(request: Request, body: BundleCreate) -> dict[str, Any]:
     steps = (body.procedure or {}).get("steps")
     if isinstance(steps, int) and steps > MAX_PROCEDURE_STEPS:
         raise HTTPException(
-            400, f"手順の回数は {MAX_PROCEDURE_STEPS} 回までです"
+            400, f"手順の回数は {MAX_PROCEDURE_STEPS:,} 回までです"
         )
     store = get_store(request)
     bundle_id, place = store.new_bundle_dir()
