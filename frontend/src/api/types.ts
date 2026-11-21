@@ -401,6 +401,8 @@ export interface AppInfo {
   unit_modules: unknown[]
   /** 雑音だけの一式で一度に作る件数の上限 */
   max_samples: number
+  /** 画面で作る一式の手順の回数の上限 */
+  max_procedure_steps: number
 }
 
 /** モデルの入力ごとの出どころ (features, items, state, time) と先頭に足す番号 */
