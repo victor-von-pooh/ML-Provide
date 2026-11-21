@@ -111,7 +111,8 @@ export function buildInputs(
   problems: string[]
 } {
   const problems: string[] = []
-  const inputs: Record<string, InputSource> = {}
+  // 名前は Map で数える (constructor, __proto__ などの名前を Object の性質と取り違えないため)
+  const inputs = new Map<string, InputSource>()
   for (const row of rows) {
     const name = row.name.trim()
     // 番号を足せない出どころと雑音だけの一式では, 欄に残った番号を送らない
@@ -123,7 +124,7 @@ export function buildInputs(
       if (!problems.includes(problem)) problems.push(problem)
       continue
     }
-    if (name in inputs) problems.push(`入力の名前 ${name} が重なっています`)
+    if (inputs.has(name)) problems.push(`入力の名前 ${name} が重なっています`)
     if (noData && !NOISE_SOURCES.includes(row.source))
       problems.push(
         `雑音だけの一式の入力 ${name} の出どころは, 手順の中身か手順の時刻にしてください`,
@@ -134,12 +135,13 @@ export function buildInputs(
       )
     if (ids.some((value) => !isIntegerText(value)))
       problems.push(`入力 ${name} の足した番号は整数で書いてください`)
-    inputs[name] = {
+    inputs.set(name, {
       source: row.source,
       ...(ids.length > 0 ? { prepend: ids.map(Number) } : {}),
-    }
+    })
   }
-  return { inputs: Object.keys(inputs).length > 0 ? inputs : null, problems }
+  // fromEntries は __proto__ も自分の性質として持つ
+  return { inputs: inputs.size > 0 ? Object.fromEntries(inputs) : null, problems }
 }
 
 /** 手順の欄から procedure を作る (手順を選ばなければ null) */

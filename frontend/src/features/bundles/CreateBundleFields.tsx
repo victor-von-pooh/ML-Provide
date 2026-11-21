@@ -1,4 +1,5 @@
 import { Plus, X } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
 
 import type { ProcedureEntry } from '../../api/types'
 import {
@@ -344,5 +345,40 @@ export function InputFields({
         </button>
       </div>
     </div>
+  )
+}
+
+/**
+ * 畳める欄. 開き閉じは利用者の操作を写して持ち, 自動では閉じない.
+ * wantOpen が偽から真になったとき (雑音だけを選んだ) と, 誤りの数が 0 から 1 以上に
+ * なったときだけ自動で開く (打っている途中に誤りが消えても, 開いた欄を閉じないため)
+ */
+export function AutoDetails({
+  summary,
+  wantOpen,
+  problems,
+  children,
+}: {
+  summary: string
+  wantOpen: boolean
+  problems: number
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(wantOpen || problems > 0)
+  const failing = problems > 0
+  const [seen, setSeen] = useState({ wantOpen, failing })
+  if (seen.wantOpen !== wantOpen || seen.failing !== failing) {
+    setSeen({ wantOpen, failing })
+    if ((wantOpen && !seen.wantOpen) || (failing && !seen.failing)) setOpen(true)
+  }
+  return (
+    <details
+      className="rounded-lg border border-line p-3"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary className="cursor-pointer text-xs font-semibold text-ink-2">{summary}</summary>
+      <div className="mt-3">{children}</div>
+    </details>
   )
 }

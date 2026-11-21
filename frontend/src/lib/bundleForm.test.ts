@@ -57,6 +57,19 @@ describe('buildInputs', () => {
       ).problems,
     ).toHaveLength(1)
     expect(buildInputs([]).inputs).toBeNull()
+    // Object の性質の名前も入力の名前として扱う
+    const named = buildInputs(
+      ['constructor', 'toString', '__proto__'].map((name, index) => ({
+        id: 100 + index,
+        name,
+        source: 'features',
+        prepend: '',
+      })),
+    )
+    expect(named.problems).toEqual([])
+    expect(Object.keys(named.inputs ?? {})).toEqual(['constructor', 'toString', '__proto__'])
+    // __proto__ も送る本体の自分の性質に残る (JSON にして確かめる)
+    expect(JSON.parse(JSON.stringify(named.inputs)).__proto__).toEqual({ source: 'features' })
   })
 
   it('番号を足せない出どころの番号は送らず, 雑音だけの一式は手順の中身と時刻だけ', () => {

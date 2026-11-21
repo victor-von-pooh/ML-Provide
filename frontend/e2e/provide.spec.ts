@@ -585,7 +585,9 @@ test('拡散のモデルの実験から, データセットを使わずに雑音
   await dialog.getByLabel('出力の形 (要る)').selectOption('vector')
   await dialog.getByLabel(/^1 件の形/).fill('16')
   // 入力の名前が空なら送らずに知らせ, 手順の設定は既定値を見せる
-  await expect(dialog.getByText(/^モデルの入力の名前 \(モデルの定義/)).toBeVisible()
+  await expect(
+    dialog.getByText(/^「モデルの入力ごとの出どころ」: モデルの入力の名前 \(モデルの定義/),
+  ).toBeVisible()
   await expect(dialog.getByLabel('train_steps', { exact: true })).toHaveAttribute(
     'placeholder',
     '空なら既定 1000',
@@ -633,6 +635,14 @@ test('雑音だけをやめても手順の中身の入力が残れば, 分かる
   await expect(dialog.getByLabel('入力の名前')).toHaveCount(1)
   await expect(dialog.getByText(/繰り返しの手順を選んだ一式だけで使えます/)).toBeVisible()
   await expect(dialog.getByRole('button', { name: '作る' })).toBeDisabled()
+
+  // 畳んだ欄の誤りは欄の名前を添え, 誤りが出ると欄を開く
+  await dialog.getByLabel('入力の名前').nth(0).fill('toString')
+  await dialog.getByRole('button', { name: '入力を足す' }).click()
+  await dialog.getByLabel('入力の名前').nth(1).fill('toString')
+  await expect(
+    dialog.getByText('「モデルの入力ごとの出どころ」: 入力の名前 toString が重なっています'),
+  ).toBeVisible()
 })
 
 test('骨組みの学習が実験の中に作った版 4 の一式を, 実験の一覧から登録する', async ({ page }) => {
