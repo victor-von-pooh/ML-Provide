@@ -267,6 +267,20 @@ def test_noise_limits(
         assert "大きすぎます" in response.json()["detail"]
     assert sorted(homes.iterdir()) == before
 
+    # データセットのある一式には, 作るときの形の上限を当てない
+    data = write_unlabeled(tmp_path / "shaped")
+    spec_file = tmp_path / "head.yaml"
+    spec_file.write_text(yaml.safe_dump(head_spec(32)), encoding="utf-8")
+    torch.save(build_model(head_spec(32), seed=0).state_dict(),
+               tmp_path / "head.pt")
+    response = client.post("/api/bundles/create", json={
+        "name": "shaped", "spec": str(spec_file),
+        "dataset": str(data["dataset"]), "weights": str(tmp_path / "head.pt"),
+        "form": "vector", "role": "group",
+        "output_options": {"shape": [32]},
+    })
+    assert response.status_code == 201, response.text
+
     # データセットのある一式には件数と種を渡せない
     data = write_unlabeled(tmp_path / "data")
     path = make_v3(

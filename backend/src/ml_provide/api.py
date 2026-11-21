@@ -446,9 +446,11 @@ def create_bundle(request: Request, body: BundleCreate) -> dict[str, Any]:
     """
     # 見本を推論できることまで ML-Inference が確かめる
     # (データセットを省くと雑音だけの一式. 要る欄は ML-Inference が確かめる)
-    # 作るときの確かめも 2 件を作るので, 推論と同じ上限を先に当てる
+    # 雑音だけの一式は作るときの確かめで 2 件を作るので, 推論と同じ上限を
+    # 先に当てる (データセットのある一式の確かめの件数は ML-Inference 次第)
+    dataset = (body.dataset or "").strip()
     shape = (body.output_options or {}).get("shape")
-    if isinstance(shape, list) and shape and all(
+    if not dataset and isinstance(shape, list) and shape and all(
         isinstance(v, int) and not isinstance(v, bool) and v > 0
         for v in shape
     ) and sample_limit(shape) < CHECK_SAMPLES:
@@ -459,7 +461,6 @@ def create_bundle(request: Request, body: BundleCreate) -> dict[str, Any]:
         )
     store = get_store(request)
     bundle_id, place = store.new_bundle_dir()
-    dataset = (body.dataset or "").strip()
     try:
         ml_inference.make_bundle(
             place, Path(body.spec).expanduser(),
