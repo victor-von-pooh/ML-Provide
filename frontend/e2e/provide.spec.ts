@@ -556,6 +556,82 @@ test('版 3 のデータセットは中身の手順を見せ, 大きさの違う
   }
 })
 
+test('拡散のモデルの実験から, データセットを使わずに雑音だけの一式を画面で作り, 件数と種で生成する', async ({
+  page,
+}) => {
+  const root = path.resolve(import.meta.dirname, '.work', 'noise')
+  await page.goto('/')
+  await page.getByRole('button', { name: '学習の結果から作る' }).click()
+  const dialog = page.getByRole('dialog', { name: '学習の結果から一式を作る' })
+  await dialog.getByLabel('名前', { exact: true }).fill('拡散の生成')
+  await dialog.getByLabel('モデルの定義 (YAML か JSON)').fill(path.join(root, 'denoiser.yaml'))
+  // データセットを使わないと, データセットの欄が消え, 手順, 出力の形, 入力の欄が開く
+  // 選んでからやめると, 自動で足した入力の行を残さない
+  const noData = dialog.getByLabel('雑音だけから作る (データセットを使わない)')
+  await noData.check()
+  await expect(dialog.getByLabel('入力の名前')).toHaveCount(2)
+  await noData.uncheck()
+  await expect(dialog.getByLabel('入力の名前')).toHaveCount(0)
+  await noData.check()
+  await expect(dialog.getByLabel(/^データセット \(/)).toHaveCount(0)
+  await dialog.getByLabel(/^実験のディレクトリ/).fill(path.join(root, 'runs', 'diffusion'))
+  await expect(dialog.getByRole('button', { name: '作る' })).toBeDisabled()
+  const procedure = dialog.getByLabel(/^手順 \(登録簿の名前/)
+  // 雑音から始まる手順だけを選べる
+  await expect(procedure.locator('option', { hasText: 'greedy' })).toHaveCount(0)
+  await procedure.selectOption('ddim')
+  await dialog.getByLabel(/^回数/).fill('20')
+  await dialog.getByLabel('eta', { exact: true }).fill('0')
+  await dialog.getByLabel('出力の形 (要る)').selectOption('vector')
+  await dialog.getByLabel(/^1 件の形/).fill('16')
+  // 入力の名前が空なら送らずに知らせ, 手順の設定は既定値を見せる
+  await expect(dialog.getByText(/^モデルの入力の名前 \(モデルの定義/)).toBeVisible()
+  await expect(dialog.getByLabel('train_steps', { exact: true })).toHaveAttribute(
+    'placeholder',
+    '空なら既定 1000',
+  )
+  await dialog.getByLabel('入力の名前').nth(0).fill('x')
+  await dialog.getByLabel('入力の名前').nth(1).fill('t')
+  await expect(dialog.getByLabel('出どころ').nth(1)).toHaveValue('time')
+  await dialog.getByRole('button', { name: '作る' }).click()
+
+  // 一式の画面: 雑音だけ, 手順, 推論は件数と種
+  await expect(page.getByRole('heading', { name: '拡散の生成' })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText(/雑音だけ \(データセットなし/)).toBeVisible()
+  await expect(page.getByText(/t ← 手順の時刻, x ← 手順の中身/)).toBeVisible()
+  const id = new URL(page.url()).pathname.split('/').pop() ?? ''
+  try {
+    await expect(page.getByLabel(/^推論するデータ/)).toHaveCount(0)
+    await page.getByLabel(/^作る件数/).fill('0')
+    await expect(page.getByRole('button', { name: '推論する' })).toBeDisabled()
+    await page.getByLabel(/^作る件数/).fill('5')
+    await page.getByLabel(/^乱数の種/).fill('7')
+    await page.getByRole('button', { name: '推論する' }).click()
+    await expect(page.getByText('5 件のうち 5 件を推論')).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText('件数 5, 種 7')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '1 件の出力 (ベクトル)' })).toBeVisible()
+    await expect(page.getByLabel('最初の値')).toBeVisible()
+  } finally {
+    await page.request.delete(`/api/bundles/${id}`)
+  }
+})
+
+test('雑音だけをやめても手順の中身の入力が残れば, 分かる言葉で止める', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: '学習の結果から作る' }).click()
+  const dialog = page.getByRole('dialog', { name: '学習の結果から一式を作る' })
+  const noData = dialog.getByLabel('雑音だけから作る (データセットを使わない)')
+  await noData.check()
+  // 雑音だけの行には先頭の番号の欄が無い
+  await expect(dialog.getByLabel(/^先頭に足した番号/)).toHaveCount(0)
+  await dialog.getByLabel('入力の名前').nth(0).fill('x')
+  await noData.uncheck()
+  // 書いた行は残り, 手順の無い一式では手順の中身を使えないと出る
+  await expect(dialog.getByLabel('入力の名前')).toHaveCount(1)
+  await expect(dialog.getByText(/繰り返しの手順を選んだ一式だけで使えます/)).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '作る' })).toBeDisabled()
+})
+
 test('骨組みの学習が実験の中に作った版 4 の一式を, 実験の一覧から登録する', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: '実験の一覧から登録' }).click()

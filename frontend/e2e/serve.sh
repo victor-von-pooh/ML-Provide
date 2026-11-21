@@ -80,6 +80,9 @@ uv run python ../frontend/e2e/make_v3.py "$WORK/v3"
 # 骨組みのプロジェクトの実験の中にも, 学習のスクリプトのように推論の一式 (版 4) を作る
 uv run python ../frontend/e2e/make_items.py "$WORK/items" "$WORK/project"
 
+# 拡散のモデルの雑音の予測器の定義と, 少しだけ学習した実験 (雑音だけの一式の元)
+uv run python ../frontend/e2e/make_noise.py "$WORK/noise"
+
 # 決まったトークンで起動. 自作の部品は起動の設定 (環境変数) で明示した
 # 見本のモジュール (e2e/e2e_units.py) だけを読む
 PYTHONPATH="$E2E_DIR${PYTHONPATH:+:$PYTHONPATH}" ML_PROVIDE_UNITS=e2e_units \

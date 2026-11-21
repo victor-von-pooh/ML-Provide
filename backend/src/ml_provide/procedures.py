@@ -7,6 +7,7 @@
 
 import importlib
 import inspect
+import math
 import os
 from pathlib import Path
 from typing import Any, Optional
@@ -135,6 +136,35 @@ def option_names(function: Any) -> Optional[list[str]]:
     return names
 
 
+def option_defaults(function: Any) -> dict[str, Any]:
+    """
+    手順の関数の設定 (5 つ目からの引数) の既定値を返す関数
+
+    Parameters
+    ----------
+    function: Any
+        登録簿の手順の関数
+
+    Returns
+    ----------
+    defaults: dict[str, Any]
+        設定の名前ごとの既定値 (有限の数, 真偽値, 文字の既定値だけ. 引数を
+        読めない関数は空)
+    """
+    # 画面に出せる値の既定値だけ (inf と NaN は JSON にできないので除く)
+    try:
+        params = list(inspect.signature(function).parameters.values())[4:]
+    except (TypeError, ValueError):
+        return {}
+    defaults = {
+        p.name: p.default for p in params
+        if isinstance(p.default, (int, float, bool, str))
+        and not (isinstance(p.default, float) and not math.isfinite(p.default))
+    }
+
+    return defaults
+
+
 def registered() -> list[dict[str, Any]]:
     """
     登録簿の手順の一覧を返す関数
@@ -148,7 +178,7 @@ def registered() -> list[dict[str, Any]]:
     procedures: list[dict[str, Any]]
         name, builtin, description, start (始まり. noise は雑音, given は
         渡した番号の並び), time (時刻を渡すか), options (設定の名前. 何でも
-        受け取る自作の手順は None) (名前の順)
+        受け取る自作の手順は None), defaults (設定の既定値) (名前の順)
     """
     # 画面で一式の手順と見比べ, 一式を作る欄で選ぶため
     procedures = [
@@ -159,6 +189,7 @@ def registered() -> list[dict[str, Any]]:
             "start": item.start,
             "time": bool(item.time),
             "options": option_names(item.function),
+            "defaults": option_defaults(item.function),
         }
         for name, item in sorted(PROCEDURES.items())
     ]
