@@ -401,7 +401,9 @@ function PredictCard({
                     if (canForecast) setAhead(true)
                   }}
                 >
-                  見本の新しいデータ (目的の列の無い表) を使う
+                  {description.items
+                    ? '見本の新しいデータ (画像を並べたディレクトリ) を使う'
+                    : '見本の新しいデータ (目的の列の無い表) を使う'}
                 </button>
                 {bundle.sample_past && (
                   <>

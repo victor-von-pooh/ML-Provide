@@ -380,16 +380,17 @@ def test_samples(client: TestClient) -> None:
     ----------
     None
     """
-    # 3 つの見本 (2 回目は登録し直さない)
+    # 5 つの見本 (2 回目は登録し直さない)
     added = client.post("/api/samples").json()
     assert [b["name"] for b in added][0] == (
-        "見本: 日々の売上の予測 (時系列, 先の予測)"
+        "見本: 図形の領域 (画像の領域の分割)"
     )
-    assert len(added) == 4 and all(b["ok"] for b in added)
+    assert len(added) == 5 and all(b["ok"] for b in added)
     assert client.post("/api/samples").json() == []
 
     # 見本の新しいデータの推論 (日々の売上は先の 7 日を 2 店)
-    for bundle in added:
+    tables = [b for b in added if "図形の領域" not in b["name"]]
+    for bundle in tables:
         daily = "日々の売上" in bundle["name"]
         response = client.post(
             f"/api/bundles/{bundle['id']}/predict",
@@ -399,6 +400,30 @@ def test_samples(client: TestClient) -> None:
         result = response.json()
         assert result["summary"]["predicted"] == (14 if daily else 50)
         assert result["forecast"] is daily
+
+    # 図形の領域の見本は, 新しい画像のディレクトリを推論し, 1 件の領域を
+    # 値ごとの名前で見せる (過去のデータは無い)
+    masks = added[0]
+    assert "sample_past" not in masks
+    description = masks["description"]
+    assert description["kind"] == "items"
+    assert description["output"] == {
+        "form": "mask", "classes": ["背景", "円", "四角"]
+    }
+    assert description["items"]["values"] == [0, 1, 2]
+    response = client.post(
+        f"/api/bundles/{masks['id']}/predict",
+        json={"source": masks["sample_input"]},
+    )
+    assert response.status_code == 201, response.text
+    result = response.json()
+    assert result["summary"] == {"rows": 6, "predicted": 6, "skipped": 0}
+    assert result["output_form"] == "mask"
+    preview = client.get(
+        f"/api/results/{result['id']}/artifacts/0"
+    ).json()
+    assert preview["view"] == "grid" and preview["shape"] == [16, 16]
+    assert {item["label"] for item in preview["labels"]} <= {0, 1, 2}
 
 
 def test_explain(tmp_path: Path, client: TestClient) -> None:

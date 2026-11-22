@@ -56,6 +56,26 @@ test('文の見本に文を書いて推論する', async ({ page }) => {
   await expect(table.getByRole('row').nth(2)).toContainText('悪い')
 })
 
+test('図形の領域の見本で, 見本の新しい画像の領域を値の名前で見る', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('link', { name: '見本: 図形の領域 (画像の領域の分割)' }).click()
+  await expect(page.getByText(/値ごとの名前 0: 背景, 1: 円, 2: 四角/)).toBeVisible()
+  await expect(
+    page.getByText(/この一式の出力は領域なので, 結論は推論した件数だけです/),
+  ).toBeVisible()
+  await expect(page.getByRole('button', { name: /見本の過去のデータ/ })).toHaveCount(0)
+  await page
+    .getByRole('button', { name: '見本の新しいデータ (画像を並べたディレクトリ) を使う' })
+    .click()
+  await page.getByRole('button', { name: '推論する' }).click()
+  await expect(page.getByText('6 件のうち 6 件を推論')).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('heading', { name: '1 件の出力 (領域)' })).toBeVisible()
+  await expect(page.getByRole('img', { name: /^領域/ })).toBeVisible()
+  await expect(page.getByRole('list', { name: '領域の番号ごとの画素' })).toContainText(
+    /\((背景|円|四角)\)/,
+  )
+})
+
 test('回帰の見本は値の帯と店ごとにまとめる', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('link', { name: '見本: 来店数の予測 (表の回帰)' }).click()

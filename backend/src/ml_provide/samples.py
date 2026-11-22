@@ -1,12 +1,16 @@
 import shutil
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import ml_inference
 import numpy as np
 import pandas as pd
+import torch
 import yaml
+from ml_eda import export_image_masks, load_items
+from ml_eda.synthetic import write_image_masks
+from ml_modelcontrol import build_model, load_example
 
 # 見本の作り方の版 (作り方を変えたら上げ, 置き場の古い見本を作り直す)
 SAMPLES_VERSION = 3
@@ -212,10 +216,88 @@ def daily_past(rng: np.random.Generator, count: int) -> pd.DataFrame:
 # 日々の売上の見本の, 店ごとの日の数
 DAILY_DAYS = 300
 
+# 図形の領域の見本の, 学習の画像と推論を試す新しい画像の枚数, 1 辺の画素,
+# 学習の回数と学習率 (全ての画像を 1 度に使う)
+MASK_IMAGES = 24
+MASK_FRESH = 6
+MASK_SIZE = 16
+MASK_STEPS = 100
+MASK_RATE = 0.01
+
+# 図形の領域の見本の, 領域の値ごとの名前
+MASK_CLASSES = {0: "背景", 1: "円", 2: "四角"}
+
+
+def write_mask_sample(place: Path, name: str, seed: int) -> Path:
+    """
+    図形の領域の見本 (画像と領域のデータセット, 一式, 新しい画像) を書く
+    関数
+
+    Parameters
+    ----------
+    place: Path
+        見本のディレクトリ
+    name: str
+        見本の名前
+    seed: int
+        乱数のシード
+
+    Returns
+    ----------
+    fresh: Path
+        推論を試す新しい画像を並べたディレクトリ
+    """
+    # 合成の画像と領域 (ML-EDA) を版 2 のデータセットに書き出し
+    write_image_masks(place / "raw", count=MASK_IMAGES,
+                      size=(MASK_SIZE, MASK_SIZE), seed=seed)
+    export_image_masks(
+        place / "raw" / "images", place / "raw" / "masks",
+        place / "dataset",
+        split={"method": "random", "valid": 0.25, "seed": 0},
+        classes=MASK_CLASSES, origin={"type": "synthetic"}
+    )
+
+    # 画素を 255 で割った画像 (ML-Inference の image の扱いと同じ) と, その
+    # ままクラスの番号になる領域の値
+    images, masks = [], []
+    for item in load_items(place / "dataset").split("train"):
+        images.append(np.asarray(item["image"]).transpose(2, 0, 1) / 255.0)
+        masks.append(np.asarray(item["mask"]))
+    inputs = torch.tensor(np.stack(images), dtype=torch.float32)
+    target = torch.tensor(np.stack(masks), dtype=torch.long)
+
+    # ML-ModelControl の見本の U-Net (背景を含む 3 クラス) の学習
+    spec = load_example("unet_segmentation")
+    spec["nodes"]["head"]["params"]["out_channels"] = len(MASK_CLASSES)
+    torch.manual_seed(seed)
+    model = build_model(spec, seed=seed)
+    optimizer = torch.optim.Adam(model.parameters(), lr=MASK_RATE)
+    loss_fn = torch.nn.CrossEntropyLoss()
+    for _ in range(MASK_STEPS):
+        optimizer.zero_grad()
+        loss = loss_fn(model(inputs), target)
+        loss.backward()
+        optimizer.step()
+    torch.save(model.state_dict(), place / "weights.pt")
+
+    # 一式づくり (ML-Inference) と, 学習に使っていない新しい画像
+    ml_inference.make_bundle(
+        place / "bundle", spec, place / "dataset", place / "weights.pt",
+        name=name
+    )
+    write_image_masks(place / "new", count=MASK_FRESH,
+                      size=(MASK_SIZE, MASK_SIZE), seed=seed + 1)
+    shutil.rmtree(place / "new" / "masks")
+    fresh = place / "new" / "images"
+
+    return fresh
+
+
 # 見本の名前から, データを作る関数と設定. 置き場の番号 (sample<n>) は並び
-# の順なので, 新しい見本は最後に足す (目的の列, タスク, 前処理, 分割,
-# 読み込みの設定, 結論の決め方の既定値)
-SAMPLES: dict[str, tuple[Callable[..., pd.DataFrame], dict[str, Any]]] = {
+# の順なので, 新しい見本は最後に足す (列の見本は目的の列, タスク, 前処理,
+# 分割, 読み込みの設定, 結論の決め方の既定値. items の見本は, 作る関数が
+# データセット, 一式, 新しい画像を全て書く)
+SAMPLES: dict[str, tuple[Callable[..., Any], dict[str, Any]]] = {
     "見本: 解約の予測 (表の分類)": (churn_frame, {
         "target": "label", "task": "classification",
         "steps": [
@@ -268,12 +350,15 @@ SAMPLES: dict[str, tuple[Callable[..., pd.DataFrame], dict[str, Any]]] = {
         "past": daily_past, "conclusion": {"group_by": "shop"},
         "decision": {"type": "quantity", "under_cost": 3, "over_cost": 1},
     }),
+    "見本: 図形の領域 (画像の領域の分割)": (write_mask_sample, {
+        "items": True,
+    }),
 }
 
 
 def write_sample(
     root: Path, name: str, number: int, seed: int
-) -> tuple[Path, Path, Path]:
+) -> tuple[Path, Path, Optional[Path]]:
     """
     見本の 1 つ (学習用のデータ, 一式, 新しいデータ, 過去のデータ) を書く
     関数
@@ -291,25 +376,39 @@ def write_sample(
 
     Returns
     ----------
-    paths: tuple[Path, Path, Path]
-        一式のディレクトリ, 推論を試す新しいデータのファイル, たどり直し
-        を試す目的の列のある過去のデータ (学習に使っていない行)
+    paths: tuple[Path, Path, Optional[Path]]
+        一式のディレクトリ, 推論を試す新しいデータ (列の見本は目的の列の
+        無いファイル, items の見本は画像を並べたディレクトリ), たどり直し
+        を試す目的の列のある過去のデータ (学習に使っていない行. items の
+        見本は None)
     """
-    # 学習用のデータ, 目的の列の無い新しいデータ, 目的の列のある過去の
-    # データ (学習に使っていない行)
     maker, settings = SAMPLES[name]
     place = root / f"sample{number}"
     shutil.rmtree(place, ignore_errors=True)
     place.mkdir(parents=True)
+
+    # items の見本は作る関数が全てを書く
+    if settings.get("items"):
+        fresh = maker(place, name, seed + number)
+        write_mark(place, name)
+        paths: tuple[Path, Path, Optional[Path]] = (
+            place / "bundle", fresh, None
+        )
+        return paths
+
+    # 学習用のデータ, 目的の列の無い新しいデータ, 目的の列のある過去の
+    # データ (学習に使っていない行)
     rng = np.random.default_rng(seed + number)
     maker(rng, settings.get("rows", 600)).to_csv(
         place / "train.csv", index=False
     )
     if "fresh" in settings:
-        fresh = settings["fresh"](rng, FRESH_ROWS)
+        fresh_frame = settings["fresh"](rng, FRESH_ROWS)
     else:
-        fresh = maker(rng, FRESH_ROWS).drop(columns=[settings["target"]])
-    fresh.to_csv(place / "new.csv", index=False)
+        fresh_frame = maker(rng, FRESH_ROWS).drop(
+            columns=[settings["target"]]
+        )
+    fresh_frame.to_csv(place / "new.csv", index=False)
     past = settings["past"](rng, PAST_ROWS) if "past" in settings else (
         maker(rng, PAST_ROWS)
     )
@@ -327,12 +426,58 @@ def write_sample(
         options=settings["options"], conclusion=settings["conclusion"],
         decision=settings.get("decision"), name=name
     )
+    write_mark(place, name)
+    paths = (place / "bundle", place / "new.csv", place / "past.csv")
+
+    return paths
+
+
+def write_mark(place: Path, name: str) -> None:
+    """
+    見本を作り終えた印のファイルを書く関数
+
+    Parameters
+    ----------
+    place: Path
+        見本のディレクトリ
+    name: str
+        見本の名前
+
+    Returns
+    ----------
+    None
+    """
     (place / "sample.yaml").write_text(
         yaml.safe_dump({"version": SAMPLES_VERSION, "name": name},
                        allow_unicode=True),
         encoding="utf-8"
     )
-    paths = (place / "bundle", place / "new.csv", place / "past.csv")
+
+
+def sample_paths(
+    place: Path, name: str
+) -> tuple[Path, Path, Optional[Path]]:
+    """
+    置き場の見本の, 一式, 新しいデータ, 過去のデータの場所を返す関数
+
+    Parameters
+    ----------
+    place: Path
+        見本のディレクトリ
+    name: str
+        見本の名前
+
+    Returns
+    ----------
+    paths: tuple[Path, Path, Optional[Path]]
+        一式のディレクトリ, 新しいデータ, 過去のデータ (items の見本は
+        新しい画像のディレクトリと None)
+    """
+    paths: tuple[Path, Path, Optional[Path]] = (
+        place / "bundle", place / "new.csv", place / "past.csv"
+    )
+    if SAMPLES[name][1].get("items"):
+        paths = (place / "bundle", place / "new" / "images", None)
 
     return paths
 
@@ -351,7 +496,8 @@ def current(place: Path, name: str) -> bool:
     Returns
     ----------
     ready: bool
-        印のファイルの版と名前が今と同じで, 一式と新しいデータがあるか
+        印のファイルの版と名前が今と同じで, 一式, 新しいデータ, 過去の
+        データ (items の見本は新しい画像のディレクトリ) があるか
     """
     # 印のファイル, 一式, 新しいデータ
     try:
@@ -360,11 +506,12 @@ def current(place: Path, name: str) -> bool:
         )
     except (OSError, yaml.YAMLError):
         return False
+    bundle, fresh, past = sample_paths(place, name)
     ready = (
         isinstance(mark, dict) and mark.get("version") == SAMPLES_VERSION
         and mark.get("name") == name
-        and (place / "bundle" / "inference.yaml").is_file()
-        and (place / "new.csv").is_file() and (place / "past.csv").is_file()
+        and (bundle / "inference.yaml").is_file() and fresh.exists()
+        and (past is None or past.is_file())
     )
 
     return ready
@@ -372,7 +519,7 @@ def current(place: Path, name: str) -> bool:
 
 def write_samples(
     root: Path, seed: int = 0
-) -> dict[str, tuple[Path, Path, Path]]:
+) -> dict[str, tuple[Path, Path, Optional[Path]]]:
     """
     操作を試すための見本の一式を, 無いものだけ書く関数
 
@@ -385,14 +532,15 @@ def write_samples(
 
     Returns
     ----------
-    samples: dict[str, tuple[Path, Path, Path]]
+    samples: dict[str, tuple[Path, Path, Optional[Path]]]
         見本の名前から, 一式のディレクトリ, 新しいデータ, 過去のデータ
+        (items の見本は None)
     """
     # 同じ版で作り終えた見本の再利用 (印のファイルは最後に書く)
     samples = {}
     for number, name in enumerate(SAMPLES):
         place = root / f"sample{number}"
-        paths = (place / "bundle", place / "new.csv", place / "past.csv")
+        paths = sample_paths(place, name)
         if not current(place, name):
             paths = write_sample(root, name, number, seed)
         samples[name] = paths
