@@ -542,12 +542,12 @@ export function BundlePage() {
   const bundle = useQuery({ queryKey: ['bundles', id], queryFn: () => api.bundle(id) })
   const results = useQuery({ queryKey: ['results', id], queryFn: () => api.results(id) })
   // 雑音だけの一式はデータも正解も無く, 問題の設定の結論を扱わないので問題の設定を読まない
-  // 既製のモデルの一式も, 問題の設定の意思決定を使えないので読まない.
+  // (既製のモデルの一式は読み, 結論の決め方だけを既定にする).
   // 種類は一式か一覧の読んだ値から. 分からない間は一式と並べて読む (推論の欄を 1 往復早く出すため.
   // 読まない種類の一式なら, サーバーは問題の設定を読まずに空の状態を返す)
   const listed = client.getQueryData<Bundle[]>(['bundles'])?.find((item) => item.id === id)
   const kind = bundle.data?.description?.kind ?? listed?.description?.kind
-  const noise = kind === 'noise' || kind === 'ready'
+  const noise = kind === 'noise'
   const problem = useQuery({
     queryKey: ['bundle-problem', id],
     queryFn: () => api.bundleProblem(id),
@@ -632,7 +632,13 @@ export function BundlePage() {
                 </p>
               </ErrorBox>
             )}
-            {!noise && problem.data && <ProblemCard bundleId={data.id} state={problem.data} />}
+            {!noise && problem.data && (
+              <ProblemCard
+                bundleId={data.id}
+                state={problem.data}
+                readyModel={data.description.kind === 'ready'}
+              />
+            )}
             {/* 問題の設定を読み終えてから, その値を既定にして出す */}
             {(noise || !problem.isPending) && (
               <PredictCard

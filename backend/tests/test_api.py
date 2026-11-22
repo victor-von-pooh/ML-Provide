@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from ml_eda import export_dataset, load_data
 from ml_modelcontrol import build_model
 
+from ml_provide import reasons
 from ml_provide.app import create_app
 
 # テストで使うトークン
@@ -460,6 +461,149 @@ def test_explain(tmp_path: Path, client: TestClient) -> None:
         f"/api/results/{result['id']}/conclude", json={"rules": {}}
     ).json()
     assert again["explanation"] == explanation
+
+
+def test_row_reason(
+    tmp_path: Path, client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    結果の 1 行の理由を, 選んだ行と比べる行だけで求めることを確かめる
+    関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    client: TestClient
+        クライアント
+    monkeypatch: pytest.MonkeyPatch
+        比べる行の数を小さくする
+
+    Returns
+    ----------
+    None
+    """
+    # 選んだ行と比べる 5 行だけを渡す (前処理で落とす shop は効かない)
+    monkeypatch.setattr(reasons, "COMPARE_ROWS", 5)
+    passed: list[int] = []
+    explain_rows = ml_inference.explain_rows
+
+    def counted(bundle: Any, source: Any, **options: Any) -> dict:
+        passed.append(len(source))
+        return explain_rows(bundle, source, **options)
+
+    monkeypatch.setattr(ml_inference, "explain_rows", counted)
+    paths = write_project(tmp_path / "project")
+    bundle = create(client, paths)
+    result = client.post(
+        f"/api/bundles/{bundle['id']}/predict",
+        json={"source": str(paths["csv"])},
+    ).json()
+    response = client.post(f"/api/results/{result['id']}/rows/3/reason")
+    assert response.status_code == 200, response.text
+    reason = response.json()
+    assert passed == [6] and reason["rows"] == 6
+    assert reason["row"] == 3 and reason["measure"] == "probability"
+    assert reason["status"] == "ok" and reason["prediction"] in {"良", "悪"}
+    effects = {e["column"]: e["effect"] for e in reason["effects"]}
+    assert set(effects) == {"shop", "a", "b"} and effects["shop"] == 0
+    assert reason["effects"][-1]["column"] == "shop"
+    assert reason["reason"] is None or "shop" not in reason["reason"]
+
+    # 比べる行の上限より行が少なければ, 全ての行を渡す (40 行)
+    monkeypatch.setattr(reasons, "COMPARE_ROWS", 200)
+    whole = client.post(f"/api/results/{result['id']}/rows/0/reason").json()
+    assert whole["rows"] == 40 and passed[-1] == 40
+
+    # 負の行は 422, 無い行は 404, 入力のファイルの無い結果は 400
+    negative = client.post(f"/api/results/{result['id']}/rows/-1/reason")
+    assert negative.status_code == 422
+    missing = client.post(f"/api/results/{result['id']}/rows/40/reason")
+    assert missing.status_code == 404
+    paths["csv"].unlink()
+    gone = client.post(f"/api/results/{result['id']}/rows/3/reason")
+    assert gone.status_code == 400 and "入力のファイル" in gone.text
+
+
+def test_rows_for() -> None:
+    """
+    1 行の理由に渡す行の選び方 (比べる行の上限, 前の続いた行の上限,
+    先頭に近い行) を確かめる関数
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    ----------
+    None
+    """
+    # 過去の値を使わない一式: 選んだ行と, 等しい間隔の 200 行
+    rows = reasons.rows_for(0, 1000, False)
+    assert len(rows) == reasons.COMPARE_ROWS + 1 and rows[0] == 0
+    assert rows == sorted(set(rows)) and rows[-1] == 999
+    assert reasons.rows_for(7, 40, False) == list(range(40))
+    middle = reasons.rows_for(500, 1000, False)
+    assert 500 in middle and len(middle) == reasons.COMPARE_ROWS + 1
+
+    # 過去の値を使う一式: 選んだ行までの続いた行 (上限 1000 行. 先頭に
+    # 近い行は先頭から)
+    assert reasons.rows_for(3, 5000, True) == [0, 1, 2, 3]
+    tail = reasons.rows_for(2000, 5000, True)
+    assert len(tail) == reasons.LAG_ROWS and tail[-1] == 2000
+    assert tail == list(range(2000 - reasons.LAG_ROWS + 1, 2001))
+
+
+def test_row_reason_lag(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    過去の値の列を作る一式では, 選んだ行までの続いた行を渡して理由を
+    求め, 何段も先の予測の結果は断ることを確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    monkeypatch: pytest.MonkeyPatch
+        前の続いた行の上限を小さくする
+
+    Returns
+    ----------
+    None
+    """
+    # 日々の売上の過去のデータの 1 つ先の予測
+    added = client.post("/api/samples").json()
+    daily = next(b for b in added if "日々の売上" in b["name"])
+    result = client.post(
+        f"/api/bundles/{daily['id']}/predict",
+        json={"source": daily["sample_past"], "decision": {}},
+    ).json()
+    rows = client.get(
+        f"/api/results/{result['id']}/rows?status=ok&limit=500"
+    ).json()["rows"]
+    row = int(rows[-1]["index"])
+    response = client.post(f"/api/results/{result['id']}/rows/{row}/reason")
+    assert response.status_code == 200, response.text
+    reason = response.json()
+    assert reason["measure"] == "value" and reason["rows"] == row + 1
+    names = {e["column"] for e in reason["effects"]}
+    assert "sales (過去の値)" in names
+    assert reason["reason"]
+
+    # 前の続いた行の上限 (小さくして, 選んだ行までの 60 行だけ)
+    monkeypatch.setattr(reasons, "LAG_ROWS", 60)
+    capped = client.post(f"/api/results/{result['id']}/rows/{row}/reason")
+    assert capped.status_code == 200, capped.text
+    assert capped.json()["rows"] == 60
+
+    # 何段も先の予測の結果は求めない
+    ahead = client.post(
+        f"/api/bundles/{daily['id']}/predict",
+        json={"source": daily["sample_input"], "forecast": True},
+    ).json()
+    refused = client.post(f"/api/results/{ahead['id']}/rows/0/reason")
+    assert refused.status_code == 400 and "何段も先" in refused.text
 
 
 def test_decision_flow(client: TestClient) -> None:

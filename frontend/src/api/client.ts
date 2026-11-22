@@ -15,6 +15,7 @@ import type {
   ReadyPreview,
   Remeasure,
   Result,
+  RowReason,
   Rows,
   Rules,
 } from './types'
@@ -127,6 +128,8 @@ export const api = {
       json('POST', { write, horizon, time, groups }),
     ),
   explain: (id: string) => request<Result>(`/api/results/${id}/explain`, json('POST', {})),
+  rowReason: (id: string, row: number) =>
+    request<RowReason>(`/api/results/${id}/rows/${row}/reason`, json('POST', {})),
   downloadUrl: (id: string) => `/api/results/${id}/download`,
   artifact: (id: string, row: number) =>
     request<ArtifactPreview>(`/api/results/${id}/artifacts/${row}`),

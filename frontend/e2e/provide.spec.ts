@@ -37,10 +37,18 @@ test('見本の一式を入れ, 見本の新しいデータを推論して結論
   await expect(page.getByRole('table', { name: '予測と判断の表' })).toContainText('保留')
 
   // 列の効き (前処理で落とす id は 0)
-  await page.getByRole('button', { name: '求める' }).click()
+  await page.getByRole('button', { name: '求める', exact: true }).click()
   const effects = page.getByRole('list', { name: '列の効き' })
   await expect(effects).toContainText('months', { timeout: 30_000 })
   await expect(effects.getByRole('listitem').filter({ hasText: /^id/ })).toContainText('0.000')
+
+  // 表で選んだ 1 行の理由 (前処理で落とす id は効かない)
+  await page.getByLabel('判断で絞る').selectOption('')
+  await page.getByRole('button', { name: '0 行目の予測の理由', exact: true }).click()
+  const reason = page.getByRole('list', { name: '列ごとの効き' })
+  await expect(reason).toContainText('months', { timeout: 30_000 })
+  await expect(reason.getByRole('listitem').filter({ hasText: /^id/ })).toContainText('0.000')
+  await expect(page.getByLabel('行の番号')).toHaveValue('0')
 })
 
 test('文の見本に文を書いて推論する', async ({ page }) => {
@@ -802,7 +810,8 @@ test('既製のモデルの一式を下見して作り, ライセンスの警告
   await dialog.getByLabel('一式の名前').fill('色の分類')
   await dialog.getByRole('button', { name: '作って登録' }).click()
 
-  // 一式の画面: ライセンスの警告, 出どころ, 重みの置き場, 意思決定の欄は出さない
+  // 一式の画面: ライセンスの警告, 出どころ, 重みの置き場. 意思決定の欄は出さず,
+  // 問題の設定は既製のモデルの問題の設定をつなげると書く
   await expect(page.getByRole('heading', { name: '色の分類' })).toBeVisible({ timeout: 30_000 })
   const id = new URL(page.url()).pathname.split('/').pop() ?? ''
   try {
@@ -811,7 +820,7 @@ test('既製のモデルの一式を下見して作り, ライセンスの警告
     await expect(page.getByText(/e2e-colors-0123abcd\.pth/)).toBeVisible()
     await expect(page.getByText(/置き場にありません/)).toBeVisible()
     await expect(page.getByRole('region', { name: '意思決定' })).toHaveCount(0)
-    await expect(page.getByRole('heading', { name: /^問題の設定/ })).toHaveCount(0)
+    await expect(page.getByText(/作り方が既製のモデルをそのままの問題の設定/)).toBeVisible()
 
     // 画像のディレクトリを推論し, 種類の名前と確信度を見る (読めない画像は飛ばす)
     await page.getByLabel(/推論する画像/).fill(images)

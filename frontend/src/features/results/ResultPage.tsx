@@ -11,12 +11,14 @@ import { formatPercent, formatValue } from '../../lib/format'
 import { FORM_LABELS, maskNames } from '../../lib/outputs'
 import { READY_UNSUPPORTED } from '../../lib/ready'
 import { groupColumns } from '../../lib/remeasure'
+import { rowReasonable } from '../../lib/rowReason'
 import { fromForm, toForm, type RulesForm } from '../../lib/rules'
 import { OutputNotices } from '../bundles/OutputView'
 import { ArtifactCard } from './ArtifactCard'
 import { DecisionCard } from './DecisionCard'
 import { ExplainCard } from './ExplainCard'
 import { RemeasureCard } from './RemeasureCard'
+import { RowReasonCard } from './RowReasonCard'
 import { RulesEditor } from './RulesEditor'
 
 // 判断が決まらなかったことを表す名前 (ML-Inference と同じ)
@@ -150,7 +152,15 @@ function GroupTable({ result }: { result: Result }) {
 }
 
 /** 予測の表 (予測しなかった行と判断で絞り, ページに分ける) */
-function RowsTable({ result, onView }: { result: Result; onView?: (row: number) => void }) {
+function RowsTable({
+  result,
+  onView,
+  onReason,
+}: {
+  result: Result
+  onView?: (row: number) => void
+  onReason?: (row: number) => void
+}) {
   const column = result.column_output !== false
   const [page, setPage] = useState(0)
   const [status, setStatus] = useState('')
@@ -250,6 +260,11 @@ function RowsTable({ result, onView }: { result: Result; onView?: (row: number) 
                       <span className="sr-only">出力を見る</span>
                     </th>
                   )}
+                  {onReason && (
+                    <th scope="col" className="px-3 py-2 text-left font-normal">
+                      <span className="sr-only">予測の理由</span>
+                    </th>
+                  )}
                   {columns.map((name) => (
                     <th
                       key={name}
@@ -284,6 +299,24 @@ function RowsTable({ result, onView }: { result: Result; onView?: (row: number) 
                             }}
                           >
                             見る
+                          </button>
+                        ) : null}
+                      </td>
+                    )}
+                    {onReason && (
+                      <td className="px-3 py-1">
+                        {row.status === 'ok' ? (
+                          <button
+                            type="button"
+                            className="text-accent-text underline"
+                            aria-label={`${String(row.index)} 行目の予測の理由`}
+                            onClick={() => {
+                              onReason(Number(row.index))
+                              // 表の上にある理由のカードへ移る
+                              document.getElementById('reason-row')?.focus()
+                            }}
+                          >
+                            理由
                           </button>
                         ) : null}
                       </td>
@@ -382,10 +415,13 @@ export function ResultPage() {
   const { id = '' } = useParams()
   // 配列の出力で見る行 (選ぶまでは推論した最初の行. 別の結果に移ったら戻す)
   const [artifactRow, setArtifactRow] = useState<number | null>(null)
+  // 理由を求める行 (押すまでは無し)
+  const [reasonRow, setReasonRow] = useState<number | null>(null)
   const [artifactOf, setArtifactOf] = useState(id)
   if (artifactOf !== id) {
     setArtifactOf(id)
     setArtifactRow(null)
+    setReasonRow(null)
   }
   const navigate = useNavigate()
   const client = useQueryClient()
@@ -428,6 +464,8 @@ export function ResultPage() {
   // 外れ方を種類ごとに分けられる列 (回帰と予測の一式の, 予測と判断と目的の列を除いた列)
   const target = bundle.data?.description?.target
   const groups = groupColumns(data.task, data.columns ?? [], target, OWN)
+  // 1 行の予測の理由 (表と時系列の, 書いた文でないファイルを 1 つ先まで予測した結果)
+  const reasonable = rowReasonable(data, bundleAlive)
   return (
     <>
       <PageHeader
@@ -551,11 +589,13 @@ export function ResultPage() {
             }
           />
         )}
+        {reasonable && <RowReasonCard result={data} row={reasonRow} onRow={setReasonRow} />}
         {/* 出し直した後は, 絞り込みとページを初めに戻す */}
         <RowsTable
           key={`rows:${JSON.stringify(data.rules ?? {})}:${JSON.stringify(data.decision?.decision ?? null)}`}
           result={data}
           onView={data.artifacts ? setArtifactRow : undefined}
+          onReason={reasonable ? setReasonRow : undefined}
         />
       </div>
     </>
