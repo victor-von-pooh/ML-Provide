@@ -4,6 +4,17 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { DatasetDescription } from '../../api/types'
 import { CreateBundleDialog } from './CreateBundleDialog'
 
+// 雑音から始まる組み込みの手順 (登録簿の値)
+const ddim = {
+  name: 'ddim',
+  builtin: true,
+  description: 'DDIM',
+  start: 'noise',
+  time: true,
+  options: ['train_steps', 'eta'],
+  defaults: { train_steps: 1000, eta: 0 },
+}
+
 // 説明の読み込みを止めておき, 読み終える時をテストで決める
 const pending: Array<(value: DatasetDescription) => void> = []
 const describeDataset = vi.fn(
@@ -15,7 +26,7 @@ const describeDataset = vi.fn(
 
 vi.mock('../../api/client', () => ({
   api: {
-    info: () => Promise.resolve({ procedures: [], max_procedure_steps: 1000 }),
+    info: () => Promise.resolve({ procedures: [ddim], max_procedure_steps: 1000 }),
     describeDataset: (path: string) => describeDataset(path),
     createBundle: vi.fn(),
   },
@@ -75,5 +86,41 @@ describe('学習の結果から作る対話', () => {
     expect(submit).toBeDisabled()
     pending.shift()?.(columns)
     await waitFor(() => expect(submit).toBeEnabled())
+  })
+
+  it('雑音だけの一式の誤りに, 繰り返しの手順, 出力の形, 入力の出どころの欄の名前が付く', async () => {
+    renderDialog()
+    fireEvent.click(screen.getByLabelText('雑音だけから作る (データセットを使わない)'))
+    const procedure = screen.getByLabelText(/^手順 \(登録簿の名前/)
+    await waitFor(() => expect(procedure).toContainHTML('ddim'))
+    fireEvent.change(procedure, { target: { value: 'ddim' } })
+    fireEvent.change(screen.getByLabelText(/^回数/), { target: { value: '1001' } })
+    fireEvent.change(screen.getByLabelText('出力の形 (要る)'), { target: { value: 'vector' } })
+    fireEvent.change(screen.getByLabelText(/^1 件の形/), { target: { value: '0' } })
+    expect(
+      screen.getByText('「繰り返しの手順」: 手順の回数は 1,000 回までです'),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/^「出力の形」: 1 件の形は正の整数の並び/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/^「モデルの入力ごとの出どころ」: モデルの入力の名前/),
+    ).toBeInTheDocument()
+  })
+
+  it('列のデータセットの誤りには「受け持ちと出力の形」の欄の名前が付く', async () => {
+    renderDialog()
+    fireEvent.change(screen.getByLabelText('データセット (dataset.yaml を持つディレクトリ)'), {
+      target: { value: '/a' },
+    })
+    await waitFor(() => expect(describeDataset).toHaveBeenCalledWith('/a'))
+    pending.shift()?.(columns)
+    fireEvent.change(screen.getByLabelText(/^出力の形 \(正解の無い/), {
+      target: { value: 'distribution' },
+    })
+    fireEvent.change(screen.getByLabelText(/^分布の水準/), { target: { value: '0.9, 0.1' } })
+    expect(
+      await screen.findByText(
+        '「受け持ちと出力の形」: 分布の水準は 0 から 1 の間の小さい順の数で書いてください',
+      ),
+    ).toBeInTheDocument()
   })
 })

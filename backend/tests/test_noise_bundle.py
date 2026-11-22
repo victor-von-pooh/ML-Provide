@@ -16,8 +16,8 @@ from ml_modelcontrol import build_model, load_example
 from test_bundle_v3 import head_spec, make_v3, register, write_unlabeled
 
 import ml_provide.api as api_module
+import ml_provide.problems as problems_module
 from ml_provide.app import create_app
-from ml_provide.procedures import option_defaults, option_names
 
 # テストで使うトークン
 TOKEN = "test-token"
@@ -217,6 +217,41 @@ def test_noise_bundle(tmp_path: Path, client: TestClient) -> None:
     assert "eta" in ddim["options"]
 
 
+def test_noise_problem_not_read(
+    tmp_path: Path, client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    雑音だけの一式では, 問題の設定を読まず候補も探さないことを確かめる
+    関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    client: TestClient
+        クライアント
+    monkeypatch: pytest.MonkeyPatch
+        問題の設定を読む関数と候補を探す関数の差し替え
+
+    Returns
+    ----------
+    None
+    """
+    # 読むか探すと落ちるようにして, 空の状態が返る
+    def fail(*args: Any) -> Any:
+        raise AssertionError("問題の設定を読みました")
+
+    monkeypatch.setattr(problems_module, "find_hint", fail)
+    monkeypatch.setattr(problems_module, "read_problem", fail)
+    bundle = create_noise(client, diffusion_files(tmp_path / "model"))
+    response = client.get(f"/api/bundles/{bundle['id']}/problem")
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "path": None, "linked": None, "error": None, "hint": None,
+        "hint_note": None,
+    }
+
+
 def test_noise_limits(
     tmp_path: Path, client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -372,8 +407,8 @@ def test_procedure_options(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """
-    手順の設定の名前を関数の引数から読み, 読めない手順でも登録簿の一覧を
-    返すことを確かめる関数
+    手順の設定の名前と既定値を ML-Inference の procedure_options から読み,
+    引数を読めない手順でも登録簿の一覧を返すことを確かめる関数
 
     Parameters
     ----------
@@ -386,7 +421,9 @@ def test_procedure_options(
     ----------
     None
     """
-    # 設定の無い関数は空, **kwargs と引数を読めない関数は None
+    # 設定の無い関数は空, **kwargs と引数を読めない関数は None, *args の
+    # 名前は設定に入らない. 既定値は有限の数, 真偽値, 文字だけ (inf, NaN,
+    # None は除く)
     def plain(model: Any, state: Any, steps: int, generator: Any) -> Any:
         return state
 
@@ -395,11 +432,12 @@ def test_procedure_options(
     ) -> Any:
         return state
 
-    assert option_names(plain) == []
-    assert option_names(anything) is None
-    assert option_names(max) is None
+    def spread(
+        model: Any, state: Any, steps: int, generator: Any, *rest: Any,
+        scale: float = 1.0
+    ) -> Any:
+        return state
 
-    # 既定値は有限の数, 真偽値, 文字だけ (inf, NaN, None は除く)
     def limits(
         model: Any, state: Any, steps: int, generator: Any,
         low: float = float("-inf"), rate: float = float("nan"),
@@ -408,17 +446,23 @@ def test_procedure_options(
     ) -> Any:
         return state
 
-    assert option_defaults(limits) == {
-        "mode": "fast", "flag": True, "step": 0.5
-    }
-
-    # 引数を読めない手順があっても /api/info は返す
+    # 登録簿の一覧 (/api/info) は ML-Inference の procedure_options から
     ddim = PROCEDURES["ddim"]
-    broken = dataclasses.replace(ddim, name="broken", function=max)
-    monkeypatch.setitem(PROCEDURES, "broken", broken)
+    for name, function in (("plain", plain), ("anything", anything),
+                           ("spread", spread), ("limits", limits),
+                           ("broken", max)):
+        monkeypatch.setitem(PROCEDURES, name, dataclasses.replace(
+            ddim, name=name, function=function
+        ))
     response = client.get("/api/info")
     assert response.status_code == 200
     listed = {p["name"]: p for p in response.json()["procedures"]}
+    assert listed["plain"]["options"] == []
+    assert listed["anything"]["options"] is None
+    assert listed["spread"]["options"] == ["scale"]
+    assert listed["limits"]["defaults"] == {
+        "mode": "fast", "flag": True, "step": 0.5
+    }
     assert listed["broken"]["options"] is None
     assert listed["ddim"]["options"] == [
         "train_steps", "beta_start", "beta_end", "eta"
@@ -502,3 +546,14 @@ def test_text_output_rows(tmp_path: Path, client: TestClient) -> None:
     assert [row["prediction"] for row in rows] == ["123", "NA", ""]
     assert rows[0]["tokens"] == "4" and rows[2]["tokens"] == ""
     assert [row["status"] for row in rows] == ["ok"] * 3
+
+    # tokens の列の無い古い文の結果も, 予測を文字のまま読む (全ての行が
+    # 番号 1 つに見えても数にしない. 予測した行の空の文は空の文字)
+    table.loc[0, "prediction"] = "5"
+    table.loc[1, "prediction"] = "07"
+    table.drop(columns=["tokens"]).to_csv(
+        place / "predictions.csv", index=False, encoding="utf-8-sig"
+    )
+    rows = client.get(f"/api/results/{result['id']}/rows").json()["rows"]
+    assert [row["prediction"] for row in rows] == ["5", "07", ""]
+    assert "tokens" not in rows[0]

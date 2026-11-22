@@ -6,14 +6,12 @@
 """
 
 import importlib
-import inspect
-import math
 import os
 from pathlib import Path
 from typing import Any, Optional
 
 import yaml
-from ml_inference import PROCEDURES
+from ml_inference import PROCEDURES, procedure_options
 
 # 自作の手順を登録するモジュールを書く環境変数 (, で区切る)
 PROCEDURES_ENV = "ML_PROVIDE_PROCEDURES"
@@ -109,62 +107,6 @@ def load_modules(names: list[str]) -> list[str]:
     return loaded
 
 
-def option_names(function: Any) -> Optional[list[str]]:
-    """
-    手順の関数の設定 (5 つ目からの引数) の名前を返す関数
-
-    Parameters
-    ----------
-    function: Any
-        登録簿の手順の関数 (model, state, steps, generator, 設定...)
-
-    Returns
-    ----------
-    names: Optional[list[str]]
-        設定の名前 (設定の無い手順は空). **kwargs を持つ関数と, 引数を
-        読めない関数は None (画面は名前=値の行で受け取る)
-    """
-    # 引数を読めない呼べるもの (組み込みの関数など) も一覧を止めない
-    try:
-        params = list(inspect.signature(function).parameters.values())[4:]
-    except (TypeError, ValueError):
-        return None
-    names: Optional[list[str]] = [p.name for p in params]
-    if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params):
-        names = None
-
-    return names
-
-
-def option_defaults(function: Any) -> dict[str, Any]:
-    """
-    手順の関数の設定 (5 つ目からの引数) の既定値を返す関数
-
-    Parameters
-    ----------
-    function: Any
-        登録簿の手順の関数
-
-    Returns
-    ----------
-    defaults: dict[str, Any]
-        設定の名前ごとの既定値 (有限の数, 真偽値, 文字の既定値だけ. 引数を
-        読めない関数は空)
-    """
-    # 画面に出せる値の既定値だけ (inf と NaN は JSON にできないので除く)
-    try:
-        params = list(inspect.signature(function).parameters.values())[4:]
-    except (TypeError, ValueError):
-        return {}
-    defaults = {
-        p.name: p.default for p in params
-        if isinstance(p.default, (int, float, bool, str))
-        and not (isinstance(p.default, float) and not math.isfinite(p.default))
-    }
-
-    return defaults
-
-
 def registered() -> list[dict[str, Any]]:
     """
     登録簿の手順の一覧を返す関数
@@ -180,19 +122,20 @@ def registered() -> list[dict[str, Any]]:
         渡した番号の並び), time (時刻を渡すか), options (設定の名前. 何でも
         受け取る自作の手順は None), defaults (設定の既定値) (名前の順)
     """
-    # 画面で一式の手順と見比べ, 一式を作る欄で選ぶため
-    procedures = [
-        {
+    # 画面で一式の手順と見比べ, 一式を作る欄で選ぶため (設定の名前と既定値
+    # の決まりは ML-Inference の procedure_options)
+    procedures = []
+    for name, item in sorted(PROCEDURES.items()):
+        options = procedure_options(name)
+        procedures.append({
             "name": name,
             "builtin": bool(item.builtin),
             "description": item.description,
             "start": item.start,
             "time": bool(item.time),
-            "options": option_names(item.function),
-            "defaults": option_defaults(item.function),
-        }
-        for name, item in sorted(PROCEDURES.items())
-    ]
+            "options": options["names"],
+            "defaults": options["defaults"],
+        })
 
     return procedures
 

@@ -84,6 +84,8 @@ vi.mock('../../api/client', () => ({
 describe('既製のモデルの一式の画面', () => {
   it('ライセンスの警告, 重みの置き場, 画像の欄を出し, 意思決定と問題の設定の欄を出さない', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    // 一覧から開いた一式 (種類が分かるので問題の設定を要求しない)
+    client.setQueryData(['bundles'], [resnet])
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={['/bundles/r1']}>
