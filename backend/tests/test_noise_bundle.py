@@ -546,3 +546,14 @@ def test_text_output_rows(tmp_path: Path, client: TestClient) -> None:
     assert [row["prediction"] for row in rows] == ["123", "NA", ""]
     assert rows[0]["tokens"] == "4" and rows[2]["tokens"] == ""
     assert [row["status"] for row in rows] == ["ok"] * 3
+
+    # tokens の列の無い古い文の結果も, 予測を文字のまま読む (全ての行が
+    # 番号 1 つに見えても数にしない. 予測した行の空の文は空の文字)
+    table.loc[0, "prediction"] = "5"
+    table.loc[1, "prediction"] = "07"
+    table.drop(columns=["tokens"]).to_csv(
+        place / "predictions.csv", index=False, encoding="utf-8-sig"
+    )
+    rows = client.get(f"/api/results/{result['id']}/rows").json()["rows"]
+    assert [row["prediction"] for row in rows] == ["5", "07", ""]
+    assert "tokens" not in rows[0]
