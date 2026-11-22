@@ -500,12 +500,20 @@ export interface ExperimentRow {
   bundle_id: string | null
 }
 
-export interface ExperimentList {
+/** 問題の設定に記録したプロジェクトの, 方策の一式 (実験の policy) を持つ実験 */
+export interface PolicyExperimentRow extends Omit<ExperimentRow, 'bundle_id' | 'path'> {
+  /** 方策の一式のディレクトリ (実験の policy) */
+  path: string
+  /** 登録済みならその方策の一式の id */
+  policy_id: string | null
+}
+
+export interface ExperimentList<Row = ExperimentRow> {
   /** 探した問題の設定の置き場 (ML-Pathfinder) */
   problems: string
   /** 見たプロジェクトの数 */
   projects: number
-  experiments: ExperimentRow[]
+  experiments: Row[]
   /** 上限で打ち切ったか */
   truncated: boolean
 }

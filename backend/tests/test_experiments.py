@@ -13,6 +13,11 @@ from ml_provide.app import create_app
 # テストで使うトークン
 TOKEN = "test-token"
 
+# ML-Inference のテストの方策の一式 (ML-Found で書き出したもの)
+POLICIES = (
+    Path(__file__).resolve().parents[2] / "ML-Inference" / "tests" / "policies"
+)
+
 
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
@@ -143,3 +148,62 @@ def test_project_bundles_newest_first(tmp_path: Path) -> None:
     found = experiments.project_bundles(project, 10)
     assert all(not path.is_symlink() for path in found)
     assert len(found) == 3
+
+
+def test_list_policy_experiments(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """
+    方策の一式を持つ実験だけを出し, 登録済みの方策の一式を見分けることを
+    確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    tmp_path: Path
+        一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 記録したプロジェクトに, 方策の一式のある実験と推論の一式の実験
+    project = tmp_path / "project"
+    runs = project / "outputs"
+    policy = runs / "cartpole" / "2026-01-02" / "09-00-00" / "policy"
+    shutil.copytree(POLICIES / "cartpole", policy)
+    added = client.post("/api/samples").json()
+    shutil.copytree(
+        added[0]["path"], runs / "sales" / "2026-01-01" / "10-00-00"
+        / "inference"
+    )
+    (runs / "empty" / "2026-01-03" / "08-00-00" / "policy").mkdir(
+        parents=True
+    )
+    problem = example_problem("総菜の作る量")
+    ml_quest.save_problem(
+        {**problem, "project": {"path": str(project.resolve())}},
+        tmp_path / "pathfinder" / "problems" / "b"
+    )
+
+    # 方策の一式の一覧は policy.json を持つ policy だけ
+    listing = client.get("/api/experiments/policies").json()
+    assert listing["projects"] == 1 and not listing["truncated"]
+    rows = listing["experiments"]
+    assert [row["experiment"] for row in rows] == ["cartpole/2026-01-02/09-00-00"]
+    assert rows[0]["path"] == str(policy.resolve())
+    assert rows[0]["policy_id"] is None
+    assert "bundle_id" not in rows[0]
+
+    # 推論の一式の一覧には方策の一式が出ない
+    bundles = client.get("/api/experiments").json()["experiments"]
+    assert [row["experiment"] for row in bundles] == [
+        "sales/2026-01-01/10-00-00"
+    ]
+
+    # 一覧の場所で登録すると, 登録済みとして見分ける
+    view = client.post("/api/policies", json={"path": rows[0]["path"]})
+    assert view.status_code == 201, view.text
+    rows = client.get("/api/experiments/policies").json()["experiments"]
+    assert rows[0]["policy_id"] == view.json()["id"]
