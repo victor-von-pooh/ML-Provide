@@ -262,8 +262,37 @@ def describe(path: str) -> tuple[dict[str, Any], bool]:
         weights = bundle.weights_path if bundle is not None else weights
         if known[0] == bundle_stamp(path, weights):
             description = {**description, "pretrained_warnings": known[1]}
+    description = with_cached_weights(description)
 
     return description, loaded
+
+
+def with_cached_weights(description: dict[str, Any]) -> dict[str, Any]:
+    """
+    既製のモデルの一式の, 出どころの重みのファイルがあるかを見直す関数
+
+    出どころの重みは一式の外 (PyTorch の置き場) にあり, 一式の印に入らない
+    ので, 覚えた説明でも毎回確かめる
+
+    Parameters
+    ----------
+    description: dict[str, Any]
+        一式の説明
+
+    Returns
+    ----------
+    description: dict[str, Any]
+        ready.weights_cached を今のファイルで直した説明 (既製のモデルの
+        一式でなければそのまま)
+    """
+    # 置き場のファイルの有無だけ (中身の hash は読むときに確かめる)
+    ready = description.get("ready")
+    if not isinstance(ready, dict) or not ready.get("weights_file"):
+        return description
+    cached = Path(str(ready["weights_file"])).is_file()
+    description = {**description, "ready": {**ready, "weights_cached": cached}}
+
+    return description
 
 
 def cached_description(path: str) -> dict[str, Any]:

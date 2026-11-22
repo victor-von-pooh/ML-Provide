@@ -11,6 +11,8 @@ import type {
   PolicyAct,
   PolicyExperimentRow,
   ProblemState,
+  ReadyCreateBody,
+  ReadyPreview,
   Remeasure,
   Result,
   Rows,
@@ -70,6 +72,12 @@ export const api = {
     request<Bundle>('/api/bundles', json('POST', { path, name })),
   createBundle: (body: BundleCreateBody) =>
     request<Bundle>('/api/bundles/create', json('POST', body)),
+  readyPreview: (library: string, model: string, weights: string) =>
+    request<ReadyPreview>(
+      `/api/ready/preview?${new URLSearchParams({ library, model, weights }).toString()}`,
+    ),
+  createReadyBundle: (body: ReadyCreateBody) =>
+    request<Bundle>('/api/bundles/ready', json('POST', body)),
   experiments: () => request<ExperimentList>('/api/experiments'),
   policyExperiments: () =>
     request<ExperimentList<PolicyExperimentRow>>('/api/experiments/policies'),

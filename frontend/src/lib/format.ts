@@ -76,6 +76,7 @@ export const KIND_LABELS: Record<string, string> = {
   audio: '音声',
   items: 'ファイルの組',
   noise: '雑音だけ',
+  ready: '既製のモデル',
 }
 
 /** タスクの日本語の名前 */

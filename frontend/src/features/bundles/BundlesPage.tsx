@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FlaskConical, FolderInput, ListChecks, Package, Plus } from 'lucide-react'
+import { FlaskConical, FolderInput, ListChecks, Package, PackagePlus, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 
@@ -9,8 +9,10 @@ import { PathPicker } from '../../components/PathPicker'
 import { Button, Card, EmptyState, ErrorBox, PageHeader, Spinner } from '../../components/ui'
 import { formatNumber, KIND_LABELS, TASK_LABELS } from '../../lib/format'
 import { FORM_LABELS, isColumnOutput, ROLE_LABELS } from '../../lib/outputs'
+import { classesText } from '../../lib/ready'
 import { CreateBundleDialog } from './CreateBundleDialog'
 import { ExperimentsDialog } from './ExperimentsDialog'
+import { ReadyBundleDialog } from './ReadyBundleDialog'
 
 /** 一式の行の, 種類とタスクとクラス */
 function bundleSummary(bundle: Bundle): string {
@@ -29,7 +31,12 @@ function bundleSummary(bundle: Bundle): string {
     const roleLabel = ROLE_LABELS[role] ?? role
     return `${kind}から${FORM_LABELS[form] ?? form} (${roleLabel})`
   }
-  const classes = description.classes.length > 0 ? ` (${description.classes.join(', ')})` : ''
+  // 既製のモデルは種類が多い (ImageNet は 1000) ので数と先頭だけ
+  if (description.kind === 'ready') {
+    const library = description.ready ? ` (${description.ready.library})` : ''
+    return `${kind}${library}の画像の${task} (${description.classes.length.toLocaleString()} 種類)`
+  }
+  const classes = description.classes.length > 0 ? ` (${classesText(description.classes)})` : ''
   return `${kind}の${task}${classes}`
 }
 
@@ -38,7 +45,7 @@ export function BundlesPage() {
   const navigate = useNavigate()
   const client = useQueryClient()
   const bundles = useQuery({ queryKey: ['bundles'], queryFn: api.bundles })
-  const [dialog, setDialog] = useState<'register' | 'experiments' | 'create' | null>(null)
+  const [dialog, setDialog] = useState<'register' | 'experiments' | 'create' | 'ready' | null>(null)
   const register = useMutation({
     mutationFn: ({ path, name }: { path: string; name?: string }) => api.registerBundle(path, name),
     onSuccess: (bundle) => {
@@ -76,6 +83,9 @@ export function BundlesPage() {
       </Button>
       <Button icon={FolderInput} onClick={() => setDialog('register')} data-return="register">
         場所で登録
+      </Button>
+      <Button icon={PackagePlus} onClick={() => setDialog('ready')} data-return="ready">
+        既製のモデルから作る
       </Button>
       <Button
         variant="primary"
@@ -116,8 +126,10 @@ export function BundlesPage() {
         <EmptyState icon={Package} title="一式がありません">
           学習のスクリプトが作った一式 (inference.yaml を持つディレクトリ)
           を実験の一覧か場所で登録するか, モデルの定義, データセット, 実験から作ります.
-          試すだけなら「見本の一式を入れる」で, 小さな見本のデータで学習した一式 (表の分類,
-          表の回帰, 時系列の先の予測, 文の分類) を入れられます.
+          学習しないライブラリの学習済みのモデル (torchvision の ResNet18 など)
+          は「既製のモデルから作る」で作ります. 試すだけなら「見本の一式を入れる」で,
+          小さな見本のデータで学習した一式 (表の分類, 表の回帰, 時系列の先の予測, 文の分類)
+          を入れられます.
         </EmptyState>
       )}
       {bundles.data && bundles.data.length > 0 && (
@@ -188,6 +200,9 @@ export function BundlesPage() {
           onClose={() => setDialog(null)}
           onRegister={(path, name) => register.mutate({ path, name })}
         />
+      )}
+      {dialog === 'ready' && (
+        <ReadyBundleDialog onClose={() => setDialog(null)} onCreated={opened} />
       )}
       {dialog === 'create' && (
         <CreateBundleDialog onClose={() => setDialog(null)} onCreated={opened} />

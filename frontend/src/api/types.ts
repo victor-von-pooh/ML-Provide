@@ -94,6 +94,67 @@ export interface Description {
   pretrained_warnings?: string[]
   /** 版 2 のデータセットの一式 (版 4) の 1 件の扱い */
   items?: ItemsInfo | null
+  /** 既製のモデルの一式 (版 6) の出どころ, 前処理, ライセンスと重みの置き場 */
+  ready?: ReadyInfo | null
+}
+
+/** 既製のモデルの重みのライセンス (画面は alert が真なら message と source で警告する) */
+export interface ReadyLicense {
+  license: string | null
+  status: string | null
+  redistributable: boolean | null
+  gated: boolean | null
+  alert: boolean | null
+  message: string | null
+  source: string | null
+  url: string | null
+}
+
+/** 既製のモデルの前処理 (短い辺をそろえ, 真ん中を切り出し, 正規化する) */
+export interface ReadyPreprocess {
+  resize: number
+  crop: number
+  interpolation: string
+  mean: number[]
+  std: number[]
+}
+
+/** 既製のモデルの一式の ready の欄 */
+export interface ReadyInfo {
+  library: string
+  model: string
+  weights: string
+  input: string
+  preprocess: ReadyPreprocess
+  url: string | null
+  file: string | null
+  license: ReadyLicense | null
+  /** 出どころの重みのファイルを置く場所と, そこにあるか (無ければ初回に取りに行く) */
+  weights_file: string
+  weights_cached: boolean
+}
+
+/** 既製のモデルの一式を作る前の下見 (重みは取りに行かない) */
+export interface ReadyPreview {
+  library: string
+  model: string
+  /** 版の決まった重みの名前 (DEFAULT は直した名前) */
+  weights: string
+  classes: string[]
+  input: string | null
+  preprocess: ReadyPreprocess
+  url: string | null
+  file: string | null
+  license: ReadyLicense
+}
+
+export interface ReadyCreateBody {
+  name: string
+  library: string
+  model: string
+  weights: string
+  /** 決めておいた重みの hash (読んだ重みと違えば作らない) */
+  sha256?: string | null
 }
 
 /** 版 4 の一式の 1 件の扱い (学習のスクリプトと同じ扱いを推論でかける) */
@@ -403,6 +464,8 @@ export interface AppInfo {
   max_samples: number
   /** 画面で作る一式の手順の回数の上限 */
   max_procedure_steps: number
+  /** 既製のモデルの出どころ (ML-Inference の READY_LIBRARIES) */
+  ready_libraries?: string[]
 }
 
 /** モデルの入力ごとの出どころ (features, items, state, time) と先頭に足す番号 */

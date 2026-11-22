@@ -32,6 +32,7 @@ from ml_provide.cache import (
 )
 from ml_provide.previews import PREVIEW_LIMIT, array_preview, dtype_problem
 from ml_provide.procedures import missing_procedure, registered
+from ml_provide.ready import make_ready, preview_ready
 from ml_provide.samples import write_samples
 from ml_provide.store import Store
 from ml_provide.units import unit_hint
@@ -106,6 +107,14 @@ class BundleCreate(BaseModel):
     output_options: Optional[dict[str, Any]] = None
     procedure: Optional[dict[str, Any]] = None
     items: Optional[dict[str, Any]] = None
+
+
+class ReadyCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=MAX_NAME)
+    library: str = "torchvision"
+    model: str
+    weights: str
+    sha256: Optional[str] = None
 
 
 class PredictRequest(BaseModel):
@@ -299,7 +308,7 @@ def get_info(request: Request) -> dict[str, Any]:
         設定で読んだ手順のモジュール), unit_modules (起動の設定で読んだ
         部品のモジュールと登録した部品の名前), max_samples (雑音だけの
         一式で一度に作る件数の上限), max_procedure_steps (画面で作る一式の
-        手順の回数の上限)
+        手順の回数の上限), ready_libraries (既製のモデルの出どころ)
     """
     info = {
         "version": ml_inference.__version__,
@@ -314,6 +323,7 @@ def get_info(request: Request) -> dict[str, Any]:
         ),
         "max_samples": MAX_SAMPLES,
         "max_procedure_steps": MAX_PROCEDURE_STEPS,
+        "ready_libraries": list(ml_inference.READY_LIBRARIES),
     }
 
     return info
@@ -505,6 +515,84 @@ def create_bundle(request: Request, body: BundleCreate) -> dict[str, Any]:
         if not dataset and shaped:
             exception.detail = f"{exception.detail} ({NOISE_SHAPE_HINT})"
         raise exception from error
+    entry = store.add(place, body.name, managed=True, bundle_id=bundle_id)
+    view = bundle_view(entry)
+
+    return view
+
+
+@router.get("/ready/preview")
+def get_ready_preview(
+    library: str = Query(max_length=MAX_NAME),
+    model: str = Query(max_length=200),
+    weights: str = Query(max_length=200),
+) -> dict[str, Any]:
+    """
+    既製のモデルの一式を作る前に, 種類の名前, 前処理, ライセンスを読む関数
+
+    Parameters
+    ----------
+    library: str
+        出どころ (ML-Inference の READY_LIBRARIES の名前)
+    model: str
+        モデルの名前
+    weights: str
+        重みの名前
+
+    Returns
+    ----------
+    preview: dict[str, Any]
+        library, model, weights, classes, input, preprocess, url, file,
+        license (重みは取りに行かない)
+
+    Raises
+    ----------
+    HTTPException
+        出どころ, モデル, 重みの名前が無い場合は 400
+    """
+    # 出どころが入っていない場合 (ImportError) も理由を返す
+    try:
+        preview = preview_ready(library, model, weights)
+    except (ImportError, *USER_ERRORS) as error:
+        raise user_error(error) from error
+
+    return preview
+
+
+@router.post("/bundles/ready", status_code=201)
+def create_ready_bundle(
+    request: Request, body: ReadyCreate
+) -> dict[str, Any]:
+    """
+    学習しない既製のモデルの一式を置き場に作って登録する関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    body: ReadyCreate
+        名前, 出どころ, モデル, 重み, 決めておいた hash
+
+    Returns
+    ----------
+    view: dict[str, Any]
+        登録と説明
+
+    Raises
+    ----------
+    HTTPException
+        一式を作れない場合は 400 (理由付き)
+    """
+    # 重みを出どころから読んで hash を固定する (初回は取りに行く)
+    store = get_store(request)
+    bundle_id, place = store.new_bundle_dir()
+    try:
+        make_ready(
+            place, body.library, body.model, body.weights, body.name,
+            sha256=body.sha256
+        )
+    except Exception as error:
+        raise user_error(error) from error
     entry = store.add(place, body.name, managed=True, bundle_id=bundle_id)
     view = bundle_view(entry)
 
@@ -1424,6 +1512,8 @@ def get_rows(
     frame = read_frame(place, read_meta(place))
     if "index" in frame.columns:
         frame = frame.rename(columns={"index": "index (入力)"})
+    # (列の多い表 (種類ごとの確率) は, 読んだ表が断片なのでまとめてから)
+    frame = frame.copy()
     frame.insert(0, "index", range(len(frame)))
     if status:
         frame = frame[frame["status"] == status]

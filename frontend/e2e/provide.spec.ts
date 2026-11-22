@@ -357,7 +357,10 @@ test('起動の設定で読んだ自作の部品の一式を推論し, 登録さ
   const info = (await (await page.request.get('/api/info')).json()) as {
     unit_modules: { name: string; units: string[] }[]
   }
-  expect(info.unit_modules).toEqual([{ name: 'e2e_units', units: ['e2e.Twice'] }])
+  expect(info.unit_modules).toEqual([
+    { name: 'e2e_units', units: ['e2e.Twice'] },
+    { name: 'e2e_ready', units: ['e2e.ReadyColors'] },
+  ])
 
   const id = await registerFresh(page.request, path.join(root, 'unit'))
   const file = path.join(root, 'unit', 'model_spec.yaml')
@@ -720,3 +723,51 @@ async function registerFresh(request: APIRequestContext, place: string): Promise
   expect(response.status()).toBe(201)
   return ((await response.json()) as { id: string }).id
 }
+
+test('既製のモデルの一式を下見して作り, ライセンスの警告と重みの置き場を見て, 画像の種類を推論する', async ({
+  page,
+}) => {
+  const images = path.resolve(import.meta.dirname, '.work', 'ready-images')
+  await page.goto('/')
+  await page.getByRole('button', { name: '既製のモデルから作る' }).click()
+  const dialog = page.getByRole('dialog', { name: '既製のモデルから作る' })
+  // 起動の設定で足した作り物の出どころ (ネットワークを使わない)
+  await dialog.getByLabel('出どころ').selectOption('e2e')
+  await dialog.getByLabel('モデルの名前').fill('colors')
+  await dialog.getByLabel('重みの名前 (版)').fill('V9')
+  await expect(dialog.getByText(/colors の重みに V9 がありません/)).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '作って登録' })).toBeDisabled()
+  await dialog.getByLabel('重みの名前 (版)').fill('V1')
+  const preview = dialog.getByRole('region', { name: '下見' })
+  await expect(preview).toContainText('3 種類')
+  await expect(preview).toContainText('赤いもの, 緑のもの, 青いもの')
+  await expect(preview).toContainText('真ん中の 16 × 16 を切り出し')
+  await expect(preview.getByRole('alert')).toContainText('ライセンスの情報を読めませんでした')
+  await dialog.getByLabel('一式の名前').fill('色の分類')
+  await dialog.getByRole('button', { name: '作って登録' }).click()
+
+  // 一式の画面: ライセンスの警告, 出どころ, 重みの置き場, 意思決定の欄は出さない
+  await expect(page.getByRole('heading', { name: '色の分類' })).toBeVisible({ timeout: 30_000 })
+  const id = new URL(page.url()).pathname.split('/').pop() ?? ''
+  try {
+    await expect(page.getByRole('note', { name: 'ライセンスの警告' })).toBeVisible()
+    await expect(page.getByText(/e2e の colors \(重み V1\)/)).toBeVisible()
+    await expect(page.getByText(/e2e-colors-0123abcd\.pth/)).toBeVisible()
+    await expect(page.getByText(/置き場にありません/)).toBeVisible()
+    await expect(page.getByRole('region', { name: '意思決定' })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: /^問題の設定/ })).toHaveCount(0)
+
+    // 画像のディレクトリを推論し, 種類の名前と確信度を見る (読めない画像は飛ばす)
+    await page.getByLabel(/推論する画像/).fill(images)
+    await page.getByRole('button', { name: '推論する' }).click()
+    await expect(page.getByText('4 件のうち 3 件を予測')).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText(/意思決定, 過去のデータでのたどり直し/)).toBeVisible()
+    await expect(page.getByRole('heading', { name: /^意思決定/ })).toHaveCount(0)
+    const table = page.getByRole('table', { name: '予測と判断の表' })
+    await expect(table.getByRole('row').filter({ hasText: 'a_red.png' })).toContainText('赤いもの')
+    await expect(table.getByRole('row').filter({ hasText: 'c_blue.png' })).toContainText('青いもの')
+    await expect(table.getByRole('columnheader', { name: 'confidence' })).toBeVisible()
+  } finally {
+    await page.request.delete(`/api/bundles/${id}`)
+  }
+})
