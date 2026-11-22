@@ -460,6 +460,39 @@ test('実験の一覧から一式を登録し, 写しが指す元の問題の設
   ).toBeVisible()
 })
 
+test('領域の値が飛ぶ (0, 3, 7) データセットの一式で, 凡例の名前が値と合う', async ({ page }) => {
+  const root = path.resolve(import.meta.dirname, '.work', 'items')
+  await page.goto('/')
+  await page.getByRole('button', { name: '学習の結果から作る' }).click()
+  const dialog = page.getByRole('dialog', { name: '学習の結果から一式を作る' })
+  await dialog.getByLabel('名前', { exact: true }).fill('値の飛ぶ領域')
+  await dialog.getByLabel('モデルの定義 (YAML か JSON)').fill(path.join(root, 'mask_spec.yaml'))
+  await dialog.getByLabel(/^実験のディレクトリ/).fill(path.join(root, 'runs', 'mask'))
+  await dialog.getByLabel(/^データセット/).fill(path.join(root, 'masks_gap'))
+  const summary = dialog.getByRole('note', { name: '版 2 のデータセット' })
+  await expect(summary).toContainText('3: circle')
+  await expect(summary).toContainText('7: square')
+  await dialog.getByRole('button', { name: '作る' }).click()
+
+  await expect(page.getByRole('heading', { name: '値の飛ぶ領域' })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText(/値ごとの名前 0: background, 3: circle, 7: square/)).toBeVisible()
+  const id = new URL(page.url()).pathname.split('/').pop() ?? ''
+  try {
+    await page
+      .getByLabel(/推論するデータ \(画像のファイル/)
+      .fill(path.join(root, 'raw_gap', 'images'))
+    await page.getByRole('button', { name: '推論する' }).click()
+    await expect(page.getByText('8 件のうち 8 件を推論')).toBeVisible({ timeout: 30_000 })
+    // 凡例の値は 0, 3, 7 のどれかで, 名前はその値のもの (番号 1, 2 の名前でない)
+    const legend = page.getByRole('list', { name: '領域の番号ごとの画素' }).getByRole('listitem')
+    await expect(legend.first()).toBeVisible()
+    for (const text of await legend.allTextContents())
+      expect(text).toMatch(/^(0 \(background\)|3 \(circle\)|7 \(square\)): /)
+  } finally {
+    await page.request.delete(`/api/bundles/${id}`)
+  }
+})
+
 test('版 2 の画像と領域のデータセットと実験から一式を作り, 新しい画像の領域を値の名前で見る', async ({
   page,
 }) => {

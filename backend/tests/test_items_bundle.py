@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from ml_eda import export_capture_clouds, export_image_masks, synthetic
 from ml_modelcontrol import build_model, load_example
 from ml_quest.examples import example_problem
+from PIL import Image
 
 from ml_provide.app import create_app
 
@@ -93,12 +94,25 @@ def items(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
                                "height": 16}]}
     )
 
+    # 領域の値が飛ぶ (0, 3, 7) データセット (同じ画像の領域の値を付け替え)
+    shutil.copytree(root / "raw_m", root / "raw_gap")
+    for mask in (root / "raw_gap" / "masks").glob("*.png"):
+        values = np.asarray(Image.open(mask))
+        Image.fromarray(
+            np.array([0, 3, 7], dtype=np.uint8)[values]
+        ).save(mask)
+    export_image_masks(
+        root / "raw_gap" / "images", root / "raw_gap" / "masks",
+        root / "masks_gap", split=split,
+        classes={0: "background", 3: "circle", 7: "square"}
+    )
+
     # 見本の定義 (領域は背景を含む 3 クラス) と乱数の初期値の重み
     paths = {
         "images": root / "raw_m" / "images", "masks": root / "masks",
         "captures": root / "raw_c" / "captures", "clouds": root / "clouds",
         "images_v3": root / "raw_m3" / "images",
-        "masks_v3": root / "masks_v3",
+        "masks_v3": root / "masks_v3", "masks_gap": root / "masks_gap",
     }
     unet = load_example("unet_segmentation")
     unet["nodes"]["head"]["params"]["out_channels"] = 3
@@ -309,6 +323,57 @@ def test_mask_bundle_from_run(
               "rules": {"min_confidence": 0.5}}
     )
     assert response.status_code == 400
+
+
+def test_mask_bundle_gap_values(
+    client: TestClient, items: dict[str, Path], tmp_path: Path
+) -> None:
+    """
+    領域の値が飛ぶ (0, 3, 7) データセットの一式で, 推論した領域が値で出て,
+    値から名前を引けることを確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    items: dict[str, Path]
+        見本の場所
+    tmp_path: Path
+        一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # クラスの番号 0, 1, 2 は値 0, 3, 7 の順. 重みは全ての画素を番号 2
+    # (値 7) にするように, 最後の層の偏りを変えたもの
+    state = torch.load(items["mask_weights"])
+    state["nodes.head.bias"] = torch.tensor([0.0, 0.0, 100.0])
+    torch.save(state, tmp_path / "square.pt")
+    run = fake_run(tmp_path / "run", tmp_path / "square.pt", "valid/loss")
+    response = create(client, {**items, "masks": items["masks_gap"]},
+                      "mask", run, {})
+    assert response.status_code == 201, response.text
+    description = response.json()["description"]
+    assert description["items"]["values"] == [0, 3, 7]
+    assert description["output"]["classes"] == [
+        "background", "circle", "square"
+    ]
+
+    # 領域の格子は番号 (2) でなく値 (7) で, 値の並びと名前の並びから名前
+    # を引ける (画面の凡例と同じ引き方)
+    response = client.post(
+        f"/api/bundles/{response.json()['id']}/predict",
+        json={"source": str(items["images"])}
+    )
+    assert response.status_code == 201, response.text
+    preview = client.get(
+        f"/api/results/{response.json()['id']}/artifacts/0"
+    ).json()
+    assert [item["label"] for item in preview["labels"]] == [7]
+    names = dict(zip(description["items"]["values"],
+                     description["output"]["classes"], strict=True))
+    assert names[7] == "square"
 
 
 def test_mask_bundle_version3(

@@ -136,6 +136,10 @@ export function CreateBundleDialog({
       : null
   // 説明で止めたデータセット (読めない, 一式を作れない版) は作れない
   const describeFailed = !noData && !!described.error && datasetPath === dataset.trim()
+  // 説明を読んでいる間と, 欄が読んだ場所と違う間 (打ってから待つ間) は作れない
+  // (前のデータセットの説明で欄を決めて送らないため)
+  const describing =
+    !noData && !!dataset.trim() && (datasetPath !== dataset.trim() || described.isFetching)
   const itemInputs = (itemsData?.entries ?? []).filter((entry) => entry.role === 'input')
   const [itemInput, setItemInput] = useState('')
   const chosenInput = itemInputs.find((entry) => entry.name === itemInput) ?? itemInputs[0]
@@ -269,7 +273,8 @@ export function CreateBundleDialog({
     (noData || dataset.trim()) &&
     weights.trim() &&
     problems.length === 0 &&
-    !describeFailed
+    !describeFailed &&
+    !describing
   return (
     <Dialog title="学習の結果から一式を作る" onClose={onClose}>
       <form
@@ -334,6 +339,11 @@ export function CreateBundleDialog({
         )}
         {itemsData && <ItemsSummary described={itemsData} />}
         {describeFailed && <p className="text-xs text-warning-text">{described.error?.message}</p>}
+        {describing && (
+          <p role="status" className="text-xs text-ink-2">
+            データセットの説明を読み込んでいます
+          </p>
+        )}
         {itemsData && (itemInputs.length > 1 || needsPoints) && (
           <fieldset className="grid gap-3 rounded-lg border border-line p-3 md:grid-cols-2">
             <legend className="px-1 text-xs font-semibold text-ink-2">

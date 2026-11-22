@@ -2,8 +2,8 @@
 画面の通しのテスト用に, 版 2 と版 3 のデータセットと, そこで学習した実験を
 作る
 
-ML-EDA の合成の見本から画像と領域, 撮影と点群の版 2 のデータセットと,
-大きさの違う画像を中身の手順で 16 x 16 にそろえた版 3 のデータセットを書き
+ML-EDA の合成の見本から画像と領域 (領域の値が 0, 1, 2 と, 飛ぶ 0, 3, 7),
+撮影と点群の版 2 のデータセットと, 大きさの違う画像を中身の手順で 16 x 16 にそろえた版 3 のデータセットを書き
 出し, ML-ModelControl の見本の定義 (unet_segmentation,
 point_cloud_predictor) を 2 エポックだけ学習した ML-Found の形の実験
 (final_model.pt と run.json) を作る. 骨組みのプロジェクトの実験の中に
@@ -12,6 +12,7 @@ point_cloud_predictor) を 2 エポックだけ学習した ML-Found の形の�
 """
 
 import json
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,7 @@ from ml_eda import export_capture_clouds, export_image_masks, load_items
 from ml_eda.synthetic import write_image_masks, write_shape_captures
 from ml_inference.items import backproject
 from ml_modelcontrol import build_model, load_example
+from PIL import Image
 
 # 学習のエポックの数
 EPOCHS = 2
@@ -38,7 +40,7 @@ SEED = 0
 
 def write_datasets(root: Path) -> dict[str, Path]:
     """
-    合成の見本から版 2 のデータセットを 2 つと, 版 3 のデータセットを 1 つ
+    合成の見本から版 2 のデータセットを 3 つと, 版 3 のデータセットを 1 つ
     書き出す関数
 
     Parameters
@@ -77,11 +79,24 @@ def write_datasets(root: Path) -> dict[str, Path]:
         item_steps={"image": [{"op": "resize", "width": 16,
                                "height": 16}]}
     )
+    # 領域の値が飛ぶ (0, 3, 7) 版 2 (同じ画像の領域の値を付け替え. 値で
+    # 名前を引くことを確かめる)
+    shutil.copytree(root / "raw_m", root / "raw_gap")
+    for mask in (root / "raw_gap" / "masks").glob("*.png"):
+        values = np.asarray(Image.open(mask))
+        Image.fromarray(
+            np.array([0, 3, 7], dtype=np.uint8)[values]
+        ).save(mask)
+    export_image_masks(
+        root / "raw_gap" / "images", root / "raw_gap" / "masks",
+        root / "masks_gap", split=split,
+        classes={0: "background", 3: "circle", 7: "square"}
+    )
     paths = {
         "images": root / "raw_m" / "images",
         "captures": root / "raw_c" / "captures",
         "masks": root / "masks", "clouds": root / "clouds",
-        "masks_v3": root / "masks_v3",
+        "masks_v3": root / "masks_v3", "masks_gap": root / "masks_gap",
     }
 
     return paths
