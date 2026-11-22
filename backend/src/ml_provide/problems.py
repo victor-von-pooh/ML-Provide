@@ -13,7 +13,7 @@ from ml_quest.questions import PART, ROLES, TARGET_KINDS
 from pydantic import BaseModel, Field
 
 from ml_provide.api import find_bundle, get_store
-from ml_provide.cache import read_bundle
+from ml_provide.cache import describe, read_bundle
 from ml_provide.units import unit_hint
 
 router = APIRouter(prefix="/api")
@@ -650,6 +650,31 @@ def linked_view(
     return view
 
 
+def unlinked_kind(path: str) -> bool:
+    """
+    問題の設定を読まない一式 (雑音だけの一式, 既製のモデルの一式) かを
+    返す関数
+
+    Parameters
+    ----------
+    path: str
+        一式のディレクトリ
+
+    Returns
+    ----------
+    unlinked: bool
+        一式の説明のデータの種類が noise か ready か (読めない一式は偽)
+    """
+    # 一覧と同じ覚えた説明 (読めない一式は, 今までどおり読んで理由を出す)
+    try:
+        description, _ = describe(path)
+    except Exception:
+        return False
+    unlinked = description.get("kind") in ("noise", "ready")
+
+    return unlinked
+
+
 def problem_state(entry: dict[str, Any], home: Path) -> dict[str, Any]:
     """
     一式につないだ問題の設定の今の状態を返す関数
@@ -668,9 +693,17 @@ def problem_state(entry: dict[str, Any], home: Path) -> dict[str, Any]:
         None), error (読めない理由), hint (つないでいない場合の候補),
         hint_note (候補が写しか元かを伝える文)
     """
-    # つないでいなければ候補だけ
+    # 雑音だけの一式と既製のモデルの一式は, 問題の設定を読まず候補も探さ
+    # ない (画面が一式と並べて要求しても, 結論と意思決定に使わないため)
     text = entry.get("problem")
     state: dict[str, Any]
+    if unlinked_kind(str(entry["path"])):
+        state = {"path": text if isinstance(text, str) else None,
+                 "linked": None, "error": None, "hint": None,
+                 "hint_note": None}
+        return state
+
+    # つないでいなければ候補だけ
     if not isinstance(text, str):
         hint, note = find_hint(Path(str(entry["path"])), home)
         state = {"path": None, "linked": None, "error": None,
