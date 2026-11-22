@@ -1,9 +1,11 @@
 import clsx from 'clsx'
-import { FileBarChart, Lightbulb, Moon, Package, Sun } from 'lucide-react'
+import { Bot, FileBarChart, Lightbulb, Moon, Package, Sun } from 'lucide-react'
 import { NavLink, Route, Routes } from 'react-router'
 
 import { BundlePage } from './features/bundles/BundlePage'
 import { BundlesPage } from './features/bundles/BundlesPage'
+import { PoliciesPage } from './features/policies/PoliciesPage'
+import { PolicyPage } from './features/policies/PolicyPage'
 import { ResultPage } from './features/results/ResultPage'
 import { ResultsPage } from './features/results/ResultsPage'
 import { useTheme } from './lib/themeContext'
@@ -59,6 +61,7 @@ export function App() {
         </div>
         <NavItem to="/" icon={Package} label="推論の一式" />
         <NavItem to="/results" icon={FileBarChart} label="結果" />
+        <NavItem to="/policies" icon={Bot} label="方策の一式" />
       </nav>
       <main id="main" className="min-w-0 flex-1 overflow-auto px-8 py-6">
         <Routes>
@@ -66,6 +69,8 @@ export function App() {
           <Route path="/bundles/:id" element={<BundlePage />} />
           <Route path="/results" element={<ResultsPage />} />
           <Route path="/results/:id" element={<ResultPage />} />
+          <Route path="/policies" element={<PoliciesPage />} />
+          <Route path="/policies/:id" element={<PolicyPage />} />
           <Route path="*" element={<p className="text-ink-3">ページが見つかりません.</p>} />
         </Routes>
       </main>

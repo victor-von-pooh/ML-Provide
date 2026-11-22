@@ -509,3 +509,50 @@ export interface ExperimentList {
   /** 上限で打ち切ったか */
   truncated: boolean
 }
+
+/** 方策の一式の行動か観測の空間 (policy.json の observation_space, action_space) */
+export type PolicySpace =
+  | { type: 'discrete'; n: number; start: number }
+  | { type: 'box'; shape: number[]; low: (number | null)[]; high: (number | null)[] }
+
+/** 方策の一式の守り (policy.json の guards. null は制限なし) */
+export interface PolicyGuards {
+  action_low?: (number | null)[] | null
+  action_high?: (number | null)[] | null
+  allowed_actions?: number[] | null
+  observation_low?: (number | null)[] | null
+  observation_high?: (number | null)[] | null
+  fallback: { kind: 'stop' | 'handover' | 'action'; action?: unknown }
+}
+
+/** 方策の一式の中身 (policy.json) */
+export interface PolicySpec {
+  format_version: number
+  kind: 'policy'
+  head: 'categorical' | 'deterministic'
+  observation_space: PolicySpace
+  action_space: PolicySpace
+  guards: PolicyGuards
+  metadata?: Record<string, unknown>
+}
+
+/** 登録した方策の一式 */
+export interface Policy {
+  id: string
+  name: string
+  path: string
+  added_at: string
+  ok: boolean
+  error: string | null
+  spec: PolicySpec | null
+  /** 一式の重みのうちモデルに無く読まなかったキー (中身を読んだときだけ) */
+  unused_keys: string[] | null
+}
+
+/** 守りを当てた行動の結果 */
+export interface PolicyAct {
+  /** 行動 (番号か数の入れ子の並び). 止めるか元の制御に戻す場合は null */
+  action: number | unknown[] | null
+  status: 'ok' | 'clipped' | 'fallback' | 'stop' | 'handover'
+  reasons: string[]
+}

@@ -7,6 +7,8 @@ import type {
   Decision,
   ExperimentList,
   Listing,
+  Policy,
+  PolicyAct,
   ProblemState,
   Remeasure,
   Result,
@@ -116,4 +118,11 @@ export const api = {
     request<ArtifactPreview>(`/api/results/${id}/artifacts/${row}`),
   artifactUrl: (id: string, row: number) => `/api/results/${id}/artifacts/${row}/file`,
   deleteResult: (id: string) => request<void>(`/api/results/${id}`, { method: 'DELETE' }),
+  policies: () => request<Policy[]>('/api/policies'),
+  policy: (id: string) => request<Policy>(`/api/policies/${id}`),
+  registerPolicy: (path: string, name?: string) =>
+    request<Policy>('/api/policies', json('POST', { path, name })),
+  deletePolicy: (id: string) => request<void>(`/api/policies/${id}`, { method: 'DELETE' }),
+  act: (id: string, observation: unknown) =>
+    request<PolicyAct>(`/api/policies/${id}/act`, json('POST', { observation })),
 }

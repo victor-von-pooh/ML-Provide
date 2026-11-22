@@ -5,7 +5,11 @@
 
 ## 優先度 高
 
-無し
+### 方策の一式を実験の一覧から登録する
+- 何を: 実験の一覧 (ML-Pathfinder の置き場に記録したプロジェクトの `outputs`) から, 骨組みの学習が書き出した方策の一式 (`policy/`) を見つけて並べ, 選んで方策の一式として登録する. 骨組みがモデルの定義を写して `metadata.model.spec` に書いた一式の実例で, 登録から行動を決めるまでを e2e で確かめる
+- なぜ: 今は方策の一式を場所でしか登録できず, 推論の一式のように実験の一覧から選べないため
+- 終わりの条件: 実験の一覧に方策の一式が出て, 選ぶと登録して方策の画面に移る. 骨組みで書き出した一式で e2e が通る
+- つながり: ML-Quest (骨組みの方策の一式の形), ML-Pathfinder
 
 ## 優先度 中
 
@@ -40,7 +44,7 @@
 - つながり: 無し
 
 ### ML-Quest と ML-Inference の公開されていない名前を使わない
-- 何を: e2e の見本 (`frontend/e2e/make_items.py` の `ml_inference.items.backproject`) も含め, ML-Quest と ML-Inference の公開されていない関数 (例: ML-Inference の `conclude` と `predict` の中の関数) を使う所を, 公開の関数に置き換える. 要る関数は持ち主に公開してもらう
+- 何を: e2e の見本 (`frontend/e2e/make_items.py` の `ml_inference.items.backproject`) も含め, ML-Quest と ML-Inference の公開されていない関数 (例: ML-Inference の `conclude` と `predict` の中の関数, 方策の桁の大きな整数の観測で使う `ml_inference.policy.fallback_result`. 後者は ML-Inference の `check_observation` が OverflowError を受けるようになれば, 固定を上げて外せる) を使う所を, 公開の関数に置き換える. 要る関数は持ち主に公開してもらう
 - なぜ: 画面は自分の組のライブラリの公開の口だけを使う決まりのため
 - 終わりの条件: 公開されていない名前の import が無い
 - つながり: ML-Inference, ML-Quest
@@ -74,6 +78,12 @@
 - なぜ: ML-Inference は点群の一式を作る時に, 定義の点の数と `items.options.points` が違えば止めるようになり, 今のテストの組 (512 と 128) では一式を作れず 400 になるため
 - 終わりの条件: ML-Inference の固定を上げても, 点群の一式の backend のテストと e2e が通る
 - つながり: ML-Inference の docs/DESIGN.md の「版 2 のデータセットの一式」
+
+### 方策の観測をファイルでまとめて推論する
+- 何を: 観測をファイル (CSV の行か `.npy` の並び) でまとめて入れ, 1 件ずつの行動, 守りの結果, 理由の表と, 守りの結果ごとの件数を出す. 結果を置き場に残し, 後から開いて CSV で持ち出す
+- なぜ: 今の方策の画面は観測を 1 件ずつ書いて行動を見るだけで, 結果を残さず, 守りがどれだけ働くかをまとめて見られない
+- 終わりの条件: 観測のファイルから表と件数が出て, 結果の一覧から開き直せる. backend と画面のテストがある
+- つながり: ML-Inference (結果の形に方策の結果を足すなら, 結果の形の持ち主)
 
 ## 条件待ち
 
