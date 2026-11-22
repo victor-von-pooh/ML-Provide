@@ -368,6 +368,17 @@ export interface Result {
   } | null
 }
 
+/** 結果どうしの比べ (GET /api/results/compare) */
+export interface Comparison {
+  results: Result[]
+  /** 比べられるか (理由が無いか) */
+  comparable: boolean
+  /** 全ての結果で同じもの (bundle は一式, source は入力のファイル) */
+  basis: ('bundle' | 'source')[]
+  /** 比べられない理由 */
+  reasons: string[]
+}
+
 /** 配列の出力の 1 件の見本 */
 export interface ArtifactPreview {
   row: number

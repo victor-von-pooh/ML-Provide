@@ -132,6 +132,53 @@ test('解約の見本で, 過去のデータを既定の意思決定で推論し
   await expect(page.getByRole('region', { name: 'たどり直し' })).toHaveCount(0)
 })
 
+test('同じ入力の結果を選んで比べ, 違う意思決定を目立たせ, 比べられない組は理由を出す', async ({
+  page,
+}) => {
+  // 前のテストで振り分けに決め直した結果と, 既定の意思決定 (対象を選ぶ) の結果
+  await page.goto('/')
+  await page.getByRole('link', { name: '見本: 解約の予測 (表の分類)' }).click()
+  await page.getByRole('button', { name: /見本の過去のデータ/ }).click()
+  await page.getByRole('button', { name: '推論する' }).click()
+  await expect(page.getByText(/300 件のうち 10 件/)).toBeVisible({ timeout: 30_000 })
+
+  const toResults = () =>
+    page.getByRole('navigation', { name: '移動' }).getByRole('link', { name: '結果' }).click()
+  const compare = page.getByRole('button', { name: /つを比べる/ })
+  await toResults()
+  const past = page
+    .getByRole('listitem')
+    .filter({ hasText: '解約の予測' })
+    .filter({ hasText: 'past.csv' })
+  await expect(past).toHaveCount(2)
+  await expect(compare).toBeDisabled()
+  for (const item of await past.all()) await item.getByRole('checkbox').check()
+  await compare.click()
+  await expect(page.getByRole('heading', { name: '結果どうしの比べ' })).toBeVisible()
+  const kind = page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: /^型/ }) })
+  await expect(kind).toContainText('違う')
+  await expect(kind).toContainText('対象を選ぶ')
+  await expect(kind).toContainText('振り分ける')
+
+  // 違う行だけに絞ると, 同じ一式の行は消える
+  await page.getByLabel('違う行だけを出す').check()
+  await expect(page.getByRole('rowheader', { name: '一式', exact: true })).toHaveCount(0)
+  await expect(kind).toBeVisible()
+
+  // 一式も入力も違う組は理由を出す
+  await toResults()
+  await past.first().getByRole('checkbox').check()
+  await page
+    .getByRole('listitem')
+    .filter({ hasText: '来店数の予測' })
+    .first()
+    .getByRole('checkbox')
+    .check()
+  await compare.click()
+  await expect(page.getByText(/一式も入力も違う結果は比べられません/)).toBeVisible()
+  await expect(page.getByRole('table')).toHaveCount(0)
+})
+
 test('解約の見本の過去のデータで, 外れ方を確かめて一式に書き戻し, 元に戻す', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('link', { name: '見本: 解約の予測 (表の分類)' }).click()

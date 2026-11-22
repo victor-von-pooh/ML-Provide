@@ -49,6 +49,9 @@ MAX_TEXTS = 10000
 # 表として一度に返す行の上限
 MAX_ROWS = 500
 
+# 一度に比べる結果の数の上限 (画面の列が読める幅に収まるように)
+MAX_COMPARE = 6
+
 # 名前に使える長さ
 MAX_NAME = 80
 
@@ -1497,6 +1500,122 @@ def list_results(
         })
 
     return results
+
+
+def same_value(values: list[Any]) -> bool:
+    """
+    全ての値が同じで, 空でないかを返す関数
+
+    Parameters
+    ----------
+    values: list[Any]
+        値の並び
+
+    Returns
+    ----------
+    same: bool
+        全てが同じ空でない値か
+    """
+    same = values[0] is not None and all(v == values[0] for v in values)
+
+    return same
+
+
+def comparison(metas: list[dict[str, Any]]) -> dict[str, Any]:
+    """
+    結果どうしを比べられるかと, 何が同じかを返す関数
+
+    Parameters
+    ----------
+    metas: list[dict[str, Any]]
+        result.yaml の中身の並び
+
+    Returns
+    ----------
+    found: dict[str, Any]
+        同じもの (`basis`. `bundle` は一式, `source` は入力のファイル) と,
+        比べられない理由 (`reasons`)
+    """
+    # 一式は id (前の結果は場所), 入力は読んだファイルの場所 (書いた文は
+    # 同じ件数でも中身が違いうるので同じ入力としない)
+    bundles = [
+        m.get("bundle_id") or (m.get("bundle") or {}).get("path")
+        for m in metas
+    ]
+    sources = [m.get("source_path") for m in metas]
+    basis = [
+        name for name, values in (("bundle", bundles), ("source", sources))
+        if same_value(values)
+    ]
+    reasons = []
+    if not all(is_column(m) for m in metas):
+        reasons.append(
+            "列の出力でない一式の結果は比べられません (判断の内訳と意思決定を"
+            "持たないため)"
+        )
+    if len({str(m.get("task")) for m in metas}) > 1:
+        reasons.append(
+            "タスクの違う結果は比べられません (判断の内訳と得の意味が違うため)"
+        )
+    if not basis:
+        reasons.append(
+            "一式も入力も違う結果は比べられません (違いが一式によるものか"
+            "入力によるものかを分けられないため). 同じ一式か同じ入力の"
+            "ファイルの結果を選んでください"
+        )
+    found = {"basis": basis, "reasons": reasons}
+
+    return found
+
+
+@router.get("/results/compare")
+def compare_results(
+    request: Request, ids: str = Query(..., max_length=1000)
+) -> dict[str, Any]:
+    """
+    選んだ結果のまとめを並べ, 比べられるかを返す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    ids: str
+        カンマで区切った結果の id
+
+    Returns
+    ----------
+    view: dict[str, Any]
+        結果のまとめの並び (`results`), 比べられるか (`comparable`),
+        同じもの (`basis`), 比べられない理由 (`reasons`)
+
+    Raises
+    ----------
+    HTTPException
+        選んだ数が範囲の外か同じ結果を 2 度選んだ場合は 400,
+        無い結果は 404
+    """
+    # 結果の読み込みは 1 つの結果の画面と同じ (表は読まない)
+    chosen = [part.strip() for part in ids.split(",") if part.strip()]
+    if len(chosen) < 2:
+        raise HTTPException(400, "比べる結果を 2 つ以上選んでください")
+    if len(chosen) > MAX_COMPARE:
+        raise HTTPException(
+            400, f"一度に比べられる結果は {MAX_COMPARE} つまでです"
+        )
+    if len(set(chosen)) < len(chosen):
+        raise HTTPException(400, "同じ結果を 2 度選んでいます")
+    places = [find_result(request, result_id) for result_id in chosen]
+    found = comparison([read_meta(place) for place in places])
+    view = {
+        "results": [
+            result_view(result_id, place)
+            for result_id, place in zip(chosen, places, strict=True)
+        ],
+        "comparable": not found["reasons"],
+        **found,
+    }
+
+    return view
 
 
 @router.get("/results/{result_id}")

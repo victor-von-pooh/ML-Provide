@@ -860,3 +860,92 @@ def test_remeasure_keeps_experiment(
     assert client.delete(f"/api/bundles/{entry['id']}").status_code == 204
     assert not Path(saved["copied_to"]).exists()
     assert (run / "inference" / "inference.yaml").is_file()
+
+
+def test_compare_results(tmp_path: Path, client: TestClient) -> None:
+    """
+    同じ一式か同じ入力の結果を並べ, 比べられない組は理由を返すことを
+    確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    client: TestClient
+        クライアント
+
+    Returns
+    ----------
+    None
+    """
+    # 同じ一式と入力で決め方だけ違う 2 つ
+    paths = write_project(tmp_path / "project")
+    first = create(client, paths)
+    second = create(client, paths)
+    other = tmp_path / "other.csv"
+    shutil.copy(paths["csv"], other)
+
+    def predict(bundle: dict[str, Any], source: Path, rules: Any) -> str:
+        response = client.post(
+            f"/api/bundles/{bundle['id']}/predict",
+            json={"source": str(source), "rules": rules},
+        )
+        assert response.status_code == 201, response.text
+        result_id: str = response.json()["id"]
+        return result_id
+
+    held = predict(first, paths["csv"], {"min_confidence": 0.55})
+    free = predict(first, paths["csv"], {})
+    shared = predict(second, paths["csv"], {})
+    apart = predict(second, other, {})
+
+    both = client.get(f"/api/results/compare?ids={held},{free}").json()
+    assert both["comparable"] and both["basis"] == ["bundle", "source"]
+    assert [r["id"] for r in both["results"]] == [held, free]
+    assert both["results"][0]["rules"] == {"min_confidence": 0.55}
+    assert both["results"][1]["summary"]["rows"] == 40
+
+    # 一式が違っても入力が同じなら比べる. 一式も入力も違えば理由
+    same_source = client.get(
+        f"/api/results/compare?ids={free},{shared}"
+    ).json()
+    assert same_source["comparable"] and same_source["basis"] == ["source"]
+    same_bundle = client.get(
+        f"/api/results/compare?ids={shared},{apart}"
+    ).json()
+    assert same_bundle["basis"] == ["bundle"]
+    neither = client.get(f"/api/results/compare?ids={free},{apart}").json()
+    assert not neither["comparable"] and neither["basis"] == []
+    assert "一式も入力も違う" in neither["reasons"][0]
+    assert len(neither["results"]) == 2
+
+    # 選び方の誤り
+    for ids, status in (
+        (held, 400), (f"{held},{held}", 400),
+        (",".join([held] * 7), 400), (f"{held},missing", 404),
+    ):
+        response = client.get(f"/api/results/compare?ids={ids}")
+        assert response.status_code == status, ids
+
+
+def test_comparison_reasons() -> None:
+    """
+    種類の違う結果と列の出力でない結果を比べない理由を確かめる関数
+
+    Returns
+    ----------
+    None
+    """
+    from ml_provide.api import comparison
+
+    table = {"bundle_id": "a", "task": "classification",
+             "source_path": "/data.csv"}
+    found = comparison([table, {**table, "task": "regression"}])
+    assert found["basis"] == ["bundle", "source"]
+    assert ["タスク" in r for r in found["reasons"]] == [True]
+    found = comparison([table, {**table, "column_output": False}])
+    assert ["列の出力でない" in r for r in found["reasons"]] == [True]
+    # 書いた文 (読んだファイルの無い入力) は同じ入力としない
+    texts = {"bundle_id": "a", "task": "classification"}
+    found = comparison([texts, {**texts, "bundle_id": "b"}])
+    assert found["basis"] == [] and len(found["reasons"]) == 1
