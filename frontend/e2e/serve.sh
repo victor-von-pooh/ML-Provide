@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # 画面の通しのテスト (Playwright) 用に, 作業用の置き場でアプリを起動する.
-# 画面は pnpm build で作っておく
+# 画面は pnpm build で作っておく. README の画面の例を撮るときは e2e/screens.sh から,
+# 作業用の置き場の場所 (E2E_WORK) を変え, そこをホーム (E2E_AS_HOME) にして起動する
 set -euo pipefail
 
 cd "$(dirname "$0")"
-WORK="$PWD/.work"
+WORK="${E2E_WORK:-$PWD/.work}"
 E2E_DIR="$PWD"
 PORT="${E2E_PORT:-8794}"
 
@@ -88,6 +89,12 @@ uv run python ../frontend/e2e/make_noise.py "$WORK/noise"
 
 # 決まったトークンで起動. 自作の部品は起動の設定 (環境変数) で明示した
 # 見本のモジュール (e2e/e2e_units.py) だけを読む
-PYTHONPATH="$E2E_DIR${PYTHONPATH:+:$PYTHONPATH}" ML_PROVIDE_UNITS=e2e_units \
-  ML_PROVIDE_HOME="$WORK/home" ML_PATHFINDER_HOME="$WORK/pathfinder" ML_PROVIDE_TOKEN=e2e-token \
-  exec uv run ml-provide --port "$PORT"
+export PYTHONPATH="$E2E_DIR${PYTHONPATH:+:$PYTHONPATH}" ML_PROVIDE_UNITS=e2e_units \
+  ML_PATHFINDER_HOME="$WORK/pathfinder" ML_PROVIDE_TOKEN=e2e-token
+if [ -n "${E2E_AS_HOME:-}" ]; then
+  # 作業用の置き場をホームにし, 一式の置き場を既定の ~/.ml-provide にする
+  # (画面の例に手元の場所が写らないように. uv の置き場が変わらないよう venv を直に呼ぶ)
+  unset ML_PROVIDE_HOME
+  HOME="$WORK" exec .venv/bin/ml-provide --port "$PORT"
+fi
+ML_PROVIDE_HOME="$WORK/home" exec uv run ml-provide --port "$PORT"
