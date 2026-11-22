@@ -9,14 +9,17 @@ from typing import Any
 from urllib.error import URLError
 
 import ml_inference
+import ml_quest
 import numpy as np
 import pytest
 import torch
 from fastapi.testclient import TestClient
 from ml_modelcontrol import register_unit
+from ml_quest.examples import example_problem
 from PIL import Image
 from torch import nn
 
+import ml_provide.problems as problems_module
 import ml_provide.ready as ready_module
 from ml_provide.app import create_app
 
@@ -642,3 +645,131 @@ def test_ready_fetch_refuses_plain_redirect() -> None:
     )
     assert moved is not None
     assert moved.full_url == f"https://mirror.example.com/{FILE}"
+
+
+# 作り方が既製のモデルをそのままの問題の設定の見本
+READY_EXAMPLE = "写真の仕分け (既製のモデル)"
+
+
+def test_ready_problem_link(
+    tmp_path: Path, client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    既製のモデルの一式に問題の設定をつなぐと, 結論の決め方が既定になり,
+    意思決定は使えないと書き, 決めておいた重みとの食い違いを出すことを
+    確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        一時ディレクトリ
+    client: TestClient
+        クライアント
+    monkeypatch: pytest.MonkeyPatch
+        受け渡しの結論の決め方の差し替え
+
+    Returns
+    ----------
+    None
+    """
+    # 骨組みと同じく, 問題の設定を持つプロジェクトの中に一式を作って登録
+    project = tmp_path / "project"
+    ml_quest.save_problem(example_problem(READY_EXAMPLE), project)
+    ml_inference.make_ready_bundle(
+        project / "outputs" / "inference", "tiny", "V1", library="test",
+        conclusion={"min_confidence": 0.5}
+    )
+    response = client.post(
+        "/api/bundles", json={"path": str(project / "outputs" / "inference")}
+    )
+    assert response.status_code == 201, response.text
+    bundle_id = response.json()["id"]
+
+    # つないでいなければ, 上のディレクトリの問題の設定が候補
+    state = client.get(f"/api/bundles/{bundle_id}/problem").json()
+    assert state["hint"] == str((project / "problem.yaml").resolve())
+
+    # 受け渡しの結論の決め方を一式の既定値に重ねる
+    handoff = ml_quest.handoff
+
+    def with_rules(problem: dict) -> dict:
+        stages = handoff(problem)
+        stages["inference"]["conclusion"] = {"min_confidence": 0.8}
+        return stages
+
+    monkeypatch.setattr(ml_quest, "handoff", with_rules)
+    response = client.put(
+        f"/api/bundles/{bundle_id}/problem", json={"path": state["hint"]}
+    )
+    assert response.status_code == 200, response.text
+    linked = response.json()["linked"]
+    assert linked["handled"] is True and linked["decision"] is None
+    assert linked["conclusion"] == {"min_confidence": 0.8}
+    assert "意思決定を使えない" in linked["text"]
+
+    # 見本は torchvision の ResNet18 なので, 出どころ, モデル, 重み, hash が
+    # 一式と違う
+    issues = " / ".join(linked["issues"])
+    for word in ("出どころ torchvision", "モデル resnet18",
+                 "重み IMAGENET1K_V1", "重みの hash 8ec1484cdbb8"):
+        assert word in issues, issues
+
+
+def test_ready_problem_not_pretrained(client: TestClient) -> None:
+    """
+    作り方が既製のモデルをそのままでない問題の設定は, 既製のモデルの一式
+    につなぐと使わないと書き, 結論の決め方は一式の既定値のままにする
+    ことを確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+
+    Returns
+    ----------
+    None
+    """
+    # 列の予測の問題の設定 (総菜の作る量)
+    response = create_ready(client)
+    assert response.status_code == 201, response.text
+    bundle_id = response.json()["id"]
+    folder = Path(response.json()["path"]).parent / "problem"
+    ml_quest.save_problem(example_problem("総菜の作る量"), folder)
+    linked = client.put(
+        f"/api/bundles/{bundle_id}/problem", json={"path": str(folder)}
+    ).json()["linked"]
+    assert linked["handled"] is False and linked["decision"] is None
+    assert "既製のモデルをそのままではない" in linked["text"]
+    assert linked["issues"] == []
+
+
+def test_ready_issues_match(tmp_path: Path, client: TestClient) -> None:
+    """
+    決めておいた重みが一式と同じなら, 重みの名前の DEFAULT と hash の
+    大文字も食い違いにしないことを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        一時ディレクトリ
+    client: TestClient
+        作り物の出どころを足したクライアント
+
+    Returns
+    ----------
+    None
+    """
+    # 一式が読んだ重みの hash を大文字で決めておく
+    ml_inference.make_ready_bundle(
+        tmp_path / "bundle", "tiny", "V1", library="test"
+    )
+    bundle = ml_inference.load_bundle(tmp_path / "bundle")
+    sha = bundle.info["model"]["pretrained"][0]["sha256"]
+    planned = {"library": "test", "model": "tiny", "weights": "DEFAULT",
+               "sha256": f" {sha.upper()} "}
+    assert problems_module.ready_issues(bundle, planned) == []
+    other = problems_module.ready_issues(
+        bundle, {**planned, "sha256": "0" * 64, "model": None}
+    )
+    assert len(other) == 1 and "重みの hash" in other[0]

@@ -810,7 +810,8 @@ test('既製のモデルの一式を下見して作り, ライセンスの警告
   await dialog.getByLabel('一式の名前').fill('色の分類')
   await dialog.getByRole('button', { name: '作って登録' }).click()
 
-  // 一式の画面: ライセンスの警告, 出どころ, 重みの置き場, 意思決定の欄は出さない
+  // 一式の画面: ライセンスの警告, 出どころ, 重みの置き場. 意思決定の欄は出さず,
+  // 問題の設定は既製のモデルの問題の設定をつなげると書く
   await expect(page.getByRole('heading', { name: '色の分類' })).toBeVisible({ timeout: 30_000 })
   const id = new URL(page.url()).pathname.split('/').pop() ?? ''
   try {
@@ -819,7 +820,7 @@ test('既製のモデルの一式を下見して作り, ライセンスの警告
     await expect(page.getByText(/e2e-colors-0123abcd\.pth/)).toBeVisible()
     await expect(page.getByText(/置き場にありません/)).toBeVisible()
     await expect(page.getByRole('region', { name: '意思決定' })).toHaveCount(0)
-    await expect(page.getByRole('heading', { name: /^問題の設定/ })).toHaveCount(0)
+    await expect(page.getByText(/作り方が既製のモデルをそのままの problem.yaml/)).toBeVisible()
 
     // 画像のディレクトリを推論し, 種類の名前と確信度を見る (読めない画像は飛ばす)
     await page.getByLabel(/推論する画像/).fill(images)
