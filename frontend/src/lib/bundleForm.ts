@@ -84,14 +84,35 @@ function isIntegerText(text: string): boolean {
   return /^-?\d+$/.test(text.trim())
 }
 
-/**
- * 手順の設定の値の文を値にする. 数は数, true と false は真偽値, 他は文字.
- * 組み込みの手順の設定は全て数か整数
- */
-export function optionValue(text: string): number | boolean | string {
+/** JSON の引用符で囲んだ文を JSON の決まりで読んだ文字 (囲んでいないか読めなければ undefined) */
+function quotedText(trimmed: string): string | undefined {
+  if (trimmed.length < 2 || !trimmed.startsWith('"') || !trimmed.endsWith('"')) return undefined
+  try {
+    const value: unknown = JSON.parse(trimmed)
+    return typeof value === 'string' ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** 引用符で始まるのに JSON の文字として読めない設定の値の文か ("a, "a\q" など) */
+export function brokenQuoted(text: string): boolean {
   const trimmed = text.trim()
+  return trimmed.startsWith('"') && quotedText(trimmed) === undefined
+}
+
+/**
+ * 手順の設定の値の文を値にする. 数は数, true と false は真偽値, null は null,
+ * JSON の引用符で囲んだ値は JSON の決まりで読んだ文字 (\" と \\ などのエスケープも), 他は前後の空白を除いた文字.
+ * 一式の画面に出た値 (optionsText) を写すと元の型に戻る. 組み込みの手順の設定は全て数か整数
+ */
+export function optionValue(text: string): number | boolean | string | null {
+  const trimmed = text.trim()
+  const quoted = quotedText(trimmed)
+  if (quoted !== undefined) return quoted
   if (trimmed === 'true') return true
   if (trimmed === 'false') return false
+  if (trimmed === 'null') return null
   // 10 進の数だけを数にする (0x10 などを数に変えない)
   const decimal = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(trimmed)
   return decimal ? Number(trimmed) : trimmed
@@ -144,6 +165,11 @@ export function buildInputs(
   return { inputs: inputs.size > 0 ? Object.fromEntries(inputs) : null, problems }
 }
 
+/** 引用符の中を JSON の書き方で書いていない設定の誤りの文 */
+function quotedProblem(name: string): string {
+  return `手順の設定 ${name} の引用符は, 閉じて, 中の " と \\ を \\" と \\\\ と書いてください`
+}
+
 /** 手順の欄から procedure を作る (手順を選ばなければ null) */
 export function buildProcedure(
   form: ProcedureForm,
@@ -164,7 +190,9 @@ export function buildProcedure(
   // 設定の名前の分かる手順は名前ごとの欄 (空は手順の既定値)
   for (const name of entry?.options ?? []) {
     const text = form.options[name] ?? ''
-    if (text.trim()) options[name] = optionValue(text)
+    if (!text.trim()) continue
+    if (brokenQuoted(text)) problems.push(quotedProblem(name))
+    options[name] = optionValue(text)
   }
   // 何でも受け取る自作の手順は「名前=値」の行
   if (entry && entry.options === null) {
@@ -176,6 +204,7 @@ export function buildProcedure(
         problems.push(`手順の設定「${line.trim()}」は 名前=値 の形で書いてください`)
         continue
       }
+      if (brokenQuoted(line.slice(at + 1))) problems.push(quotedProblem(key))
       options[key] = optionValue(line.slice(at + 1))
     }
   }

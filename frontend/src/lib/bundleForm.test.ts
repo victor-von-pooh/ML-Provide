@@ -9,6 +9,7 @@ import {
   EMPTY_PROCEDURE,
   optionValue,
 } from './bundleForm'
+import { optionsText } from './outputs'
 
 const ddim: ProcedureEntry = {
   name: 'ddim',
@@ -138,6 +139,16 @@ describe('buildProcedure', () => {
     expect(procedure?.options).toEqual({ scale: 2, mode: 'fast' })
     expect(problems).toHaveLength(1)
   })
+
+  it('引用符を閉じていない設定の値は知らせる', () => {
+    const { procedure, problems } = buildProcedure(
+      { ...EMPTY_PROCEDURE, name: 'ddim', steps: '3', options: { eta: '"0', train_steps: '"0"' } },
+      ddim,
+    )
+    expect(procedure?.options).toEqual({ eta: '"0', train_steps: '0' })
+    expect(problems).toHaveLength(1)
+    expect(problems[0]).toContain('eta')
+  })
 })
 
 describe('buildOutputOptions', () => {
@@ -186,5 +197,44 @@ describe('optionValue', () => {
     expect(optionValue('0x10')).toBe('0x10')
     expect(optionValue('-.5')).toBe(-0.5)
     expect(optionValue('Infinity')).toBe('Infinity')
+  })
+
+  it('null と, JSON の引用符で囲んだ文字 (エスケープは JSON の決まり)', () => {
+    expect(optionValue('null')).toBeNull()
+    expect(optionValue(' "0" ')).toBe('0')
+    expect(optionValue('""')).toBe('')
+    expect(optionValue('" a "')).toBe(' a ')
+    expect(optionValue('"say \\"hi\\" \\\\ end"')).toBe('say "hi" \\ end')
+    expect(optionValue('"a')).toBe('"a')
+    expect(optionValue('"\\q"')).toBe('"\\q"')
+    expect(optionValue("'0'")).toBe("'0'")
+  })
+
+  it('一式の画面に出た値を写すと元の型に戻る', () => {
+    const values: Record<string, unknown> = {
+      int: 0,
+      float: -1.5,
+      small: 1e-4,
+      yes: true,
+      no: false,
+      none: null,
+      date: '2026-11-22',
+      zero: '0',
+      word: 'true',
+      nil: 'null',
+      hex: '0x1',
+      onoff: 'on',
+      empty: '',
+      spaced: ' a b ',
+      comma: 'a,b',
+      quote: 'say "hi"',
+      backslash: 'a\\b',
+      single: "'q'",
+      plain: 'fast',
+    }
+    for (const [key, value] of Object.entries(values)) {
+      const shown = optionsText({ [key]: value }).slice(key.length + 1)
+      expect(optionValue(shown)).toStrictEqual(value)
+    }
   })
 })
