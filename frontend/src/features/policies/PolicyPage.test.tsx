@@ -42,10 +42,24 @@ const act = vi.fn((_id: string, observation: unknown) =>
   ),
 )
 
+const policyBatch = vi.fn((_id: string, _source: string) =>
+  Promise.resolve({
+    id: 'r1',
+    policy_id: 'p1',
+    policy: { name: 'cartpole', path: '/outputs/cartpole/policy' },
+    source: '/data/observations.csv',
+    created_at: null,
+    rows: 3,
+    counts: { ok: 2, clipped: 0, fallback: 0, stop: 0, handover: 1 },
+  }),
+)
+
 vi.mock('../../api/client', () => ({
   api: {
     policy: () => Promise.resolve(cartpole),
     act: (id: string, observation: unknown) => act(id, observation),
+    policyResults: () => Promise.resolve([]),
+    policyBatch: (id: string, source: string) => policyBatch(id, source),
   },
 }))
 
@@ -56,6 +70,7 @@ function renderPage() {
       <MemoryRouter initialEntries={['/policies/p1']}>
         <Routes>
           <Route path="/policies/:id" element={<PolicyPage />} />
+          <Route path="/policy-results/:id" element={<p>方策の結果の画面</p>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -67,7 +82,7 @@ describe('方策の一式の画面', () => {
     renderPage()
     expect(await screen.findByText('番号 0 から 1 (2 通り)')).toBeInTheDocument()
     expect(screen.getByText('元の制御に戻す')).toBeInTheDocument()
-    const field = screen.getByLabelText(/観測/)
+    const field = screen.getByLabelText(/^観測 \(/)
     expect(field).toHaveValue('0, 0, 0, 0')
 
     fireEvent.click(screen.getByRole('button', { name: '行動を決める' }))
@@ -83,7 +98,7 @@ describe('方策の一式の画面', () => {
 
   it('観測を書き換えると前の結果を消し, 数でない観測は送らずに誤りを出す', async () => {
     renderPage()
-    const field = await screen.findByLabelText(/観測/)
+    const field = await screen.findByLabelText(/^観測 \(/)
     fireEvent.click(screen.getByRole('button', { name: '行動を決める' }))
     expect(await screen.findByText('そのまま')).toBeInTheDocument()
     act.mockClear()
@@ -92,5 +107,18 @@ describe('方策の一式の画面', () => {
     fireEvent.click(screen.getByRole('button', { name: '行動を決める' }))
     expect(await screen.findByText('x は数として読めません')).toBeInTheDocument()
     expect(act).not.toHaveBeenCalled()
+  })
+
+  it('観測のファイルでまとめて決めると, 残した結果の画面に移る', async () => {
+    renderPage()
+    const button = await screen.findByRole('button', { name: 'まとめて決める' })
+    expect(button).toBeDisabled()
+    expect(await screen.findByText('まだ結果がありません.')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText(/^観測のファイル/), {
+      target: { value: ' /data/observations.csv ' },
+    })
+    fireEvent.click(button)
+    expect(await screen.findByText('方策の結果の画面')).toBeInTheDocument()
+    expect(policyBatch).toHaveBeenCalledWith('p1', '/data/observations.csv')
   })
 })

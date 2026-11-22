@@ -10,6 +10,8 @@ import type {
   Policy,
   PolicyAct,
   PolicyExperimentRow,
+  PolicyResult,
+  PolicyResultRows,
   ProblemState,
   ReadyCreateBody,
   ReadyPreview,
@@ -142,4 +144,22 @@ export const api = {
   deletePolicy: (id: string) => request<void>(`/api/policies/${id}`, { method: 'DELETE' }),
   act: (id: string, observation: unknown) =>
     request<PolicyAct>(`/api/policies/${id}/act`, json('POST', { observation })),
+  policyBatch: (id: string, source: string) =>
+    request<PolicyResult>(`/api/policies/${id}/batch`, json('POST', { source })),
+  policyResults: (policy?: string) =>
+    request<PolicyResult[]>(
+      `/api/policy-results${policy ? `?policy=${encodeURIComponent(policy)}` : ''}`,
+    ),
+  policyResult: (id: string) => request<PolicyResult>(`/api/policy-results/${id}`),
+  policyResultRows: (id: string, params: { offset: number; limit: number; status?: string }) => {
+    const query = new URLSearchParams({
+      offset: String(params.offset),
+      limit: String(params.limit),
+    })
+    if (params.status) query.set('status', params.status)
+    return request<PolicyResultRows>(`/api/policy-results/${id}/rows?${query}`)
+  },
+  policyResultDownloadUrl: (id: string) => `/api/policy-results/${id}/download`,
+  deletePolicyResult: (id: string) =>
+    request<void>(`/api/policy-results/${id}`, { method: 'DELETE' }),
 }

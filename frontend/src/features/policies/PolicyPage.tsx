@@ -14,6 +14,7 @@ import {
   spaceSize,
   STATUS_LABELS,
 } from '../../lib/policy'
+import { BatchCard } from './PolicyResults'
 
 /** 範囲の並び (null は制限なし) の見せ方 */
 function bounds(values: (number | null)[] | null | undefined): string {
@@ -193,6 +194,7 @@ export function PolicyPage() {
             <GuardsList guards={spec.guards} />
           </Card>
           {data.ok && <ActCard id={data.id} spec={spec} />}
+          {data.ok && <BatchCard id={data.id} />}
         </div>
       )}
     </>
