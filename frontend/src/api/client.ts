@@ -3,6 +3,7 @@ import type {
   ArtifactPreview,
   Bundle,
   BundleCreateBody,
+  Comparison,
   DatasetDescription,
   Decision,
   ExperimentList,
@@ -109,6 +110,8 @@ export const api = {
   results: (bundle?: string) =>
     request<Result[]>(`/api/results${bundle ? `?bundle=${encodeURIComponent(bundle)}` : ''}`),
   result: (id: string) => request<Result>(`/api/results/${id}`),
+  compare: (ids: string[]) =>
+    request<Comparison>(`/api/results/compare?ids=${ids.map(encodeURIComponent).join(',')}`),
   rows: (
     id: string,
     params: { offset: number; limit: number; status?: string; decision?: string },

@@ -7,6 +7,7 @@ import { BundlesPage } from './features/bundles/BundlesPage'
 import { PoliciesPage } from './features/policies/PoliciesPage'
 import { PolicyPage } from './features/policies/PolicyPage'
 import { PolicyResultPage } from './features/policies/PolicyResults'
+import { ComparePage } from './features/results/ComparePage'
 import { ResultPage } from './features/results/ResultPage'
 import { ResultsPage } from './features/results/ResultsPage'
 import { useTheme } from './lib/themeContext'
@@ -69,6 +70,7 @@ export function App() {
           <Route path="/" element={<BundlesPage />} />
           <Route path="/bundles/:id" element={<BundlePage />} />
           <Route path="/results" element={<ResultsPage />} />
+          <Route path="/results/compare" element={<ComparePage />} />
           <Route path="/results/:id" element={<ResultPage />} />
           <Route path="/policies" element={<PoliciesPage />} />
           <Route path="/policies/:id" element={<PolicyPage />} />
