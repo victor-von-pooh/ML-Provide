@@ -95,21 +95,46 @@ function quotedText(trimmed: string): string | undefined {
   }
 }
 
+/** [ か { で始まる文を JSON の決まりで読んだ配列か辞書 (始まらないか読めなければ undefined) */
+function nestedValue(trimmed: string): unknown[] | Record<string, unknown> | undefined {
+  if (!/^[[{]/.test(trimmed)) return undefined
+  try {
+    const value: unknown = JSON.parse(trimmed)
+    if (Array.isArray(value)) return value as unknown[]
+    return value !== null && typeof value === 'object'
+      ? (value as Record<string, unknown>)
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** 引用符で始まるのに JSON の文字として読めない設定の値の文か ("a, "a" b, "a\q" など) */
 export function brokenQuoted(text: string): boolean {
   const trimmed = text.trim()
   return trimmed.startsWith('"') && quotedText(trimmed) === undefined
 }
 
+/** [ か { で始まるのに JSON の配列か辞書として読めない設定の値の文か ([1, 2 や {a: 1} など) */
+export function brokenNested(text: string): boolean {
+  const trimmed = text.trim()
+  return /^[[{]/.test(trimmed) && nestedValue(trimmed) === undefined
+}
+
 /**
  * 手順の設定の値の文を値にする. 数は数, true と false は真偽値, null は null,
- * JSON の引用符で囲んだ値は JSON の決まりで読んだ文字 (\" と \\ などのエスケープも), 他は前後の空白を除いた文字.
+ * JSON の引用符で囲んだ値は JSON の決まりで読んだ文字 (\" と \\ などのエスケープも),
+ * [ か { で始まる値は JSON の決まりで読んだ配列か辞書 (入れ子も), 他は前後の空白を除いた文字.
  * 一式の画面に出た値 (optionsText) を写すと元の型に戻る. 組み込みの手順の設定は全て数か整数
  */
-export function optionValue(text: string): number | boolean | string | null {
+export function optionValue(
+  text: string,
+): number | boolean | string | null | unknown[] | Record<string, unknown> {
   const trimmed = text.trim()
   const quoted = quotedText(trimmed)
   if (quoted !== undefined) return quoted
+  const nested = nestedValue(trimmed)
+  if (nested !== undefined) return nested
   if (trimmed === 'true') return true
   if (trimmed === 'false') return false
   if (trimmed === 'null') return null
@@ -170,6 +195,18 @@ function quotedProblem(name: string): string {
   return `手順の設定 ${name} は, 引用符で囲んだ全体を JSON の文字として書いてください (閉じた引用符の後ろに何も付けない. 中の " と \\ は \\" と \\\\)`
 }
 
+/** [ か { で始まるのに JSON の配列か辞書として読めない設定の誤りの文 */
+function nestedProblem(name: string): string {
+  return `手順の設定 ${name} は, 配列か辞書なら全体を JSON の決まりで書いてください ([1, 2] や {"a": 1}. 辞書の名前と文字は " で囲む). [ か { で始まる文字は "[a" のように引用符で囲みます`
+}
+
+/** 設定の値の文の誤り (無ければ空) */
+function optionProblems(name: string, text: string): string[] {
+  if (brokenQuoted(text)) return [quotedProblem(name)]
+  if (brokenNested(text)) return [nestedProblem(name)]
+  return []
+}
+
 /** 手順の欄から procedure を作る (手順を選ばなければ null) */
 export function buildProcedure(
   form: ProcedureForm,
@@ -191,7 +228,7 @@ export function buildProcedure(
   for (const name of entry?.options ?? []) {
     const text = form.options[name] ?? ''
     if (!text.trim()) continue
-    if (brokenQuoted(text)) problems.push(quotedProblem(name))
+    problems.push(...optionProblems(name, text))
     options[name] = optionValue(text)
   }
   // 何でも受け取る自作の手順は「名前=値」の行
@@ -204,7 +241,7 @@ export function buildProcedure(
         problems.push(`手順の設定「${line.trim()}」は 名前=値 の形で書いてください`)
         continue
       }
-      if (brokenQuoted(line.slice(at + 1))) problems.push(quotedProblem(key))
+      problems.push(...optionProblems(key, line.slice(at + 1)))
       options[key] = optionValue(line.slice(at + 1))
     }
   }

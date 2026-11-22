@@ -640,12 +640,12 @@ def add_samples(request: Request) -> list[dict[str, Any]]:
         for name, (place, fresh, past) in reversed(samples.items()):
             if str(place.resolve()) in registered or name in registered:
                 continue
+            # 過去のデータは列の見本だけ
+            extra = {"sample_input": str(fresh.resolve())}
+            if past is not None:
+                extra["sample_past"] = str(past.resolve())
             try:
-                entry = store.add(
-                    place, name, managed=False,
-                    extra={"sample_input": str(fresh.resolve()),
-                           "sample_past": str(past.resolve())}
-                )
+                entry = store.add(place, name, managed=False, extra=extra)
             except ValueError:
                 continue
             bundles.append(bundle_view(entry))
