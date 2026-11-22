@@ -131,7 +131,7 @@ await expect(page.getByRole('heading', { name: 'shop ごと' })).toBeVisible()
 await shot(page, 'regression')
 
 // 列の効き
-await page.getByRole('button', { name: '求める' }).click()
+await page.getByRole('button', { name: '求める', exact: true }).click()
 const effects = page.getByRole('list', { name: '列の効き' })
 await expect(effects).toContainText('shop', { timeout: 60_000 })
 await scrollTo(page.getByRole('heading', { name: /^列の効き/ }))

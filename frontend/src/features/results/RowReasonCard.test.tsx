@@ -59,7 +59,7 @@ describe('1 行の予測の理由', () => {
       </QueryClientProvider>,
     )
     expect(rowReason).not.toHaveBeenCalled()
-    const button = screen.getByRole('button', { name: '求める' })
+    const button = screen.getByRole('button', { name: '理由を求める' })
     expect(button).toBeDisabled()
     fireEvent.change(screen.getByLabelText('行 (#)'), { target: { value: '3' } })
     fireEvent.click(button)
@@ -80,7 +80,7 @@ describe('1 行の予測の理由', () => {
       </QueryClientProvider>,
     )
     fireEvent.change(screen.getByLabelText('行 (#)'), { target: { value: '50' } })
-    expect(screen.getByRole('button', { name: '求める' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '理由を求める' })).toBeDisabled()
   })
 
   it('表と時系列の 1 つ先の予測の結果だけで出す', () => {

@@ -309,7 +309,7 @@ function RowsTable({
                           <button
                             type="button"
                             className="text-accent-text underline"
-                            aria-label={`${String(row.index)} 行目の予測の理由を求める`}
+                            aria-label={`${String(row.index)} 行目の予測の理由`}
                             onClick={() => {
                               onReason(Number(row.index))
                               // 表の上にある理由のカードへ移る

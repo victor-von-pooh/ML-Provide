@@ -37,10 +37,18 @@ test('見本の一式を入れ, 見本の新しいデータを推論して結論
   await expect(page.getByRole('table', { name: '予測と判断の表' })).toContainText('保留')
 
   // 列の効き (前処理で落とす id は 0)
-  await page.getByRole('button', { name: '求める' }).click()
+  await page.getByRole('button', { name: '求める', exact: true }).click()
   const effects = page.getByRole('list', { name: '列の効き' })
   await expect(effects).toContainText('months', { timeout: 30_000 })
   await expect(effects.getByRole('listitem').filter({ hasText: /^id/ })).toContainText('0.000')
+
+  // 表で選んだ 1 行の理由 (前処理で落とす id は効かない)
+  await page.getByLabel('判断で絞る').selectOption('')
+  await page.getByRole('button', { name: '0 行目の予測の理由', exact: true }).click()
+  const reason = page.getByRole('list', { name: '列ごとの効き' })
+  await expect(reason).toContainText('months', { timeout: 30_000 })
+  await expect(reason.getByRole('listitem').filter({ hasText: /^id/ })).toContainText('0.000')
+  await expect(page.getByLabel('行 (#)')).toHaveValue('0')
 })
 
 test('文の見本に文を書いて推論する', async ({ page }) => {

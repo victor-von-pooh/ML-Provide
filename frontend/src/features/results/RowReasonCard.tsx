@@ -60,7 +60,7 @@ export function RowReasonCard({
           className="h-8 w-24 rounded-lg border border-line bg-surface px-2"
         />
         <Button type="submit" icon={Sigma} disabled={!valid || reason.isFetching}>
-          {reason.isFetching ? '求めています…' : '求める'}
+          {reason.isFetching ? '求めています…' : '理由を求める'}
         </Button>
         <span className="text-xs text-ink-3">予測の表の「理由」でも選べます</span>
       </form>
