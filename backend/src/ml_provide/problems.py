@@ -601,8 +601,8 @@ def ready_issues(
     bundle: ml_inference.Bundle
         既製のモデルの一式
     planned: dict[str, Any]
-        受け渡しの推論の ready (library, model, weights, sha256. 決めて
-        いない値は None)
+        受け渡しの推論の ready (library, model, weights, sha256 (重みの
+        ハッシュ値). 決めていない値は None)
 
     Returns
     ----------
@@ -629,16 +629,25 @@ def ready_issues(
                 f"{have} が違います"
             )
 
-    # 重みの hash (一式が読んだ重みの hash と)
+    # 重みのハッシュ値 (一式が読んだ重みのハッシュ値と. どちらも小文字に
+    # し, 一式に記録が無ければ比べられないと知らせる)
     want = planned.get("sha256")
     records = (bundle.info.get("model") or {}).get("pretrained") or []
     have = next((r.get("sha256") for r in records
-                 if isinstance(r, dict) and r.get("sha256")), None)
-    if isinstance(want, str) and want and want.strip().lower() != have:
+                 if isinstance(r, dict) and isinstance(r.get("sha256"), str)
+                 and r.get("sha256")), None)
+    if not isinstance(want, str) or not want.strip():
+        return issues
+    if have is None:
         issues.append(
-            f"既製のモデル: 問題の設定の重みの hash {want.strip()[:12]}… と, "
-            f"一式が読んだ重みの hash {str(have)[:12]}… が違います (別の"
-            "重みかもしれません)"
+            "既製のモデル: 一式に重みのハッシュ値の記録が無いので, 問題の"
+            "設定の重みのハッシュ値を確かめられません"
+        )
+    elif want.strip().lower() != have.strip().lower():
+        issues.append(
+            f"既製のモデル: 問題の設定の重みのハッシュ値 {want.strip()[:12]}… "
+            f"と, 一式が読んだ重みのハッシュ値 {have.strip()[:12]}… が違います"
+            " (別の重みかもしれません)"
         )
 
     return issues

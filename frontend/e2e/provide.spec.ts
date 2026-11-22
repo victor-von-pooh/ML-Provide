@@ -820,7 +820,7 @@ test('既製のモデルの一式を下見して作り, ライセンスの警告
     await expect(page.getByText(/e2e-colors-0123abcd\.pth/)).toBeVisible()
     await expect(page.getByText(/置き場にありません/)).toBeVisible()
     await expect(page.getByRole('region', { name: '意思決定' })).toHaveCount(0)
-    await expect(page.getByText(/作り方が既製のモデルをそのままの problem.yaml/)).toBeVisible()
+    await expect(page.getByText(/作り方が既製のモデルをそのままの問題の設定/)).toBeVisible()
 
     // 画像のディレクトリを推論し, 種類の名前と確信度を見る (読めない画像は飛ばす)
     await page.getByLabel(/推論する画像/).fill(images)

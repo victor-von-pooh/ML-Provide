@@ -711,7 +711,7 @@ def test_ready_problem_link(
     # 一式と違う
     issues = " / ".join(linked["issues"])
     for word in ("出どころ torchvision", "モデル resnet18",
-                 "重み IMAGENET1K_V1", "重みの hash 8ec1484cdbb8"):
+                 "重み IMAGENET1K_V1", "重みのハッシュ値 8ec1484cdbb8"):
         assert word in issues, issues
 
 
@@ -772,4 +772,18 @@ def test_ready_issues_match(tmp_path: Path, client: TestClient) -> None:
     other = problems_module.ready_issues(
         bundle, {**planned, "sha256": "0" * 64, "model": None}
     )
-    assert len(other) == 1 and "重みの hash" in other[0]
+    assert len(other) == 1 and "重みのハッシュ値" in other[0]
+
+    # 一式の記録の大文字も小文字にして比べる
+    bundle.info["model"]["pretrained"][0]["sha256"] = sha.upper()
+    assert problems_module.ready_issues(bundle, planned) == []
+
+    # 一式にハッシュ値の記録が無ければ, 違うとは言わずに確かめられないと
+    # 出す (決めていなければ何も出さない)
+    bundle.info["model"]["pretrained"][0].pop("sha256")
+    unknown = problems_module.ready_issues(bundle, planned)
+    assert len(unknown) == 1 and "確かめられません" in unknown[0]
+    assert "違います" not in unknown[0]
+    assert problems_module.ready_issues(
+        bundle, {**planned, "sha256": None}
+    ) == []
