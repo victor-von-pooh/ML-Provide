@@ -32,7 +32,7 @@ from ml_provide.cache import (
 )
 from ml_provide.previews import PREVIEW_LIMIT, array_preview, dtype_problem
 from ml_provide.procedures import missing_procedure, registered
-from ml_provide.ready import make_ready, preview_ready
+from ml_provide.ready import FetchError, make_ready, preview_ready
 from ml_provide.samples import write_samples
 from ml_provide.store import Store
 from ml_provide.units import unit_hint
@@ -581,7 +581,8 @@ def create_ready_bundle(
     Raises
     ----------
     HTTPException
-        一式を作れない場合は 400 (理由付き)
+        一式を作れない場合は 400 (理由付き). 重みを出どころから取れない
+        場合と, 取得が時間の上限を超えた場合は 502
     """
     # 重みを出どころから読んで hash を固定する (初回は取りに行く)
     store = get_store(request)
@@ -591,6 +592,8 @@ def create_ready_bundle(
             place, body.library, body.model, body.weights, body.name,
             sha256=body.sha256
         )
+    except FetchError as error:
+        raise HTTPException(502, str(error)) from error
     except Exception as error:
         raise user_error(error) from error
     entry = store.add(place, body.name, managed=True, bundle_id=bundle_id)

@@ -6,12 +6,18 @@
 一式に写さず, 使うときに出どころから読む (ML-Inference の決まり)
 """
 
+import hashlib
+import os
 import re
 import threading
+import time
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlparse
+from urllib.request import urlopen
 
 import ml_inference
+import torch
 from ml_modelcontrol import pretrained_info
 
 # 名前の長さの上限 (モデルと重みの名前)
@@ -23,6 +29,23 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 # 既製のモデルの一式を作る処理を 1 つずつにする鍵 (初回は重みを取りに
 # 行くので, 同じファイルを同時に取りに行かないように)
 READY_LOCK = threading.Lock()
+
+# 重みの取得の時間の上限 (秒. 全体と, 1 回の読み込みで待つ長さ). 超えたら
+# 止めて鍵を手放す (ぶら下がった取得で他の作成を待たせないため)
+FETCH_SECONDS = 600.0
+READ_SECONDS = 30.0
+
+# 重みを読む 1 回の大きさ (バイト)
+CHUNK = 1 << 20
+
+# torch.hub と同じ, ファイルの名前に入った hash の頭の形
+HASH_PREFIX = re.compile(r"-([a-f0-9]*)\.")
+
+
+class FetchError(Exception):
+    """
+    出どころから重みを取れない誤り (ネットワークの誤りと時間の上限)
+    """
 
 # 画面に返すライセンスの項目 (ML-Inference が ready.license に写すもの)
 LICENSE_KEYS = (
@@ -200,6 +223,8 @@ def make_ready(
     ----------
     ValueError
         名前か hash の形が違う場合と, ML-Inference が作れない場合
+    FetchError
+        重みを出どころから取れない場合と, 取得が時間の上限を超えた場合
     """
     # hash は小文字の 16 進の 64 文字にそろえる
     library, model, weights = ready_names(library, model, weights)
@@ -214,9 +239,82 @@ def make_ready(
         "unit": found["unit"], **license_view(None)
     }
     with READY_LOCK:
+        fetch_weights(found)
         info: dict[str, Any] = ml_inference.make_ready_bundle(
             place, model, weights, library=library, sha256=pinned,
             name=name, license=license
         )
 
     return info
+
+
+def fetch_weights(found: dict[str, Any]) -> None:
+    """
+    出どころの重みのファイルが PyTorch の置き場に無ければ, 時間の上限を
+    付けて取りに行く関数
+
+    置き場にあれば何もしない (ML-Inference はここから読む). 取ったファイル
+    は, 名前に hash の頭があれば torch.hub と同じく比べ, 確かめてから置く
+
+    Parameters
+    ----------
+    found: dict[str, Any]
+        READY_LIBRARIES の関数の結果 (url, file)
+
+    Returns
+    ----------
+    None
+
+    Raises
+    ----------
+    FetchError
+        取れない場合, 時間の上限を超えた場合, hash の頭が違う場合
+    """
+    # URL もファイルの名前も無い出どころは, ライブラリの読み方に任せる
+    url = str(found.get("url") or "")
+    name = Path(str(found.get("file") or "")).name
+    if not url or not name:
+        return
+    target = Path(torch.hub.get_dir()) / "checkpoints" / name
+    if target.is_file():
+        return
+    if urlparse(url).scheme != "https":
+        raise FetchError(f"重みの URL {url} は https ではないので取りに行きません")
+
+    # 隣の一時ファイルに書き, 確かめてから入れ替える (途中のファイルを
+    # 重みとして読ませない)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    writing = target.with_name(f".{name}.fetching")
+    digest = hashlib.sha256()
+    deadline = time.monotonic() + FETCH_SECONDS
+    try:
+        with urlopen(url, timeout=READ_SECONDS) as response, writing.open(
+            "wb"
+        ) as file:
+            while chunk := response.read(CHUNK):
+                if time.monotonic() > deadline:
+                    raise TimeoutError
+                digest.update(chunk)
+                file.write(chunk)
+    except TimeoutError as error:
+        writing.unlink(missing_ok=True)
+        raise FetchError(
+            f"重み {name} の取得が時間の上限 (全体で {FETCH_SECONDS:g} 秒, "
+            f"途切れて {READ_SECONDS:g} 秒) を超えました. ネットワークを確かめるか, {name} を PyTorch の置き場 "
+            "(torch.hub.get_dir() の checkpoints) に置いてください"
+        ) from error
+    except OSError as error:
+        writing.unlink(missing_ok=True)
+        raise FetchError(
+            f"重み {name} を {url} から取れません ({type(error).__name__}: "
+            f"{error}). ネットワークを確かめるか, {name} を PyTorch の置き場 "
+            "(torch.hub.get_dir() の checkpoints) に置いてください"
+        ) from error
+    match = HASH_PREFIX.search(name)
+    if match and not digest.hexdigest().startswith(match.group(1)):
+        writing.unlink(missing_ok=True)
+        raise FetchError(
+            f"取った重み {name} の hash が名前の hash の頭 {match.group(1)} "
+            "と違います (取得の途中で壊れたか, 出どころが変わった)"
+        )
+    os.replace(writing, target)

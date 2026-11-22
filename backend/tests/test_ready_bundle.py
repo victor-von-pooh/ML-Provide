@@ -1,6 +1,9 @@
+import hashlib
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
+from urllib.error import URLError
 
 import ml_inference
 import numpy as np
@@ -35,6 +38,10 @@ LICENSE = {
     "alert": True, "message": "ライセンスを確かめてください",
     "source": "テストの情報", "url": None,
 }
+
+
+# 本物の重みの取得 (下の client では取りに行かないように差し替える)
+FETCH = ready_module.fetch_weights
 
 
 class ProvideReadyNet(nn.Module):
@@ -129,6 +136,7 @@ def client(
     monkeypatch.setattr(
         ready_module, "pretrained_info", lambda unit, params: dict(LICENSE)
     )
+    monkeypatch.setattr(ready_module, "fetch_weights", lambda found: None)
     hub = torch.hub.get_dir()
     torch.hub.set_dir(str(tmp_path / "hub"))
     app = create_app(
@@ -378,3 +386,203 @@ def test_ready_bundle_refuses(client: TestClient) -> None:
     sha256 = first["description"]["pretrained"][0]["sha256"]
     response = create_ready(client, sha256=f" {sha256.upper()} ")
     assert response.status_code == 201, response.text
+
+
+class FakeResponse:
+    """
+    urlopen の応答の作り物 (決めた塊を返し, 尽きたら空)
+    """
+
+    def __init__(self, chunks: list[Any], wait: float = 0.0):
+        # 返す塊 (例外なら投げる) と, 1 回の読み込みで待つ秒
+        self.chunks = list(chunks)
+        self.wait = wait
+
+    def __enter__(self) -> "FakeResponse":
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        return None
+
+    def read(self, size: int) -> bytes:
+        """
+        次の塊を返す関数
+
+        Parameters
+        ----------
+        size: int
+            読む大きさ (使わない)
+
+        Returns
+        ----------
+        chunk: bytes
+            次の塊 (尽きたら空)
+        """
+        # 待ってから次の塊 (例外は投げる. 無限の塊は ... で表す)
+        time.sleep(self.wait)
+        if not self.chunks:
+            return b""
+        chunk = self.chunks[0]
+        if chunk is ...:
+            return b"x"
+        self.chunks.pop(0)
+        if isinstance(chunk, Exception):
+            raise chunk
+        assert isinstance(chunk, bytes)
+
+        return chunk
+
+
+def use_fetch(
+    monkeypatch: pytest.MonkeyPatch, answer: Any, file: str = FILE
+) -> list[str]:
+    """
+    本物の重みの取得に戻し, urlopen と重みのファイルの名前を差し替える関数
+
+    Parameters
+    ----------
+    monkeypatch: pytest.MonkeyPatch
+        差し替え
+    answer: Any
+        urlopen が返す応答 (例外なら投げる)
+    file: str = FILE
+        出どころの重みのファイルの名前
+
+    Returns
+    ----------
+    calls: list[str]
+        urlopen に渡った URL
+    """
+    calls: list[str] = []
+
+    def fake_open(url: str, timeout: float) -> Any:
+        # 読み込みの上限を渡すことも確かめる
+        calls.append(url)
+        assert timeout == ready_module.READ_SECONDS
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    def named(model: str, weights: str) -> dict[str, Any]:
+        found = tiny_weights(model, weights)
+        found.update(url=f"https://example.com/{file}", file=file)
+        return found
+
+    monkeypatch.setattr(ready_module, "fetch_weights", FETCH)
+    monkeypatch.setattr(ready_module, "urlopen", fake_open)
+    monkeypatch.setitem(ml_inference.READY_LIBRARIES, "test", named)
+
+    return calls
+
+
+def test_ready_fetch_timeout(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    重みの取得が時間の上限を超えると 502 で断り, 鍵を手放して途中の
+    ファイルを残さないことを確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    monkeypatch: pytest.MonkeyPatch
+        取得と上限の差し替え
+
+    Returns
+    ----------
+    None
+    """
+    # 終わらない取得 (塊が尽きない) を短い上限で止める
+    monkeypatch.setattr(ready_module, "FETCH_SECONDS", 0.05)
+    use_fetch(monkeypatch, FakeResponse([...], wait=0.01))
+    response = create_ready(client)
+    assert response.status_code == 502, response.text
+    assert "時間の上限" in response.json()["detail"]
+    assert not ready_module.READY_LOCK.locked()
+    assert client.get("/api/bundles").json() == []
+    checkpoints = Path(torch.hub.get_dir()) / "checkpoints"
+    assert list(checkpoints.iterdir()) == []
+
+    # 読み込みが途切れたもの (socket の上限) も同じ誤り
+    use_fetch(monkeypatch, FakeResponse([b"x", TimeoutError("timed out")]))
+    response = create_ready(client)
+    assert response.status_code == 502
+    assert "時間の上限" in response.json()["detail"]
+    assert not ready_module.READY_LOCK.locked()
+
+
+def test_ready_fetch_network_error(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    ネットワークの誤りと壊れた重みを 502 で断り, 重みを取れれば置き場に
+    置いて作り, 次からは取りに行かないことを確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    monkeypatch: pytest.MonkeyPatch
+        取得の差し替え
+
+    Returns
+    ----------
+    None
+    """
+    # つながらない場合
+    use_fetch(monkeypatch, URLError("no route"))
+    response = create_ready(client)
+    assert response.status_code == 502
+    assert "取れません" in response.json()["detail"]
+
+    # 名前の hash の頭と違う中身
+    use_fetch(monkeypatch, FakeResponse([b"weights"]))
+    response = create_ready(client)
+    assert response.status_code == 502
+    assert "hash の頭" in response.json()["detail"]
+    assert client.get("/api/bundles").json() == []
+
+    # 名前の hash の頭と合う中身は置き場に置く
+    content = b"tiny weights"
+    file = f"tiny-{hashlib.sha256(content).hexdigest()[:8]}.pth"
+    calls = use_fetch(monkeypatch, FakeResponse([content[:4], content[4:]]),
+                      file=file)
+    response = create_ready(client)
+    assert response.status_code == 201, response.text
+    ready = response.json()["description"]["ready"]
+    assert ready["weights_cached"] is True
+    assert Path(ready["weights_file"]).read_bytes() == content
+    assert calls == [f"https://example.com/{file}"]
+
+    # 置き場にあれば取りに行かない
+    response = create_ready(client)
+    assert response.status_code == 201
+    assert len(calls) == 1
+
+
+def test_ready_fetch_refuses_plain_http(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """
+    https でない重みの URL を取りに行かないことを確かめる関数
+
+    Parameters
+    ----------
+    monkeypatch: pytest.MonkeyPatch
+        置き場の差し替え
+    tmp_path: Path
+        一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 置き場に無いファイルを http で
+    hub = torch.hub.get_dir()
+    torch.hub.set_dir(str(tmp_path / "hub"))
+    try:
+        with pytest.raises(ready_module.FetchError, match="https"):
+            FETCH({"url": f"http://example.com/{FILE}", "file": FILE})
+    finally:
+        torch.hub.set_dir(hub)
