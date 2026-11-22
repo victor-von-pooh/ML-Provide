@@ -1,5 +1,8 @@
 import hashlib
+import http.client
+import io
 import time
+import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -385,13 +388,17 @@ def test_ready_bundle_refuses(client: TestClient) -> None:
 
 class FakeResponse:
     """
-    urlopen の応答の作り物 (決めた塊を返し, 尽きたら空)
+    open_url の応答の作り物 (決めた塊を返し, 尽きたら空)
     """
 
-    def __init__(self, chunks: list[Any], wait: float = 0.0):
-        # 返す塊 (例外なら投げる) と, 1 回の読み込みで待つ秒
+    def __init__(
+        self, chunks: list[Any], wait: float = 0.0,
+        url: str = f"https://example.com/{FILE}"
+    ):
+        # 返す塊 (例外なら投げる), 1 回の読み込みで待つ秒, 転送の後の URL
         self.chunks = list(chunks)
         self.wait = wait
+        self.url = url
 
     def __enter__(self) -> "FakeResponse":
         return self
@@ -399,9 +406,20 @@ class FakeResponse:
     def __exit__(self, *args: Any) -> None:
         return None
 
-    def read(self, size: int) -> bytes:
+    def geturl(self) -> str:
         """
-        次の塊を返す関数
+        転送の後の URL を返す関数
+
+        Returns
+        ----------
+        url: str
+            URL
+        """
+        return self.url
+
+    def read1(self, size: int) -> bytes:
+        """
+        次の塊を返す関数 (届いた分だけ返す読み方. read は持たない)
 
         Parameters
         ----------
@@ -413,7 +431,8 @@ class FakeResponse:
         chunk: bytes
             次の塊 (尽きたら空)
         """
-        # 待ってから次の塊 (例外は投げる. 無限の塊は ... で表す)
+        # 小さく読むこと. 待ってから次の塊 (例外は投げる. 無限の塊は ...)
+        assert size <= 1 << 16
         time.sleep(self.wait)
         if not self.chunks:
             return b""
@@ -432,7 +451,7 @@ def use_fetch(
     monkeypatch: pytest.MonkeyPatch, answer: Any, file: str = FILE
 ) -> list[str]:
     """
-    作り物の出どころの重みを取りに行かせ, urlopen と重みのファイルの名前を
+    作り物の出どころの重みを取りに行かせ, open_url と重みのファイルの名前を
     差し替える関数
 
     Parameters
@@ -440,14 +459,14 @@ def use_fetch(
     monkeypatch: pytest.MonkeyPatch
         差し替え
     answer: Any
-        urlopen が返す応答 (例外なら投げる)
+        open_url が返す応答 (例外なら投げる)
     file: str = FILE
         出どころの重みのファイルの名前
 
     Returns
     ----------
     calls: list[str]
-        urlopen に渡った URL
+        開いた URL
     """
     calls: list[str] = []
 
@@ -465,7 +484,7 @@ def use_fetch(
         return found
 
     monkeypatch.setattr(ready_module, "FETCHED_LIBRARIES", ("test",))
-    monkeypatch.setattr(ready_module, "urlopen", fake_open)
+    monkeypatch.setattr(ready_module, "open_url", fake_open)
     monkeypatch.setitem(ml_inference.READY_LIBRARIES, "test", named)
 
     return calls
@@ -489,7 +508,7 @@ def test_ready_fetch_timeout(
     ----------
     None
     """
-    # 終わらない取得 (塊が尽きない) を短い上限で止める
+    # 細く流れ続ける取得 (1 バイトずつ尽きない) を短い上限で止める
     monkeypatch.setattr(ready_module, "FETCH_SECONDS", 0.05)
     use_fetch(monkeypatch, FakeResponse([...], wait=0.01))
     response = create_ready(client)
@@ -532,11 +551,26 @@ def test_ready_fetch_network_error(
     assert response.status_code == 502
     assert "取れません" in response.json()["detail"]
 
-    # 名前の hash の頭と違う中身
+    # 途中で切れた応答 (OSError でない誤り) と, http への転送
+    for answer in (
+        FakeResponse([b"x", http.client.IncompleteRead(b"x", 10)]),
+        FakeResponse([b"x"], url=f"http://example.com/{FILE}"),
+    ):
+        use_fetch(monkeypatch, answer)
+        response = create_ready(client)
+        assert response.status_code == 502
+        assert "取れません" in response.json()["detail"] or "https" in (
+            response.json()["detail"]
+        )
+        checkpoints = Path(torch.hub.get_dir()) / "checkpoints"
+        assert list(checkpoints.iterdir()) == []
+
+    # 名前の hash の頭と違う中身 (一時ファイルも残さない)
     use_fetch(monkeypatch, FakeResponse([b"weights"]))
     response = create_ready(client)
     assert response.status_code == 502
     assert "hash の頭" in response.json()["detail"]
+    assert list(checkpoints.iterdir()) == []
     assert client.get("/api/bundles").json() == []
 
     # 名前の hash の頭と合う中身は置き場に置く
@@ -582,3 +616,29 @@ def test_ready_fetch_refuses_plain_http(
             ready_module.fetch_weights({"url": f"http://example.com/{FILE}", "file": FILE})
     finally:
         torch.hub.set_dir(hub)
+
+
+def test_ready_fetch_refuses_plain_redirect() -> None:
+    """
+    https でない URL への転送を断り, https への転送には従うことを確かめる
+    関数
+
+    Returns
+    ----------
+    None
+    """
+    # 転送の扱いだけを直に呼ぶ (ネットワークを使わない)
+    handler = ready_module.HttpsOnlyRedirect()
+    request = urllib.request.Request(f"https://example.com/{FILE}")
+    headers = http.client.HTTPMessage()
+    with pytest.raises(ready_module.FetchError, match="https でない"):
+        handler.redirect_request(
+            request, io.BytesIO(), 302, "Found", headers,
+            f"http://example.com/{FILE}"
+        )
+    moved = handler.redirect_request(
+        request, io.BytesIO(), 302, "Found", headers,
+        f"https://mirror.example.com/{FILE}"
+    )
+    assert moved is not None
+    assert moved.full_url == f"https://mirror.example.com/{FILE}"
