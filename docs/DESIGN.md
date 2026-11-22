@@ -203,7 +203,7 @@ ML-Inference の既製のモデルの一式 (`ready`) は, 学習せずにその
 
 ### 繰り返しの手順と起動の設定
 
-- 一式の手順は ML-Inference の登録簿 (`ml_inference.procedures`) から名前で引く. 組み込みは `ddim`, `euler`, `greedy`, `sample`
+- 一式の手順は ML-Inference の登録簿 (公開の `PROCEDURES`. 自作の手順は `register_procedure` で足す) から名前で引く. 組み込みは `ddim`, `euler`, `greedy`, `sample`
 - 研究の自作の手順は, 起動の設定で明示したモジュールだけを読み込む (手元で任意のコードを読み込まないため). `ml-provide --procedures pkg.module,...` か環境変数 `ML_PROVIDE_PROCEDURES` (`,` で区切る) に書いたモジュールを起動のときに import し, モジュールが import のときに `register_procedure` で登録する. 読めないモジュールは起動を止める
 - 一式やファイルに書かれたコードは自動では読まない. 登録簿に無い手順の一式は「手順 … は登録簿にありません. 自作の手順なら, 登録するモジュールを起動の設定 (`--procedures` か `ML_PROVIDE_PROCEDURES`) に足してから起動し直してください」で止める
 

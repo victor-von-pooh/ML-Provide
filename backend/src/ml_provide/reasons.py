@@ -69,12 +69,16 @@ def read_input(
     ValueError
         読めない場合
     """
+    # 読めない場合だけ, 中の例外の文 (英語) を出さずに確かめ方を添える
+    # (無い場所とディレクトリの文はそのまま)
     try:
         data = ml_inference.read_source(bundle, path, options)
     except ValueError as error:
+        if not str(error).startswith(f"{path.name} を読めません ("):
+            raise
         raise ValueError(
-            f"{error}. 推論したときの読み込みの設定で読めるファイルかを"
-            "確かめてください"
+            f"{path.name} を読めません. 推論したときの読み込みの設定で"
+            "読めるファイルかを確かめてください"
         ) from error
     frame: pd.DataFrame = data.frame.reset_index(drop=True)
 
