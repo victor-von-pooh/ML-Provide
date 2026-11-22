@@ -882,7 +882,7 @@ wheels = [
 [[package]]
 name = "ml-eda"
 version = "0.1.0"
-source = { git = "https://github.com/victor-von-pooh/ML-EDA.git#923658918225c2e6d51b93cc31be8e6d438b553d" }
+source = { git = "https://github.com/victor-von-pooh/ML-EDA.git#5392d50fbedbb9215f763d662352032c5297be55" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
@@ -947,7 +947,7 @@ provides-extras = ["all", "dev"]
 [[package]]
 name = "ml-modelcontrol"
 version = "0.1.0"
-source = { git = "https://github.com/victor-von-pooh/ML-ModelControl.git#7c1c1b5aec1b9cc65777f8683df7fa2c232b0914" }
+source = { git = "https://github.com/victor-von-pooh/ML-ModelControl.git#0bd89e24ec03e4261c06186cbf47c9e8ce8a9ae6" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },

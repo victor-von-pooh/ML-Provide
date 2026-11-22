@@ -29,7 +29,7 @@ from ml_modelcontrol import build_model, load_example
 EPOCHS = 2
 
 # 撮影の深度から戻した点から選ぶ数と, 正解の点群から選ぶ数
-INPUT_POINTS = 128
+INPUT_POINTS = 512
 TARGET_POINTS = 64
 
 # 点を選ぶ乱数の種

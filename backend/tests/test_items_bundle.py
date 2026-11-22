@@ -20,7 +20,7 @@ from ml_provide.app import create_app
 TOKEN = "test-token"
 
 # 選ぶ点の数 (学習と推論で同じ値)
-POINTS = 128
+POINTS = 512
 
 
 @pytest.fixture

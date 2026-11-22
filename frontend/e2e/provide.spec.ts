@@ -498,14 +498,14 @@ test('版 2 の撮影と点群のデータセットは選ぶ点の数を求め, 
   // 選ぶ点の数が無いと作れない
   await expect(dialog.getByText(/選ぶ点の数 \(学習と同じ数\)/)).toBeVisible()
   await expect(dialog.getByRole('button', { name: '作る' })).toBeDisabled()
-  await dialog.getByLabel('入力から選ぶ点の数 (要る)').fill('128')
+  await dialog.getByLabel('入力から選ぶ点の数 (要る)').fill('512')
   await dialog.getByLabel(/確かめで正解から選ぶ点の数/).fill('64')
   await dialog.getByRole('button', { name: '作る' }).click()
 
   // 一式の画面: 1 件の扱いと元の座標, Chamfer 距離
   await expect(page.getByRole('heading', { name: '版 2 の点群' })).toBeVisible({ timeout: 30_000 })
   await expect(page.getByText(/深度から点に戻して決まった数を選ぶ/)).toBeVisible()
-  await expect(page.getByText(/points: 128, target_points: 64/)).toBeVisible()
+  await expect(page.getByText(/points: 512, target_points: 64/)).toBeVisible()
   await expect(page.getByText(/^元の座標/)).toBeVisible()
   await expect(page.getByText(/Chamfer 距離/)).toBeVisible()
   const id = new URL(page.url()).pathname.split('/').pop() ?? ''
