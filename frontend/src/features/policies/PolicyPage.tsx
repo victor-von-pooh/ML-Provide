@@ -65,6 +65,8 @@ function ActCard({ id, spec }: { id: string; spec: PolicySpec }) {
           event.preventDefault()
           const parsed = parseObservation(text)
           if ('error' in parsed) {
+            // 前の観測の結果を残さない
+            act.reset()
             setProblem(parsed.error)
             return
           }
@@ -78,7 +80,11 @@ function ActCard({ id, spec }: { id: string; spec: PolicySpec }) {
         <textarea
           id="observation"
           value={text}
-          onChange={(event) => setText(event.target.value)}
+          onChange={(event) => {
+            // 書き換えた観測に前の結果を並べない
+            act.reset()
+            setText(event.target.value)
+          }}
           rows={3}
           aria-invalid={problem ? true : undefined}
           aria-describedby={problem ? 'observation-problem' : undefined}

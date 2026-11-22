@@ -1,4 +1,5 @@
 import json
+import pickle
 import threading
 import uuid
 from collections import OrderedDict
@@ -11,6 +12,7 @@ import numpy as np
 import yaml
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
+from ml_inference.policy import fallback_result
 from pydantic import BaseModel
 
 from ml_provide.api import MAX_NAME, PREDICT_LOCK, get_store, user_error
@@ -21,8 +23,9 @@ router = APIRouter(prefix="/api")
 # 登録した方策の一式の一覧のファイル
 POLICIES_FILE = "policies.json"
 
-# 方策の一式のファイル (変わったら読み直す)
-POLICY_FILES = ("policy.json", "policy.pt")
+# 方策の一式の中身を書くファイルと, 重みのファイルの既定
+SPEC_FILE = "policy.json"
+WEIGHTS_FILE = "policy.pt"
 
 # 読み込んだ方策を覚える数 (方策は小さいので, 推論の一式の既定と同じ 4 つ)
 POLICY_CACHE = 4
@@ -33,7 +36,8 @@ MAX_OBSERVATION = 100_000
 
 # 方策の一式を読めないときの例外
 READ_ERRORS = (
-    OSError, ValueError, KeyError, TypeError, RuntimeError, yaml.YAMLError
+    OSError, ValueError, KeyError, TypeError, RuntimeError, yaml.YAMLError,
+    pickle.UnpicklingError
 )
 
 # 登録の一覧を書き換える鍵と, 覚えた方策の鍵
@@ -177,15 +181,30 @@ def stamp(path: str) -> Marks:
     Returns
     ----------
     marks: Marks
-        ファイルごとの (更新時刻, 大きさ). 無いファイルは None
+        policy.json, 重み, 写したモデルの定義の (更新時刻, 大きさ). 無い
+        ファイルは None
     """
-    # 学習し直して書き出し直した一式を読み直すための印
+    # 学習し直して書き出し直した一式を読み直すための印. 重みと定義の
+    # 場所は policy.json から読む (確かめは読み込みの ML-Inference)
+    directory = Path(path)
+    names: list[Any] = [SPEC_FILE, WEIGHTS_FILE, None]
+    try:
+        spec = json.loads((directory / SPEC_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        spec = None
+    if isinstance(spec, dict):
+        names[1] = spec.get("weights")
+        metadata = spec.get("metadata")
+        how = metadata.get("model") if isinstance(metadata, dict) else None
+        names[2] = how.get("spec") if isinstance(how, dict) else None
     marks: list[Optional[tuple[int, int]]] = []
-    for name in POLICY_FILES:
+    for name in names:
         try:
-            info = (Path(path) / name).stat()
+            if not isinstance(name, str) or not name:
+                raise OSError(name)
+            info = (directory / name).stat()
             marks.append((info.st_mtime_ns, info.st_size))
-        except OSError:
+        except (OSError, ValueError):
             marks.append(None)
 
     return tuple(marks)
@@ -273,6 +292,37 @@ def policy_view(
         view["error"] = str(error) or type(error).__name__
 
     return view
+
+
+def count_leaves(value: Any, limit: int) -> int:
+    """
+    入れ子のリストの葉 (リストでない要素) の数を数える関数
+
+    Parameters
+    ----------
+    value: Any
+        観測 (JSON から読んだ値)
+    limit: int
+        上限 (超えたら数えるのをやめる)
+
+    Returns
+    ----------
+    count: int
+        葉の数 (上限を超えたら上限より 1 大きい数)
+    """
+    # 深い入れ子でも止まらないように, 再帰でなく積んで数える
+    count = 0
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, list):
+            stack.extend(item)
+            continue
+        count += 1
+        if count > limit:
+            break
+
+    return count
 
 
 def to_json(value: Any) -> Any:
@@ -458,11 +508,7 @@ def act(
         読めない一式と, 観測が大きすぎる場合は 400
     """
     # 観測の大きさの上限 (形や値の誤りは守りが外れたときの動きにする)
-    try:
-        size = np.asarray(body.observation, dtype=object).size
-    except ValueError:
-        size = 0
-    if size > MAX_OBSERVATION:
+    if count_leaves(body.observation, MAX_OBSERVATION) > MAX_OBSERVATION:
         raise HTTPException(
             400, f"観測の要素は {MAX_OBSERVATION} 個までにしてください"
         )
@@ -473,8 +519,15 @@ def act(
         raise user_error(error) from error
 
     # 推論の一式と同じく, モデルを動かすのは 1 つずつ
+    # 桁の大きな整数は float にできず OverflowError になるので, 数の配列に
+    # できない観測と同じ外れたときの動き
     with PREDICT_LOCK:
-        outcome = policy.act(body.observation)
+        try:
+            outcome = policy.act(body.observation)
+        except OverflowError as exc:
+            outcome = fallback_result(
+                policy.spec, [f"観測を数の配列にできない ({exc})"]
+            )
     result = {
         "action": to_json(outcome["action"]),
         "status": outcome["status"],

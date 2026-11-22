@@ -81,11 +81,14 @@ describe('方策の一式の画面', () => {
     expect(screen.getByText('観測の要素 0 が範囲の外 (2.5)')).toBeInTheDocument()
   })
 
-  it('数でない観測は送らずに誤りを出す', async () => {
+  it('観測を書き換えると前の結果を消し, 数でない観測は送らずに誤りを出す', async () => {
     renderPage()
     const field = await screen.findByLabelText(/観測/)
+    fireEvent.click(screen.getByRole('button', { name: '行動を決める' }))
+    expect(await screen.findByText('そのまま')).toBeInTheDocument()
     act.mockClear()
     fireEvent.change(field, { target: { value: '1, x' } })
+    expect(screen.queryByText('そのまま')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '行動を決める' }))
     expect(await screen.findByText('x は数として読めません')).toBeInTheDocument()
     expect(act).not.toHaveBeenCalled()

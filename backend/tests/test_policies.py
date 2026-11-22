@@ -1,3 +1,4 @@
+import hashlib
 import json
 import shutil
 from pathlib import Path
@@ -294,3 +295,91 @@ def test_needs_model_spec(client: TestClient, tmp_path: Path) -> None:
     assert response.status_code == 400
     assert "metadata.model.spec" in response.json()["detail"]
     assert client.get("/api/policies").json() == []
+
+
+def test_huge_integer_falls_back(client: TestClient, tmp_path: Path) -> None:
+    """
+    float にできない桁の大きな整数の観測は, 外れたときの動きを返すことを
+    確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    view = register(client, copy_policy("cartpole", tmp_path))
+    body = '{"observation": [1, 1e0, 0, 1' + "0" * 400 + "]}"
+    response = client.post(
+        f"/api/policies/{view['id']}/act", content=body,
+        headers={"content-type": "application/json"}
+    )
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["action"] is None and result["status"] == "handover"
+    assert result["reasons"][0].startswith("観測を数の配列にできない")
+
+
+def test_nested_observation_limit(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """
+    入れ子の観測も葉の数で上限を当てることを確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    view = register(client, copy_policy("cartpole", tmp_path))
+    url = f"/api/policies/{view['id']}/act"
+    ragged = [[0.0] * 50_001, [0.0] * 50_000]
+    assert client.post(url, json={"observation": ragged}).status_code == 400
+    small = [[0.0] * 2, [0.0] * 2]
+    assert client.post(url, json={"observation": small}).status_code == 200
+
+
+def test_reloads_changed_files(client: TestClient, tmp_path: Path) -> None:
+    """
+    写したモデルの定義が変わると読み直し, 読めない重みは 400 にすることを
+    確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 定義を壊すと, 覚えた方策を使わずに読み直して理由を出す
+    directory = copy_policy("cartpole", tmp_path)
+    view = register(client, directory)
+    (directory / "model_spec.yaml").write_text("[", encoding="utf-8")
+    detail = client.get(f"/api/policies/{view['id']}").json()
+    assert not detail["ok"]
+
+    # sha256 の合う壊れた重みは, 読めない一式として 400
+    other = copy_policy("box", tmp_path)
+    weights = b"not a pickle"
+    (other / "policy.pt").write_bytes(weights)
+    spec_path = other / "policy.json"
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    spec["weights_sha256"] = hashlib.sha256(weights).hexdigest()
+    spec_path.write_text(json.dumps(spec), encoding="utf-8")
+    response = client.post("/api/policies", json={"path": str(other)})
+    assert response.status_code == 400
