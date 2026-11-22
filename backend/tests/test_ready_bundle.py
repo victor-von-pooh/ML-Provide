@@ -40,10 +40,6 @@ LICENSE = {
 }
 
 
-# 本物の重みの取得 (下の client では取りに行かないように差し替える)
-FETCH = ready_module.fetch_weights
-
-
 class ProvideReadyNet(nn.Module):
     def __init__(self, name: str = "tiny", weights: str = "V1"):
         # 親クラスのコンストラクタを呼び出す
@@ -136,7 +132,6 @@ def client(
     monkeypatch.setattr(
         ready_module, "pretrained_info", lambda unit, params: dict(LICENSE)
     )
-    monkeypatch.setattr(ready_module, "fetch_weights", lambda found: None)
     hub = torch.hub.get_dir()
     torch.hub.set_dir(str(tmp_path / "hub"))
     app = create_app(
@@ -437,7 +432,8 @@ def use_fetch(
     monkeypatch: pytest.MonkeyPatch, answer: Any, file: str = FILE
 ) -> list[str]:
     """
-    本物の重みの取得に戻し, urlopen と重みのファイルの名前を差し替える関数
+    作り物の出どころの重みを取りに行かせ, urlopen と重みのファイルの名前を
+    差し替える関数
 
     Parameters
     ----------
@@ -468,7 +464,7 @@ def use_fetch(
         found.update(url=f"https://example.com/{file}", file=file)
         return found
 
-    monkeypatch.setattr(ready_module, "fetch_weights", FETCH)
+    monkeypatch.setattr(ready_module, "FETCHED_LIBRARIES", ("test",))
     monkeypatch.setattr(ready_module, "urlopen", fake_open)
     monkeypatch.setitem(ml_inference.READY_LIBRARIES, "test", named)
 
@@ -583,6 +579,6 @@ def test_ready_fetch_refuses_plain_http(
     torch.hub.set_dir(str(tmp_path / "hub"))
     try:
         with pytest.raises(ready_module.FetchError, match="https"):
-            FETCH({"url": f"http://example.com/{FILE}", "file": FILE})
+            ready_module.fetch_weights({"url": f"http://example.com/{FILE}", "file": FILE})
     finally:
         torch.hub.set_dir(hub)

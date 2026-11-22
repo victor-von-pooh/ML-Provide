@@ -35,6 +35,11 @@ READY_LOCK = threading.Lock()
 FETCH_SECONDS = 600.0
 READ_SECONDS = 30.0
 
+# このアプリが時間の上限を付けて重みを取る出どころ (重みを URL から
+# PyTorch の置き場の checkpoints にファイルの名前で置き, そこから読むもの.
+# 他の出どころはライブラリの読み方に任せる)
+FETCHED_LIBRARIES = ("torchvision",)
+
 # 重みを読む 1 回の大きさ (バイト)
 CHUNK = 1 << 20
 
@@ -239,7 +244,8 @@ def make_ready(
         "unit": found["unit"], **license_view(None)
     }
     with READY_LOCK:
-        fetch_weights(found)
+        if library in FETCHED_LIBRARIES:
+            fetch_weights(found)
         info: dict[str, Any] = ml_inference.make_ready_bundle(
             place, model, weights, library=library, sha256=pinned,
             name=name, license=license
