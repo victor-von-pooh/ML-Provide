@@ -16,6 +16,7 @@ from ml_modelcontrol import build_model, load_example
 from test_bundle_v3 import head_spec, make_v3, register, write_unlabeled
 
 import ml_provide.api as api_module
+import ml_provide.problems as problems_module
 from ml_provide.app import create_app
 
 # テストで使うトークン
@@ -214,6 +215,41 @@ def test_noise_bundle(tmp_path: Path, client: TestClient) -> None:
     ddim = next(p for p in info["procedures"] if p["name"] == "ddim")
     assert ddim["start"] == "noise" and ddim["time"] is True
     assert "eta" in ddim["options"]
+
+
+def test_noise_problem_not_read(
+    tmp_path: Path, client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    雑音だけの一式では, 問題の設定を読まず候補も探さないことを確かめる
+    関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    client: TestClient
+        クライアント
+    monkeypatch: pytest.MonkeyPatch
+        問題の設定を読む関数と候補を探す関数の差し替え
+
+    Returns
+    ----------
+    None
+    """
+    # 読むか探すと落ちるようにして, 空の状態が返る
+    def fail(*args: Any) -> Any:
+        raise AssertionError("問題の設定を読みました")
+
+    monkeypatch.setattr(problems_module, "find_hint", fail)
+    monkeypatch.setattr(problems_module, "read_problem", fail)
+    bundle = create_noise(client, diffusion_files(tmp_path / "model"))
+    response = client.get(f"/api/bundles/{bundle['id']}/problem")
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "path": None, "linked": None, "error": None, "hint": None,
+        "hint_note": None,
+    }
 
 
 def test_noise_limits(
@@ -510,3 +546,14 @@ def test_text_output_rows(tmp_path: Path, client: TestClient) -> None:
     assert [row["prediction"] for row in rows] == ["123", "NA", ""]
     assert rows[0]["tokens"] == "4" and rows[2]["tokens"] == ""
     assert [row["status"] for row in rows] == ["ok"] * 3
+
+    # tokens の列の無い古い文の結果も, 予測を文字のまま読む (全ての行が
+    # 番号 1 つに見えても数にしない. 予測した行の空の文は空の文字)
+    table.loc[0, "prediction"] = "5"
+    table.loc[1, "prediction"] = "07"
+    table.drop(columns=["tokens"]).to_csv(
+        place / "predictions.csv", index=False, encoding="utf-8-sig"
+    )
+    rows = client.get(f"/api/results/{result['id']}/rows").json()["rows"]
+    assert [row["prediction"] for row in rows] == ["5", "07", ""]
+    assert "tokens" not in rows[0]

@@ -1249,6 +1249,38 @@ def read_meta(place: Path) -> dict[str, Any]:
     return meta
 
 
+def old_text_predictions(place: Path, frame: pd.DataFrame) -> pd.Series:
+    """
+    tokens の列の無い古い文の結果の予測を, 文字のまま読み直す関数
+
+    ML-Inference の read_result は tokens の列で文の出力かを見分けるので,
+    列の無い古い結果は型を推し量って読む (番号 1 つの予測が 5.0 になる)
+
+    Parameters
+    ----------
+    place: Path
+        結果のディレクトリ
+    frame: pd.DataFrame
+        read_result で読んだ予測の表 (status の列で予測した行を見分ける)
+
+    Returns
+    ----------
+    predictions: pd.Series
+        文字のままの予測 (空の欄は欠損. 予測した行の空の文は空の文字)
+    """
+    # read_result と同じ欠損の決まり (空だけを欠損にし, NA などは文字)
+    raw = pd.read_csv(
+        place / "predictions.csv", encoding="utf-8-sig", usecols=["prediction"],
+        dtype={"prediction": str}, keep_default_na=False, na_values=[""]
+    )
+    predictions = raw["prediction"].astype(object)
+    if "status" in frame.columns:
+        done = frame["status"] == ml_inference.OK
+        predictions[done & predictions.isna()] = ""
+
+    return predictions
+
+
 def read_frame(place: Path, meta: dict[str, Any]) -> pd.DataFrame:
     """
     結果の予測の表を読む関数
@@ -1271,6 +1303,8 @@ def read_frame(place: Path, meta: dict[str, Any]) -> pd.DataFrame:
     # 数に見える文を数にせず, 決まりを 2 か所に持たないため
     if meta.get("output_form") == "text":
         frame: pd.DataFrame = ml_inference.read_result(place)["frame"]
+        if "tokens" not in frame.columns and "prediction" in frame.columns:
+            frame["prediction"] = old_text_predictions(place, frame)
         for name in ("status", "reason", "decision"):
             if name in frame.columns:
                 column = frame[name].astype(object)
