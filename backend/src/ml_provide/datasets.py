@@ -1,86 +1,16 @@
 from pathlib import Path
 from typing import Any
 
+import ml_inference
 import yaml
 from fastapi import APIRouter, HTTPException
-from ml_eda import load_items
 
 router = APIRouter(prefix="/api")
-
-# 点を選ぶ扱いになる入力の項目の種類 (ML-Inference の capture_points と
-# points. 選ぶ点の数が要る)
-POINT_KINDS = ("capture", "point_cloud")
 
 # データセットを読めないときの例外
 READ_ERRORS = (
     OSError, ValueError, TypeError, KeyError, AttributeError, yaml.YAMLError
 )
-
-
-def entry_rows(info: dict[str, Any]) -> list[dict[str, Any]]:
-    """
-    ファイルの組のデータセット (版 2 と版 3) の項目を, 画面のための行に
-    する関数
-
-    Parameters
-    ----------
-    info: dict[str, Any]
-        dataset.yaml の中身 (load_items で確かめたもの)
-
-    Returns
-    ----------
-    rows: list[dict[str, Any]]
-        name, kind, role, shape, points (点を選ぶ数が要るか), steps (書き
-        出しでかけた中身の手順. 版 2 と手順の無い項目は空) の並び
-    """
-    # 書き出した順のまま
-    rows = []
-    for name, entry in info["entries"].items():
-        kind = entry.get("kind")
-        # 手順は辞書の並びだけ (崩れた dataset.yaml の文字などは無いものに)
-        steps = entry.get("steps")
-        steps = ([step for step in steps if isinstance(step, dict)]
-                 if isinstance(steps, list) else [])
-        rows.append({
-            "name": str(name), "kind": kind, "role": entry.get("role"),
-            "shape": entry.get("shape"), "points": kind in POINT_KINDS,
-            "steps": steps,
-        })
-
-    return rows
-
-
-def mask_classes(info: dict[str, Any]) -> list[dict[str, Any]]:
-    """
-    正解の領域の項目の, 値と名前の並びを返す関数
-
-    Parameters
-    ----------
-    info: dict[str, Any]
-        dataset.yaml の中身
-
-    Returns
-    ----------
-    classes: list[dict[str, Any]]
-        value と name (名前の無い値は None) の並び. 領域でなければ空
-    """
-    # 正解の最初の項目の classes (無ければ values だけ)
-    classes: list[dict[str, Any]] = []
-    target = info.get("target") or {}
-    names = target.get("entries") or []
-    if target.get("kind") != "mask" or not names:
-        return classes
-    entry = info["entries"].get(names[0]) or {}
-    if entry.get("classes"):
-        classes = [
-            {"value": item.get("value"), "name": item.get("name")}
-            for item in entry["classes"]
-        ]
-    else:
-        classes = [{"value": value, "name": None}
-                   for value in entry.get("values") or []]
-
-    return classes
 
 
 @router.get("/datasets/describe")
@@ -97,9 +27,9 @@ def describe_dataset(path: str) -> dict[str, Any]:
     Returns
     ----------
     description: dict[str, Any]
-        path, format_version. 版 2 と版 3 なら name, role, target (kind,
-        entries, origin), entries (entry_rows), splits (分割ごとの件数),
-        classes (領域の値と名前), normalized (撮影の正規化があるか)
+        path, format_version. 版 2 と版 3 なら ML-Inference の
+        describe_items の欄 (name, role, target, entries, splits, classes,
+        normalized, items, problem)
 
     Raises
     ----------
@@ -123,29 +53,13 @@ def describe_dataset(path: str) -> dict[str, Any]:
         }
         return description
 
-    # 版 2 と版 3 (と知らない版) は ML-EDA の読み込みで確かめる
+    # 版 2 と版 3 (と知らない版) は ML-Inference の説明 (ML-EDA の読み込み
+    # で確かめる)
     try:
-        dataset = load_items(root)
+        found = ml_inference.describe_items(root)
     except READ_ERRORS as error:
         message = str(error) or type(error).__name__
         raise HTTPException(400, message) from error
-    info = dataset.info
-    target = info.get("target") or {}
-    description = {
-        "path": str(root), "format_version": info.get("format_version"),
-        "name": info.get("name"), "role": info.get("role"),
-        "target": {
-            "kind": target.get("kind"),
-            "entries": list(target.get("entries") or []),
-            "origin": target.get("origin"),
-        },
-        "entries": entry_rows(info),
-        "splits": {
-            name: (split or {}).get("items")
-            for name, split in (info.get("splits") or {}).items()
-        },
-        "classes": mask_classes(info),
-        "normalized": bool(info.get("normalization")),
-    }
+    description = {"path": str(root), **found}
 
     return description

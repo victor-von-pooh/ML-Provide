@@ -5,7 +5,6 @@ from typing import Any, Optional
 import ml_inference
 import numpy as np
 import pandas as pd
-from ml_eda import load_data
 
 # 1 行の理由を求めるときに, 選んだ行と一緒に渡す比べる行の数 (行ごとの
 # 効きは「その列の値が他の行の値に替わったら」なので, 他の行が要る.
@@ -48,8 +47,8 @@ def read_input(
     """
     結果の入力のファイルを, 推論のときと同じ読み込みで読む関数
 
-    ML-Inference の推論と同じく, 学習のときの読み込みと設定に結果の設定を
-    上書きして読み, 読めなければ形式を判定し直す
+    ML-Inference の read_source で, 学習のときの読み込みと設定に結果の
+    設定を上書きして読む (読めなければ形式を判定し直す)
 
     Parameters
     ----------
@@ -70,18 +69,13 @@ def read_input(
     ValueError
         読めない場合
     """
-    recorded = bundle.dataset.info.get("source") or {}
-    merged = {**(recorded.get("options") or {}), **(options or {})}
     try:
-        data = load_data(path, loader=recorded.get("loader"), **merged)
-    except Exception as first:
-        try:
-            data = load_data(path, **merged)
-        except Exception:
-            raise ValueError(
-                f"{path.name} を読めません. 推論したときの読み込みの設定で"
-                "読めるファイルかを確かめてください"
-            ) from first
+        data = ml_inference.read_source(bundle, path, options)
+    except ValueError as error:
+        raise ValueError(
+            f"{error}. 推論したときの読み込みの設定で読めるファイルかを"
+            "確かめてください"
+        ) from error
     frame: pd.DataFrame = data.frame.reset_index(drop=True)
 
     return frame

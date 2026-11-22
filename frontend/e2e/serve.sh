@@ -20,7 +20,7 @@ uv run python - "$WORK/problem" <<'PY'
 import sys
 
 import ml_quest
-from ml_quest.examples import example_problem
+from ml_quest import example_problem
 
 problem = example_problem("総菜の作る量")
 for key, value in (

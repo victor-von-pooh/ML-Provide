@@ -7,7 +7,7 @@ import ml_quest
 import pytest
 import yaml
 from fastapi.testclient import TestClient
-from ml_quest.examples import example_problem
+from ml_quest import example_problem
 
 from ml_provide.app import create_app
 from ml_provide.problems import issues_of, training_columns, with_baseline

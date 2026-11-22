@@ -6,7 +6,6 @@ from typing import Any
 import ml_quest
 import yaml
 from fastapi import APIRouter, Request
-from ml_quest.handoff import project_of
 
 from ml_provide.api import get_store
 from ml_provide.policies import SPEC_FILE, read_policies
@@ -62,7 +61,8 @@ def known_projects(problems_dir: Path) -> list[dict[str, Any]]:
             if not file.is_file():
                 continue
             problem = ml_quest.load_problem(file)
-            place = project_of(ml_quest.upgrade_problem(problem))["path"]
+            upgraded = ml_quest.upgrade_problem(problem)
+            place = ml_quest.project_of(upgraded)["path"]
         except READ_ERRORS:
             continue
         if not isinstance(place, str) or place in seen or not (

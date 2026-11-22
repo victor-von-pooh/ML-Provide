@@ -19,12 +19,6 @@
 - 終わりの条件: 結果の一覧から複数を選んで比べる画面があり, 違う列や決め方を目立たせる
 - つながり: 無し
 
-### ML-Quest と ML-Inference の公開されていない名前を使わない
-- 何を: e2e の見本 (`frontend/e2e/make_items.py` の `ml_inference.items.backproject`) も含め, ML-Quest と ML-Inference の公開されていない関数 (例: ML-Inference の `conclude` と `predict` の中の関数) を使う所を, 公開の関数に置き換える. 要る関数は持ち主に公開してもらう
-- なぜ: 画面は自分の組のライブラリの公開の口だけを使う決まりのため
-- 終わりの条件: 公開されていない名前の import が無い
-- つながり: ML-Inference, ML-Quest
-
 ## 条件待ち
 
 ### 受け持ちごとの結果の画面

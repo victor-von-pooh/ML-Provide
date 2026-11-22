@@ -15,7 +15,7 @@ import pytest
 import torch
 from fastapi.testclient import TestClient
 from ml_modelcontrol import register_unit
-from ml_quest.examples import example_problem
+from ml_quest import example_problem
 from PIL import Image
 from torch import nn
 

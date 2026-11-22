@@ -12,7 +12,7 @@ import yaml
 from fastapi.testclient import TestClient
 from ml_eda import export_capture_clouds, export_image_masks, synthetic
 from ml_modelcontrol import build_model, load_example
-from ml_quest.examples import example_problem
+from ml_quest import example_problem
 from PIL import Image
 
 from ml_provide.app import create_app

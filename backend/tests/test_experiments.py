@@ -5,7 +5,7 @@ from pathlib import Path
 import ml_quest
 import pytest
 from fastapi.testclient import TestClient
-from ml_quest.examples import example_problem
+from ml_quest import example_problem
 
 from ml_provide import experiments
 from ml_provide.app import create_app
