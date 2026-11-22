@@ -81,8 +81,25 @@ uv run python ../frontend/e2e/make_v3.py "$WORK/v3"
 # 骨組みのプロジェクトの実験の中にも, 学習のスクリプトのように推論の一式 (版 4) を作る
 uv run python ../frontend/e2e/make_items.py "$WORK/items" "$WORK/project"
 
-# 骨組みのプロジェクトの実験の中に, 方策の骨組みの学習のように方策の一式 (policy) を置く
-uv run python ../frontend/e2e/make_policy.py "$WORK/project"
+# 方策の問題の設定 (棒を立てる制御) とそこから書き出した骨組みのプロジェクトを別に作り,
+# その実験の中に, 方策の骨組みの学習のように方策の一式 (policy) を置く.
+# 実験の一覧に出る名前のためのもので, 問題の設定の中身は総菜の見本の名前だけを変えたもの
+uv run python - "$WORK" <<'PY'
+import sys
+from pathlib import Path
+
+import ml_quest
+
+work = Path(sys.argv[1])
+problem = ml_quest.load_problem(work / "problem")
+problem["name"] = "棒を立てる制御"
+store = work / "pathfinder" / "problems" / "p2"
+project = work / "policy-project"
+ml_quest.save_problem(problem, store)
+ml_quest.make_project(problem, project, origin=store)
+ml_quest.save_problem(ml_quest.record_project(problem, project), store)
+PY
+uv run python ../frontend/e2e/make_policy.py "$WORK/policy-project"
 
 # 拡散のモデルの雑音の予測器の定義と, 少しだけ学習した実験 (雑音だけの一式の元)
 uv run python ../frontend/e2e/make_noise.py "$WORK/noise"

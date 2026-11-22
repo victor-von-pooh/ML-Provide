@@ -34,9 +34,11 @@ function hideHome(prefix: string) {
 
 /** 要素を本文の上の端に寄せる */
 async function scrollTo(target: Locator) {
+  // 本文の欄だけを送る (scrollIntoView はページ全体も送り, 下に空白が出る)
   await target.evaluate((element) => {
-    element.scrollIntoView({ block: 'start' })
-    document.querySelector('main')?.scrollBy(0, -16)
+    const main = document.querySelector('main')!
+    const top = element.getBoundingClientRect().top - main.getBoundingClientRect().top
+    main.scrollBy(0, top - 16)
   })
 }
 
@@ -107,7 +109,7 @@ await page.getByLabel(/確信の下限/).fill('0.8')
 await page.getByRole('button', { name: '出し直す' }).click()
 await expect(page.getByRole('list', { name: '判断の内訳' })).toContainText('保留')
 await page.getByLabel('判断で絞る').selectOption('保留')
-await page.evaluate(() => document.querySelector('main')?.scrollTo(0, 0))
+await scrollTo(page.getByRole('heading', { name: '予測の表' }))
 await shot(page, 'reconclude')
 
 // 過去のデータ 300 行でたどり直す
