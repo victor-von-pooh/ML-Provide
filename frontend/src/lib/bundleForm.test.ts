@@ -140,14 +140,20 @@ describe('buildProcedure', () => {
     expect(problems).toHaveLength(1)
   })
 
-  it('引用符を閉じていない設定の値は知らせる', () => {
+  it('引用符で始まるのに JSON の文字として読めない設定の値は知らせる', () => {
     const { procedure, problems } = buildProcedure(
-      { ...EMPTY_PROCEDURE, name: 'ddim', steps: '3', options: { eta: '"0', train_steps: '"0"' } },
+      {
+        ...EMPTY_PROCEDURE,
+        name: 'ddim',
+        steps: '3',
+        options: { eta: '"0', train_steps: '"0"', beta_end: '"a" b' },
+      },
       ddim,
     )
-    expect(procedure?.options).toEqual({ eta: '"0', train_steps: '0' })
-    expect(problems).toHaveLength(1)
-    expect(problems[0]).toContain('eta')
+    expect(procedure?.options).toEqual({ eta: '"0', train_steps: '0', beta_end: '"a" b' })
+    expect(problems).toHaveLength(2)
+    expect(problems[0]).toContain('beta_end')
+    expect(problems[1]).toContain('eta')
   })
 })
 
@@ -206,6 +212,7 @@ describe('optionValue', () => {
     expect(optionValue('" a "')).toBe(' a ')
     expect(optionValue('"say \\"hi\\" \\\\ end"')).toBe('say "hi" \\ end')
     expect(optionValue('"a')).toBe('"a')
+    expect(optionValue('"a" b')).toBe('"a" b')
     expect(optionValue('"\\q"')).toBe('"\\q"')
     expect(optionValue("'0'")).toBe("'0'")
   })
@@ -231,6 +238,8 @@ describe('optionValue', () => {
       backslash: 'a\\b',
       single: "'q'",
       plain: 'fast',
+      unicode: '日本語',
+      newline: 'a\nb',
     }
     for (const [key, value] of Object.entries(values)) {
       const shown = optionsText({ [key]: value }).slice(key.length + 1)

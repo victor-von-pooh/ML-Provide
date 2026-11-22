@@ -95,7 +95,7 @@ function quotedText(trimmed: string): string | undefined {
   }
 }
 
-/** 引用符で始まるのに JSON の文字として読めない設定の値の文か ("a, "a\q" など) */
+/** 引用符で始まるのに JSON の文字として読めない設定の値の文か ("a, "a" b, "a\q" など) */
 export function brokenQuoted(text: string): boolean {
   const trimmed = text.trim()
   return trimmed.startsWith('"') && quotedText(trimmed) === undefined
@@ -165,9 +165,9 @@ export function buildInputs(
   return { inputs: inputs.size > 0 ? Object.fromEntries(inputs) : null, problems }
 }
 
-/** 引用符の中を JSON の書き方で書いていない設定の誤りの文 */
+/** 引用符で始まるのに JSON の文字として読めない設定の誤りの文 */
 function quotedProblem(name: string): string {
-  return `手順の設定 ${name} の引用符は, 閉じて, 中の " と \\ を \\" と \\\\ と書いてください`
+  return `手順の設定 ${name} は, 引用符で囲んだ全体を JSON の文字として書いてください (閉じた引用符の後ろに何も付けない. 中の " と \\ は \\" と \\\\)`
 }
 
 /** 手順の欄から procedure を作る (手順を選ばなければ null) */
