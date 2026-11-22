@@ -155,6 +155,28 @@ describe('buildProcedure', () => {
     expect(problems[0]).toContain('beta_end')
     expect(problems[1]).toContain('eta')
   })
+
+  it('配列と辞書は JSON の決まりで入れ子の値にし, 読めなければ知らせる', () => {
+    const custom = { ...ddim, name: 'lab', builtin: false, options: null }
+    const { procedure, problems } = buildProcedure(
+      {
+        ...EMPTY_PROCEDURE,
+        name: 'lab',
+        steps: '3',
+        extra: 'sizes=[1, [2, 3]]\nmap = {"a": 1, "b": {"c": null}}\nbad=[1, 2\nloose={a: 1}',
+      },
+      custom,
+    )
+    expect(procedure?.options).toEqual({
+      sizes: [1, [2, 3]],
+      map: { a: 1, b: { c: null } },
+      bad: '[1, 2',
+      loose: '{a: 1}',
+    })
+    expect(problems).toHaveLength(2)
+    expect(problems[0]).toContain('bad')
+    expect(problems[1]).toContain('loose')
+  })
 })
 
 describe('buildOutputOptions', () => {
@@ -217,6 +239,15 @@ describe('optionValue', () => {
     expect(optionValue("'0'")).toBe("'0'")
   })
 
+  it('[ か { で始まる値は JSON の配列か辞書 (入れ子も. 読めなければ文字)', () => {
+    expect(optionValue(' [1, 2] ')).toStrictEqual([1, 2])
+    expect(optionValue('{"a": 1}')).toStrictEqual({ a: 1 })
+    expect(optionValue('{"a": [1, {"b": "x"}]}')).toStrictEqual({ a: [1, { b: 'x' }] })
+    expect(optionValue('[1, 2')).toBe('[1, 2')
+    expect(optionValue('{a: 1}')).toBe('{a: 1}')
+    expect(optionValue('"[1]"')).toBe('[1]')
+  })
+
   it('一式の画面に出た値を写すと元の型に戻る', () => {
     const values: Record<string, unknown> = {
       int: 0,
@@ -240,6 +271,14 @@ describe('optionValue', () => {
       plain: 'fast',
       unicode: '日本語',
       newline: 'a\nb',
+      bracket: '[a',
+      brace: '{"a": 1}',
+      list: [1, 2],
+      emptyList: [],
+      dict: { a: 1, b: 'x' },
+      emptyDict: {},
+      nested: { sizes: [1, [2, 3]], inner: { on: true, none: null, word: '0' } },
+      listOfDicts: [{ a: 1 }, { b: [] }],
     }
     for (const [key, value] of Object.entries(values)) {
       const shown = optionsText({ [key]: value }).slice(key.length + 1)
