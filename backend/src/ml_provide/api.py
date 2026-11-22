@@ -32,7 +32,7 @@ from ml_provide.cache import (
 )
 from ml_provide.previews import PREVIEW_LIMIT, array_preview, dtype_problem
 from ml_provide.procedures import missing_procedure, registered
-from ml_provide.ready import make_ready, preview_ready
+from ml_provide.ready import FetchError, make_ready, preview_ready
 from ml_provide.samples import write_samples
 from ml_provide.store import Store
 from ml_provide.units import unit_hint
@@ -79,6 +79,14 @@ NOISE_SHAPE_HINT = (
 
 # 雑音だけの一式を作るときに ML-Inference が確かめで作る件数
 CHECK_SAMPLES = 2
+
+# 予測と判断の列 (外れ方を分ける列にしない. 画面の結果の表の右に寄せる列
+# と同じ)
+OWN_COLUMNS = frozenset({
+    "index", "status", "reason", "step", "prediction", "confidence",
+    "decision", "action", "level", "expected_cost", "point_expected_cost",
+    "gain_if_acted", "expected_gain",
+})
 
 # 推論の誤りとして画面に返す例外
 USER_ERRORS = (
@@ -141,6 +149,7 @@ class RemeasureRequest(BaseModel):
     write: bool = False
     horizon: Optional[int] = None
     time: Optional[str] = None
+    groups: Optional[str] = None
 
 
 def get_store(request: Request) -> Store:
@@ -581,7 +590,8 @@ def create_ready_bundle(
     Raises
     ----------
     HTTPException
-        一式を作れない場合は 400 (理由付き)
+        一式を作れない場合は 400 (理由付き). 重みを出どころから取れない
+        場合と, 取得が時間の上限を超えた場合は 502
     """
     # 重みを出どころから読んで hash を固定する (初回は取りに行く)
     store = get_store(request)
@@ -591,6 +601,8 @@ def create_ready_bundle(
             place, body.library, body.model, body.weights, body.name,
             sha256=body.sha256
         )
+    except FetchError as error:
+        raise HTTPException(502, str(error)) from error
     except Exception as error:
         raise user_error(error) from error
     entry = store.add(place, body.name, managed=True, bundle_id=bundle_id)
@@ -1951,7 +1963,8 @@ def remeasure_result(
         結果の id
     body: RemeasureRequest
         write (一式に書き戻すか), horizon (何段も先の外れ方も測る段の
-        数), time (予測を始める時刻の列)
+        数), time (予測を始める時刻の列), groups (外れ方を種類ごとに
+        分けて測る列. 回帰と予測の一式だけ)
 
     Returns
     ----------
@@ -1961,9 +1974,19 @@ def remeasure_result(
     Raises
     ----------
     HTTPException
-        入力のファイルが無い場合, 目的の列が無い場合, 行が少ない場合は
-        400
+        入力のファイルが無い場合, 目的の列が無い場合, 行が少ない場合,
+        分ける列が使えない場合は 400
     """
+    # 予測と判断の列と種類ごとの確率の列では分けない (画面と同じ決まり.
+    # 入力の列ではないので, 種類にならない)
+    if body.groups and (
+        body.groups in OWN_COLUMNS or body.groups.startswith("p:")
+    ):
+        raise HTTPException(
+            400, f"groups の列 {body.groups} は予測か判断か確率の列なので, "
+            "外れ方を分けられません (入力の列を選んでください)"
+        )
+
     # 入力のファイルと一式の場所 (覚えた一式は書き換えず, 読み直させる)
     place = find_result(request, result_id)
     meta = read_meta(place)
@@ -1993,7 +2016,8 @@ def remeasure_result(
             measured = ml_inference.remeasure(
                 str(target), Path(source),
                 options=meta.get("options"), write=body.write,
-                horizon=body.horizon, time=body.time or None
+                horizon=body.horizon, time=body.time or None,
+                groups=body.groups or None
             )
             if copied is not None:
                 store.relocate(entry["id"], copied)

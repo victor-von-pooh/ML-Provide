@@ -121,8 +121,11 @@ export const api = {
   decide: (id: string, decision: Decision | null) =>
     request<Result>(`/api/results/${id}/decide`, json('POST', { decision })),
   backtest: (id: string) => request<Result>(`/api/results/${id}/backtest`, json('POST', {})),
-  remeasure: (id: string, write: boolean, horizon?: number, time?: string) =>
-    request<Remeasure>(`/api/results/${id}/remeasure`, json('POST', { write, horizon, time })),
+  remeasure: (id: string, write: boolean, horizon?: number, time?: string, groups?: string) =>
+    request<Remeasure>(
+      `/api/results/${id}/remeasure`,
+      json('POST', { write, horizon, time, groups }),
+    ),
   explain: (id: string) => request<Result>(`/api/results/${id}/explain`, json('POST', {})),
   downloadUrl: (id: string) => `/api/results/${id}/download`,
   artifact: (id: string, row: number) =>

@@ -6,12 +6,19 @@
 一式に写さず, 使うときに出どころから読む (ML-Inference の決まり)
 """
 
+import hashlib
+import os
 import re
 import threading
+import time
+from http.client import HTTPMessage
 from pathlib import Path
-from typing import Any, Optional
+from typing import IO, Any, Optional
+from urllib.parse import urlparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 import ml_inference
+import torch
 from ml_modelcontrol import pretrained_info
 
 # 名前の長さの上限 (モデルと重みの名前)
@@ -23,6 +30,28 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 # 既製のモデルの一式を作る処理を 1 つずつにする鍵 (初回は重みを取りに
 # 行くので, 同じファイルを同時に取りに行かないように)
 READY_LOCK = threading.Lock()
+
+# 重みの取得の時間の上限 (秒. 全体と, 1 回の読み込みで待つ長さ). 超えたら
+# 止めて鍵を手放す (ぶら下がった取得で他の作成を待たせないため)
+FETCH_SECONDS = 600.0
+READ_SECONDS = 30.0
+
+# このアプリが時間の上限を付けて重みを取る出どころ (重みを URL から
+# PyTorch の置き場の checkpoints にファイルの名前で置き, そこから読むもの.
+# 他の出どころはライブラリの読み方に任せる)
+FETCHED_LIBRARIES = ("torchvision",)
+
+# 重みを読む 1 回の大きさの上限 (バイト. 届いた分だけ読む)
+CHUNK = 1 << 16
+
+# torch.hub と同じ, ファイルの名前に入った hash の頭の形
+HASH_PREFIX = re.compile(r"-([a-f0-9]*)\.")
+
+
+class FetchError(Exception):
+    """
+    出どころから重みを取れない誤り (ネットワークの誤りと時間の上限)
+    """
 
 # 画面に返すライセンスの項目 (ML-Inference が ready.license に写すもの)
 LICENSE_KEYS = (
@@ -200,6 +229,8 @@ def make_ready(
     ----------
     ValueError
         名前か hash の形が違う場合と, ML-Inference が作れない場合
+    FetchError
+        重みを出どころから取れない場合と, 取得が時間の上限を超えた場合
     """
     # hash は小文字の 16 進の 64 文字にそろえる
     library, model, weights = ready_names(library, model, weights)
@@ -214,9 +245,202 @@ def make_ready(
         "unit": found["unit"], **license_view(None)
     }
     with READY_LOCK:
+        if library in FETCHED_LIBRARIES:
+            fetch_weights(found)
         info: dict[str, Any] = ml_inference.make_ready_bundle(
             place, model, weights, library=library, sha256=pinned,
             name=name, license=license
         )
 
     return info
+
+
+def fetch_weights(found: dict[str, Any]) -> None:
+    """
+    出どころの重みのファイルが PyTorch の置き場に無ければ, 時間の上限を
+    付けて取りに行く関数
+
+    置き場にあれば何もしない (ML-Inference はここから読む). 取ったファイル
+    は, 名前に hash の頭があれば torch.hub と同じく比べ, 確かめてから置く
+
+    Parameters
+    ----------
+    found: dict[str, Any]
+        READY_LIBRARIES の関数の結果 (url, file)
+
+    Returns
+    ----------
+    None
+
+    Raises
+    ----------
+    FetchError
+        取れない場合, 時間の上限を超えた場合, hash の頭が違う場合, https
+        でない URL への転送
+    """
+    # URL もファイルの名前も無い出どころは, ライブラリの読み方に任せる
+    url = str(found.get("url") or "")
+    name = Path(str(found.get("file") or "")).name
+    if not url or not name:
+        return
+    target = Path(torch.hub.get_dir()) / "checkpoints" / name
+    if target.is_file():
+        return
+    if urlparse(url).scheme != "https":
+        raise FetchError(f"重みの URL {url} は https ではないので取りに行きません")
+
+    # 隣の一時ファイルに書き, 確かめてから入れ替える (途中のファイルを
+    # 重みとして読ませない. 誤りでも上限でも一時ファイルは消す)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    writing = target.with_name(f".{name}.fetching")
+    try:
+        digest = download(url, name, writing)
+        match = HASH_PREFIX.search(name)
+        if match and not digest.startswith(match.group(1)):
+            raise FetchError(
+                f"取った重み {name} の hash が名前の hash の頭 "
+                f"{match.group(1)} と違います (取得の途中で壊れたか, "
+                "出どころが変わった)"
+            )
+        os.replace(writing, target)
+    finally:
+        writing.unlink(missing_ok=True)
+
+
+def download(url: str, name: str, writing: Path) -> str:
+    """
+    URL の中身を時間の上限を付けて一時ファイルに書く関数
+
+    Parameters
+    ----------
+    url: str
+        重みの URL (https)
+    name: str
+        重みのファイルの名前 (誤りの文に使う)
+    writing: Path
+        書く一時ファイル
+
+    Returns
+    ----------
+    digest: str
+        書いた中身の sha256 (16 進)
+
+    Raises
+    ----------
+    FetchError
+        取れない場合 (https でない URL への転送も), 時間の上限を超えた場合
+    """
+    # 届いた分だけ返す read1 で小さく読み, 塊ごとに全体の上限を見る
+    # (read は塊がたまるまで返らず, 細い流れで上限を超えても止まらない)
+    hint = (
+        f"ネットワークを確かめるか, {name} を PyTorch の置き場 "
+        "(torch.hub.get_dir() の checkpoints) に置いてください"
+    )
+    sha = hashlib.sha256()
+    deadline = time.monotonic() + FETCH_SECONDS
+    try:
+        with open_url(url, READ_SECONDS) as response, writing.open(
+            "wb"
+        ) as file:
+            final = str(response.geturl() or url)
+            if urlparse(final).scheme != "https":
+                raise FetchError(
+                    f"重み {name} の URL が https でない {final} に転送された"
+                    "ので取りに行きません"
+                )
+            read = getattr(response, "read1", None) or response.read
+            while chunk := read(CHUNK):
+                if time.monotonic() > deadline:
+                    raise TimeoutError
+                sha.update(chunk)
+                file.write(chunk)
+    except FetchError:
+        raise
+    except TimeoutError as error:
+        raise FetchError(
+            f"重み {name} の取得が時間の上限 (全体で {FETCH_SECONDS:g} 秒, "
+            f"途切れて {READ_SECONDS:g} 秒) を超えました. {hint}"
+        ) from error
+    except Exception as error:
+        raise FetchError(
+            f"重み {name} を {url} から取れません ({type(error).__name__}: "
+            f"{error}). {hint}"
+        ) from error
+
+    return sha.hexdigest()
+
+
+class HttpsOnlyRedirect(HTTPRedirectHandler):
+    """
+    https でない URL への転送を断る転送の扱い
+    """
+
+    def redirect_request(
+        self, req: Request, fp: IO[bytes], code: int, msg: str,
+        headers: HTTPMessage, newurl: str
+    ) -> Optional[Request]:
+        """
+        転送先が https なら転送の要求を作り, でなければ断る関数
+
+        Parameters
+        ----------
+        req: Request
+            元の要求
+        fp: IO[bytes]
+            応答
+        code: int
+            状態の番号
+        msg: str
+            状態の文
+        headers: HTTPMessage
+            応答のヘッダー
+        newurl: str
+            転送先
+
+        Returns
+        ----------
+        request: Optional[Request]
+            転送の要求
+
+        Raises
+        ----------
+        FetchError
+            転送先が https でない場合
+        """
+        # 転送の度に転送先の scheme を確かめる
+        if urlparse(newurl).scheme != "https":
+            raise FetchError(
+                f"重みの URL が https でない {newurl} に転送されたので取りに"
+                "行きません"
+            )
+        request = super().redirect_request(
+            req, fp, code, msg, headers, newurl
+        )
+
+        return request
+
+
+# https でない転送を断る opener
+OPENER = build_opener(HttpsOnlyRedirect)
+
+
+def open_url(url: str, timeout: float) -> Any:
+    """
+    https でない転送を断る opener で URL を開く関数
+
+    Parameters
+    ----------
+    url: str
+        URL
+    timeout: float
+        1 回の読み込みで待つ秒
+
+    Returns
+    ----------
+    response: Any
+        応答
+    """
+    # 転送の扱いは HttpsOnlyRedirect
+    response = OPENER.open(url, timeout=timeout)
+
+    return response
