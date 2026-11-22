@@ -122,4 +122,41 @@ describe('optionsText', () => {
       'eta 0, nested {"a":1}, list [1,2], none null, flag true, sep ",", empty "", spaced " a", words "a b", paren "f(x)", plain fast',
     )
   })
+
+  it('数, 真偽, null に見える文字に引用符を付け, 型の値と見分ける', () => {
+    const typed = [
+      '0',
+      '-1.5',
+      '1e3',
+      '.5',
+      '1_000',
+      '0x1',
+      '0o7',
+      '0b1',
+      '1:30',
+      'inf',
+      '-Infinity',
+      '.NaN',
+      'true',
+      'False',
+      'yes',
+      'On',
+      'n',
+      'null',
+      'None',
+      '~',
+    ]
+    for (const text of typed) expect(optionsText({ v: text })).toBe(`v ${JSON.stringify(text)}`)
+    expect(optionsText({ n: 0, s: '0', t: true, u: 'true', z: null, w: 'null' })).toBe(
+      'n 0, s "0", t true, u "true", z null, w "null"',
+    )
+  })
+
+  it('引用符や括弧で始まる文字にも引用符を付け, 普通の文字はそのまま', () => {
+    expect(optionsText({ a: '"x"', b: '[1]', c: '{}', d: "'q'" })).toBe(
+      'a "\\"x\\"", b "[1]", c "{}", d "\'q\'"',
+    )
+    for (const text of ['fast', 'linear', '1a', 'v2', 'e3', 'info', 'nope', '0xg'])
+      expect(optionsText({ v: text })).toBe(`v ${text}`)
+  })
 })
