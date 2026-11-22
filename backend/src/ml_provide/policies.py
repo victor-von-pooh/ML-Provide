@@ -12,10 +12,9 @@ import numpy as np
 import yaml
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
-from ml_inference.policy import fallback_result
 from pydantic import BaseModel
 
-from ml_provide.api import MAX_NAME, PREDICT_LOCK, get_store, user_error
+from ml_provide.api import MAX_NAME, get_store, user_error
 from ml_provide.store import Store
 
 router = APIRouter(prefix="/api")
@@ -43,6 +42,9 @@ READ_ERRORS = (
 # 登録の一覧を書き換える鍵と, 覚えた方策の鍵
 POLICIES_LOCK = threading.Lock()
 CACHE_LOCK = threading.Lock()
+
+# 方策を動かす鍵 (推論の一式の大きな推論を待たないように, 推論の鍵と分ける)
+ACT_LOCK = threading.Lock()
 
 # ファイルごとの (更新時刻, 大きさ) の組. 無いファイルは None
 Marks = tuple[Optional[tuple[int, int]], ...]
@@ -294,9 +296,9 @@ def policy_view(
     return view
 
 
-def count_leaves(value: Any, limit: int) -> int:
+def count_items(value: Any, limit: int) -> int:
     """
-    入れ子のリストの葉 (リストでない要素) の数を数える関数
+    入れ子のリストの要素の数を数える関数 (リストも 1 つと数える)
 
     Parameters
     ----------
@@ -308,16 +310,16 @@ def count_leaves(value: Any, limit: int) -> int:
     Returns
     ----------
     count: int
-        葉の数 (上限を超えたら上限より 1 大きい数)
+        要素の数 (上限を超えたら上限より 1 大きい数)
     """
     # 深い入れ子でも止まらないように, 再帰でなく積んで数える
+    # 空のリストを並べた観測も上限に掛かるように, リストも 1 つと数える
     count = 0
     stack = [value]
     while stack:
         item = stack.pop()
         if isinstance(item, list):
             stack.extend(item)
-            continue
         count += 1
         if count > limit:
             break
@@ -505,29 +507,24 @@ def act(
     Raises
     ----------
     HTTPException
-        読めない一式と, 観測が大きすぎる場合は 400
+        無い一式は 404, 読めない一式と, 観測が大きすぎる場合は 400
     """
+    # 無い一式は観測より先に 404
+    entry = find_policy(request, policy_id)
+
     # 観測の大きさの上限 (形や値の誤りは守りが外れたときの動きにする)
-    if count_leaves(body.observation, MAX_OBSERVATION) > MAX_OBSERVATION:
+    if count_items(body.observation, MAX_OBSERVATION) > MAX_OBSERVATION:
         raise HTTPException(
             400, f"観測の要素は {MAX_OBSERVATION} 個までにしてください"
         )
-    entry = find_policy(request, policy_id)
     try:
         policy = open_policy(str(entry.get("path")))
     except READ_ERRORS as error:
         raise user_error(error) from error
 
-    # 推論の一式と同じく, モデルを動かすのは 1 つずつ
-    # 桁の大きな整数は float にできず OverflowError になるので, 数の配列に
-    # できない観測と同じ外れたときの動き
-    with PREDICT_LOCK:
-        try:
-            outcome = policy.act(body.observation)
-        except OverflowError as exc:
-            outcome = fallback_result(
-                policy.spec, [f"観測を数の配列にできない ({exc})"]
-            )
+    # 方策を動かすのは 1 つずつ
+    with ACT_LOCK:
+        outcome = policy.act(body.observation)
     result = {
         "action": to_json(outcome["action"]),
         "status": outcome["status"],

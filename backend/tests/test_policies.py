@@ -1,6 +1,7 @@
 import hashlib
 import json
 import shutil
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +9,7 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
+from ml_provide.api import PREDICT_LOCK
 from ml_provide.app import create_app
 
 # テストで使うトークン
@@ -329,7 +331,7 @@ def test_nested_observation_limit(
     client: TestClient, tmp_path: Path
 ) -> None:
     """
-    入れ子の観測も葉の数で上限を当てることを確かめる関数
+    入れ子の観測も要素の数で上限を当てることを確かめる関数
 
     Parameters
     ----------
@@ -348,6 +350,62 @@ def test_nested_observation_limit(
     assert client.post(url, json={"observation": ragged}).status_code == 400
     small = [[0.0] * 2, [0.0] * 2]
     assert client.post(url, json={"observation": small}).status_code == 200
+    # 空のリストを並べた観測もリストを 1 つと数えて上限に掛かる
+    empties: list[list[float]] = [[] for _ in range(100_001)]
+    assert client.post(url, json={"observation": empties}).status_code == 400
+
+
+def test_missing_policy_before_limit(client: TestClient) -> None:
+    """
+    無い一式は大きすぎる観測でも 404 にすることを確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+
+    Returns
+    ----------
+    None
+    """
+    response = client.post(
+        "/api/policies/missing/act", json={"observation": [0.0] * 100_001}
+    )
+    assert response.status_code == 404, response.text
+
+
+def test_act_does_not_wait_for_predict(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """
+    推論の鍵を持っている間も方策の行動を返すことを確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    view = register(client, copy_policy("cartpole", tmp_path))
+    url = f"/api/policies/{view['id']}/act"
+    observation = [0.0, 0.0, 0.0, 0.0]
+    results: list[int] = []
+
+    # 推論の鍵を持ったまま別の糸で送り, 待たずに返ることを確かめる
+    def send() -> None:
+        response = client.post(url, json={"observation": observation})
+        results.append(response.status_code)
+
+    with PREDICT_LOCK:
+        thread = threading.Thread(target=send)
+        thread.start()
+        thread.join(timeout=30)
+    assert results == [200]
 
 
 def test_reloads_changed_files(client: TestClient, tmp_path: Path) -> None:
