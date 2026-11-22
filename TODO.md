@@ -68,9 +68,9 @@
 - つながり: ML-Inference (結果の読み方 `read_result`)
 
 ### ML-Inference の点の数の確かめに合わせて点群の一式のテストを直す
-- 何を: ML-Inference の固定を上げる時に, `backend/tests/test_items_bundle.py` で点群の一式を作るテスト (`test_cloud_bundle_needs_points` など. `POINTS` は 128) で, 定義 (`point_cloud_predictor` の入力の形 `[4, 512, 3]`) と一式の点の数 (`POINTS`) をそろえる
+- 何を: ML-Inference の固定を上げる時に, `backend/tests/test_items_bundle.py` の `test_cloud_bundle_needs_points` (`POINTS` は 128) と, e2e の見本 (`frontend/e2e/make_items.py` の `INPUT_POINTS` は 128) と画面から作る一式 (`frontend/e2e/provide.spec.ts`) で, 定義 (`point_cloud_predictor` の入力の形 `[4, 512, 3]`) と一式の点の数 (`POINTS`) をそろえる
 - なぜ: ML-Inference は点群の一式を作る時に, 定義の点の数と `items.options.points` が違えば止めるようになり, 今のテストの組 (512 と 128) では一式を作れず 400 になるため
-- 終わりの条件: ML-Inference の固定を上げても, 点群の一式のテストが通る
+- 終わりの条件: ML-Inference の固定を上げても, 点群の一式の backend のテストと e2e が通る
 - つながり: ML-Inference の docs/DESIGN.md の「版 2 のデータセットの一式」
 
 ## 条件待ち
