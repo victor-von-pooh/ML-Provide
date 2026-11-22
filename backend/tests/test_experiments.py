@@ -150,6 +150,44 @@ def test_project_bundles_newest_first(tmp_path: Path) -> None:
     assert len(found) == 3
 
 
+def test_project_bundles_experiment_named_like_folder(
+    tmp_path: Path
+) -> None:
+    """
+    実験の名前が一式のディレクトリと同じでも, その下の一式を拾うことを
+    確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 実験の名前が inference と policy
+    project = tmp_path / "proj"
+    inference = (
+        project / "outputs" / "inference" / "2026-01-01" / "10-00-00"
+        / "inference"
+    )
+    inference.mkdir(parents=True)
+    (inference / "inference.yaml").write_text("format_version: 3\n")
+    policy = (
+        project / "outputs" / "policy" / "2026-01-02" / "10-00-00" / "policy"
+    )
+    policy.mkdir(parents=True)
+    (policy / "policy.json").write_text("{}")
+
+    # 推論の一式も方策の一式も出る
+    assert experiments.project_bundles(project, 10) == [inference]
+    found = experiments.project_bundles(
+        project, 10, "policy", "policy.json"
+    )
+    assert found == [policy]
+
+
 def test_list_policy_experiments(
     client: TestClient, tmp_path: Path
 ) -> None:
@@ -186,6 +224,13 @@ def test_list_policy_experiments(
         {**problem, "project": {"path": str(project.resolve())}},
         tmp_path / "pathfinder" / "problems" / "b"
     )
+
+    # リンクの policy ディレクトリは外す
+    outside = tmp_path / "outside" / "policy"
+    shutil.copytree(POLICIES / "cartpole", outside)
+    linked = runs / "linked" / "2026-01-04" / "07-00-00"
+    linked.mkdir(parents=True)
+    (linked / "policy").symlink_to(outside)
 
     # 方策の一式の一覧は policy.json を持つ policy だけ
     listing = client.get("/api/experiments/policies").json()

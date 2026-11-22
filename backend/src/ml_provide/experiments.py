@@ -116,15 +116,19 @@ def project_bundles(
         place = Path(current)
         depth = len(place.relative_to(root).parts)
         bundle = place / folder
+        # 一式と判定した所だけ下りない (実験の名前が folder と同じでも
+        # 下りられるように)
+        skip = ""
         if folder in dirs and not bundle.is_symlink() and (
             bundle / marker
         ).is_file():
             bundles.append(bundle)
+            skip = folder
             if len(bundles) >= limit:
                 break
         dirs[:] = sorted(
             (name for name in dirs
-             if name != folder and depth + 1 < RUN_DEPTH),
+             if name != skip and depth + 1 < RUN_DEPTH),
             reverse=True
         )
 
