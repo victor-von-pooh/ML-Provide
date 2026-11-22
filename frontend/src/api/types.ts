@@ -267,6 +267,8 @@ export interface UncertaintySummary {
   /** 段ごとの外れ方を測った段の数と, 測れた最も先の段 (0 は測れていない) */
   horizon?: number | null
   steps_measured?: number
+  /** 外れ方を種類ごとに測った列と種類の数 (測っていなければ null) */
+  groups?: { column: string | null; count: number } | null
 }
 
 /** 検証用の分割を一式で推論した評価と, 実験の記録との比べ */

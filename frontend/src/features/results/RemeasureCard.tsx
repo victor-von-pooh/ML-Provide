@@ -10,10 +10,11 @@ import { Button, Card, ErrorBox } from '../../components/ui'
 const SAVE_CONFIRM =
   '一式の外れ方の記録を, この実績で測り直したものに書き換えます (登録した場所の inference.yaml を書き換えます. 学習の実験の中の一式は実験を書き換えず, ML-Provide の置き場に写してから書き戻します. 一式の画面で作ったときの記録に戻せます). 書き戻しますか?'
 
-/** 測り直しの入力 (何段先までと時刻の列. 段ごとに測らなければ空) */
+/** 測り直しの入力 (何段先までと時刻の列, 分ける列. 測らなければ空) */
 interface Inputs {
   horizon?: number
   time?: string
+  groups?: string
 }
 
 /** 外れ方の確かめ (この実績で, 一式の外れ方の記録が当たっているか) と書き戻し */
@@ -21,10 +22,13 @@ export function RemeasureCard({
   result,
   bundleAlive,
   forecastable,
+  groupColumns,
 }: {
   result: Result
   bundleAlive: boolean
   forecastable: boolean
+  /** 外れ方を種類ごとに分けられる列 (回帰と予測の一式だけ. 分けられなければ空) */
+  groupColumns: string[]
 }) {
   const client = useQueryClient()
   // 最後に終わった確かめか書き戻しの結果と, そのときの段の数と時刻の列
@@ -34,6 +38,8 @@ export function RemeasureCard({
   const columns = result.columns ?? []
   const [horizon, setHorizon] = useState('')
   const [time, setTime] = useState(() => columns.find((c) => /date|日付|time/i.test(c)) ?? '')
+  // 外れ方を種類ごとに分ける列 (空なら全ての行で 1 つ)
+  const [groups, setGroups] = useState('')
   const steps = horizon.normalize('NFKC').trim()
   const stepCount = steps === '' ? undefined : Number(steps)
   const stepProblem =
@@ -45,13 +51,16 @@ export function RemeasureCard({
   const current: Inputs = {
     horizon: stepCount,
     time: stepCount !== undefined ? time : undefined,
+    groups: groups || undefined,
   }
   const check = useMutation({
-    mutationFn: (inputs: Inputs) => api.remeasure(result.id, false, inputs.horizon, inputs.time),
+    mutationFn: (inputs: Inputs) =>
+      api.remeasure(result.id, false, inputs.horizon, inputs.time, inputs.groups),
     onSuccess: (view, inputs) => setShown({ view, inputs }),
   })
   const save = useMutation({
-    mutationFn: (inputs: Inputs) => api.remeasure(result.id, true, inputs.horizon, inputs.time),
+    mutationFn: (inputs: Inputs) =>
+      api.remeasure(result.id, true, inputs.horizon, inputs.time, inputs.groups),
     onSuccess: (view, inputs) => {
       setShown({ view, inputs })
       // 一式の説明 (外れ方の記録) を読み直す
@@ -136,6 +145,31 @@ export function RemeasureCard({
               ))}
             </select>
           </div>
+        </div>
+      )}
+      {groupColumns.length > 0 && (
+        <div className="mb-3 text-sm">
+          <label htmlFor={`groups-${result.id}`} className="mb-1 block text-xs text-ink-2">
+            外れ方を分ける列 (任意. 店や品のように行の種類で外れ方が違うなら, 種類ごとに測る. 20
+            行より少ない種類は全ての行の外れ方)
+          </label>
+          <select
+            id={`groups-${result.id}`}
+            value={groups}
+            disabled={busy}
+            onChange={(event) => {
+              setGroups(event.target.value)
+              changed()
+            }}
+            className="h-8 rounded-lg border border-line bg-surface px-2"
+          >
+            <option value="">分けない</option>
+            {groupColumns.map((column) => (
+              <option key={column} value={column}>
+                {column}
+              </option>
+            ))}
+          </select>
         </div>
       )}
       {stepProblem && (
