@@ -10,8 +10,17 @@ import { Button, Card, ErrorBox } from '../../components/ui'
 /**
  * 一式につないだ問題の設定 (損得, 根拠, 一式との食い違い) を出し, つなぐか外す.
  * つないだ一式は, 推論の意思決定と結論の決め方の既定が問題の設定の値になる
+ * (既製のモデルの一式は結論の決め方だけ. 意思決定を使えないため)
  */
-export function ProblemCard({ bundleId, state }: { bundleId: string; state: ProblemState }) {
+export function ProblemCard({
+  bundleId,
+  state,
+  readyModel = false,
+}: {
+  bundleId: string
+  state: ProblemState
+  readyModel?: boolean
+}) {
   const client = useQueryClient()
   const [path, setPath] = useState('')
   const link = useMutation({
@@ -37,8 +46,9 @@ export function ProblemCard({ bundleId, state }: { bundleId: string; state: Prob
         <div className="space-y-2 text-sm">
           {linked.handled ? (
             <p className="text-xs text-ink-3">
-              推論の意思決定と結論の決め方は, この問題の設定の今の値が既定です. 問題の設定を
-              ML-Pathfinder で直すと, 次にこの画面を開いたときから使います.
+              推論の{readyModel ? '' : '意思決定と'}結論の決め方は,
+              この問題の設定の今の値が既定です. 問題の設定を ML-Pathfinder で直すと,
+              次にこの画面を開いたときから使います.
             </p>
           ) : (
             <p className="text-xs text-ink-2">受け持ち: {linked.role}</p>
@@ -84,9 +94,9 @@ export function ProblemCard({ bundleId, state }: { bundleId: string; state: Prob
           }}
         >
           <p className="text-xs text-ink-3">
-            問題の設定 (ML-Pathfinder の problem.yaml) をつなぐと,
-            損得と結論の決め方を問題の設定の今の値で既定にし,
-            損得の根拠と一式との食い違いを出します.
+            {readyModel
+              ? '問題の設定 (作り方が既製のモデルをそのままの問題の設定) をつなぐと, 結論の決め方を問題の設定の今の値で既定にし, 決めておいた出どころ, モデル, 重み, 重みのハッシュ値と一式との食い違いを出します (意思決定は使えません).'
+              : '問題の設定 (ML-Pathfinder の problem.yaml) をつなぐと, 損得と結論の決め方を問題の設定の今の値で既定にし, 損得の根拠と一式との食い違いを出します.'}
           </p>
           {hint && (
             <div className="rounded-lg border border-line p-3 text-xs">

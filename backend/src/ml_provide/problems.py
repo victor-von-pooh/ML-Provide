@@ -149,34 +149,41 @@ def version_of(path: Path) -> str:
     return version
 
 
-def is_usable(path: Path) -> bool:
+def is_usable(path: Path, ready: bool = False) -> bool:
     """
-    推論に渡せる列の予測の問題の設定のファイルかを確かめる関数
+    推論に渡せる問題の設定のファイルかを確かめる関数
 
     Parameters
     ----------
     path: Path
         problem.yaml
+    ready: bool = False
+        既製のモデルの一式に渡すか (作り方が既製のモデルをそのままの問題
+        の設定を探す)
 
     Returns
     ----------
     usable: bool
-        読めて, 受け渡しが通り, 受け持ちが列の予測なら True
+        読めて, 受け渡しが通り, 受け持ちが列の予測 (既製のモデルの一式なら
+        作り方が既製のモデルをそのまま) なら True
     """
     # 読めないファイルと, 推論の結論を扱わない受け持ちは使わない
     try:
         if not path.is_file():
             return False
         problem = read_problem(path)
-        ml_quest.handoff(problem)
-        usable = bool(is_column_part(problem))
+        stages = ml_quest.handoff(problem)
+        usable = (
+            stages["inference"].get("ready") is not None if ready
+            else bool(is_column_part(problem))
+        )
     except (HTTPException, OSError, *SHAPE_ERRORS):
         usable = False
 
     return usable
 
 
-def origin_hint(copy: Path) -> tuple[str, str]:
+def origin_hint(copy: Path, ready: bool = False) -> tuple[str, str]:
     """
     写した問題の設定から, 候補に出す問題の設定と添える文を決める関数
 
@@ -187,6 +194,8 @@ def origin_hint(copy: Path) -> tuple[str, str]:
     ----------
     copy: Path
         一式の上で見つけた problem.yaml
+    ready: bool = False
+        既製のモデルの一式の候補か
 
     Returns
     ----------
@@ -206,7 +215,7 @@ def origin_hint(copy: Path) -> tuple[str, str]:
             "つないでください"
         )
         return hint
-    if Path(origin) != copy and is_usable(Path(origin)):
+    if Path(origin) != copy and is_usable(Path(origin), ready):
         hint = (
             origin,
             f"学習の時点の写し ({copy}) が指す元の問題の設定です. "
@@ -224,7 +233,7 @@ def origin_hint(copy: Path) -> tuple[str, str]:
 
 
 def find_hint(
-    bundle_path: Path, home: Path
+    bundle_path: Path, home: Path, ready: bool = False
 ) -> tuple[Optional[str], Optional[str]]:
     """
     一式の場所から上にたどり, 問題の設定のファイルの候補を探す関数
@@ -238,11 +247,14 @@ def find_hint(
         一式のディレクトリ
     home: Path
         このアプリの置き場 (置き場の中の一式は探さない)
+    ready: bool = False
+        既製のモデルの一式か (作り方が既製のモデルをそのままの問題の設定を
+        探す)
 
     Returns
     ----------
     found: tuple[Optional[str], Optional[str]]
-        最初に見つけた, 推論に渡せる列の予測の問題の設定のファイルの場所
+        最初に見つけた, 推論に渡せる問題の設定のファイルの場所
         (元の場所を持つ写しなら元) と, 写しか元かを伝える文 (無ければ
         どちらも None)
     """
@@ -257,9 +269,9 @@ def find_hint(
             break
         candidate = place / "problem.yaml"
         place = place.parent
-        if not is_usable(candidate):
+        if not is_usable(candidate, ready):
             continue
-        found = origin_hint(candidate)
+        found = origin_hint(candidate, ready)
         return found
 
     return found
@@ -545,6 +557,158 @@ def with_baseline(
     return result
 
 
+def resolved_weights(library: str, model: str, weights: str) -> str:
+    """
+    重みの名前を, 版の決まった名前に直す関数 (DEFAULT を IMAGENET1K_V1 など)
+
+    Parameters
+    ----------
+    library: str
+        出どころ (READY_LIBRARIES の名前)
+    model: str
+        モデルの名前
+    weights: str
+        重みの名前
+
+    Returns
+    ----------
+    name: str
+        直した名前 (出どころが読めない名前なら, 渡した名前のまま)
+    """
+    # 出どころの読み方は ML-Inference の READY_LIBRARIES (重みは取りに行か
+    # ない)
+    reader = ml_inference.READY_LIBRARIES.get(library)
+    if reader is None:
+        return weights
+    try:
+        found = reader(model, weights)
+    except Exception:
+        return weights
+    name = str((found.get("params") or {}).get("weights") or weights)
+
+    return name
+
+
+def ready_issues(
+    bundle: ml_inference.Bundle, planned: dict[str, Any]
+) -> list[str]:
+    """
+    問題の設定で決めておいた既製のモデルと, 一式の出どころの食い違いを
+    文で返す関数
+
+    Parameters
+    ----------
+    bundle: ml_inference.Bundle
+        既製のモデルの一式
+    planned: dict[str, Any]
+        受け渡しの推論の ready (library, model, weights, sha256 (重みの
+        ハッシュ値). 決めていない値は None)
+
+    Returns
+    ----------
+    issues: list[str]
+        食い違いの文 (無ければ空)
+    """
+    # 出どころ, モデル, 重みの名前 (重みは版の決まった名前で比べる)
+    ready = bundle.info.get("ready") or {}
+    labels = {"library": "出どころ", "model": "モデル", "weights": "重み"}
+    issues = []
+    for key, label in labels.items():
+        want = planned.get(key)
+        have = ready.get(key)
+        if not isinstance(want, str) or not want:
+            continue
+        if key == "weights" and isinstance(have, str):
+            want = resolved_weights(
+                str(planned.get("library") or ready.get("library")),
+                str(planned.get("model") or ready.get("model")), want
+            )
+        if want != have:
+            issues.append(
+                f"既製のモデル: 問題の設定の{label} {want} と, 一式の{label} "
+                f"{have} が違います"
+            )
+
+    # 重みのハッシュ値 (一式が読んだ重みのハッシュ値と. どちらも小文字に
+    # し, 一式に記録が無ければ比べられないと知らせる)
+    want = planned.get("sha256")
+    records = (bundle.info.get("model") or {}).get("pretrained") or []
+    have = next((r.get("sha256") for r in records
+                 if isinstance(r, dict) and isinstance(r.get("sha256"), str)
+                 and r.get("sha256")), None)
+    if not isinstance(want, str) or not want.strip():
+        return issues
+    if have is None:
+        issues.append(
+            "既製のモデル: 一式に重みのハッシュ値の記録が無いので, 問題の"
+            "設定の重みのハッシュ値を確かめられません"
+        )
+    elif want.strip().lower() != have.strip().lower():
+        issues.append(
+            f"既製のモデル: 問題の設定の重みのハッシュ値 {want.strip()[:12]}… "
+            f"と, 一式が読んだ重みのハッシュ値 {have.strip()[:12]}… が違います"
+            " (別の重みかもしれません)"
+        )
+
+    return issues
+
+
+def ready_view(
+    bundle: ml_inference.Bundle, stages: dict[str, Any]
+) -> dict[str, Any]:
+    """
+    既製のモデルの一式につないだ問題の設定から, 推論の値を読む関数
+
+    作り方が既製のモデルをそのままの問題の設定だけ, 結論の決め方を既定に
+    する. 意思決定は使えない (既製のモデルの一式は外れ方の記録を持たない)
+
+    Parameters
+    ----------
+    bundle: ml_inference.Bundle
+        既製のモデルの一式
+    stages: dict[str, Any]
+        受け渡しの値
+
+    Returns
+    ----------
+    view: dict[str, Any]
+        handled, decision (常に None), conclusion, basis, text, issues
+    """
+    # 一式の既定値に問題の設定の結論の決め方を重ねる
+    inference = stages["inference"]
+    planned = inference.get("ready")
+    conclusion = {
+        **(bundle.info.get("conclusion") or {}), **inference["conclusion"]
+    }
+    view: dict[str, Any]
+    if planned is None:
+        view = {
+            "handled": False, "decision": None,
+            "conclusion": dict(bundle.info.get("conclusion") or {}),
+            "basis": None, "issues": [],
+            "text": (
+                "この問題の設定の作り方は既製のモデルをそのままではないので, "
+                "既製のモデルの一式には使いません. 結論の決め方は一式の既定値"
+                "のままです"
+            ),
+        }
+        return view
+    view = {
+        "handled": True, "decision": None, "conclusion": conclusion,
+        "basis": None,
+        "text": (
+            "既製のモデルの一式は意思決定を使えないので, 問題の設定の意思決定"
+            "は使いません. 結論の決め方は問題の設定の値を既定にします"
+        ),
+        "issues": ready_issues(bundle, planned) + [
+            f"結論の決め方: {message}" for message in
+            ml_inference.check_rules(conclusion, bundle.task, bundle.classes)
+        ],
+    }
+
+    return view
+
+
 def part_name(part: dict[str, Any]) -> str:
     """
     受け渡しの受け持ちを, 画面に出す短い名前にする関数
@@ -576,7 +740,9 @@ def linked_view(
     問題の設定から推論の値を読み, 画面に出す形にする関数
 
     列の予測でない受け持ちは推論の値を持たないため, 一式の既定値の
-    結論の決め方と, まだ扱わないことの文を返す
+    結論の決め方と, まだ扱わないことの文を返す. 既製のモデルの一式は,
+    作り方が既製のモデルをそのままの問題の設定の結論の決め方と, 重みの
+    食い違いを返す (意思決定は使えない)
 
     Parameters
     ----------
@@ -614,9 +780,20 @@ def linked_view(
         message = unit_hint(error) or f"一式を読めません: {error}"
         raise HTTPException(422, message) from error
 
-    # 結論の決め方は一式の既定値に重ね, 意思決定は問題の設定のまま
+    # 既製のモデルの一式は結論の決め方だけ
     inference = stages["inference"]
     role = part_name(stages["part"])
+    head = {
+        "name": problem["name"], "path": str(path),
+        "version": version_of(path),
+        "created_at": str(problem["created_at"]), "role": role,
+        "horizon": None,
+    }
+    if bundle.from_ready:
+        view = {**head, **ready_view(bundle, stages)}
+        return view
+
+    # 結論の決め方は一式の既定値に重ね, 意思決定は問題の設定のまま
     decision, notes = with_baseline(
         problem, inference["decision"] if handled else None,
         bundle_time(bundle)
@@ -634,10 +811,7 @@ def linked_view(
     else:
         text = "意思決定しない (予測を見て人が決める)"
     view = {
-        "name": problem["name"], "path": str(path),
-        "version": version_of(path),
-        "created_at": str(problem["created_at"]),
-        "role": role, "handled": handled,
+        **head, "handled": handled,
         "decision": decision, "conclusion": conclusion,
         "horizon": inference["horizon"],
         "basis": active_value(problem, "action.basis") if handled else None,
@@ -650,10 +824,9 @@ def linked_view(
     return view
 
 
-def unlinked_kind(path: str) -> bool:
+def bundle_kind(path: str) -> Optional[str]:
     """
-    問題の設定を読まない一式 (雑音だけの一式, 既製のモデルの一式) かを
-    返す関数
+    一式の説明のデータの種類を返す関数
 
     Parameters
     ----------
@@ -662,17 +835,19 @@ def unlinked_kind(path: str) -> bool:
 
     Returns
     ----------
-    unlinked: bool
-        一式の説明のデータの種類が noise か ready か (読めない一式は偽)
+    kind: Optional[str]
+        データの種類 (noise は問題の設定を読まない雑音だけの一式, ready は
+        既製のモデルの一式. 読めない一式は None)
     """
     # 一覧と同じ覚えた説明 (読めない一式は, 今までどおり読んで理由を出す)
     try:
         description, _ = describe(path)
     except Exception:
-        return False
-    unlinked = description.get("kind") in ("noise", "ready")
+        return None
+    found = description.get("kind")
+    kind = found if isinstance(found, str) else None
 
-    return unlinked
+    return kind
 
 
 def problem_state(entry: dict[str, Any], home: Path) -> dict[str, Any]:
@@ -693,11 +868,12 @@ def problem_state(entry: dict[str, Any], home: Path) -> dict[str, Any]:
         None), error (読めない理由), hint (つないでいない場合の候補),
         hint_note (候補が写しか元かを伝える文)
     """
-    # 雑音だけの一式と既製のモデルの一式は, 問題の設定を読まず候補も探さ
-    # ない (画面が一式と並べて要求しても, 結論と意思決定に使わないため)
+    # 雑音だけの一式は, 問題の設定を読まず候補も探さない (画面が一式と
+    # 並べて要求しても, 結論と意思決定に使わないため)
     text = entry.get("problem")
     state: dict[str, Any]
-    if unlinked_kind(str(entry["path"])):
+    kind = bundle_kind(str(entry["path"]))
+    if kind == "noise":
         state = {"path": text if isinstance(text, str) else None,
                  "linked": None, "error": None, "hint": None,
                  "hint_note": None}
@@ -705,7 +881,9 @@ def problem_state(entry: dict[str, Any], home: Path) -> dict[str, Any]:
 
     # つないでいなければ候補だけ
     if not isinstance(text, str):
-        hint, note = find_hint(Path(str(entry["path"])), home)
+        hint, note = find_hint(
+            Path(str(entry["path"])), home, kind == "ready"
+        )
         state = {"path": None, "linked": None, "error": None,
                  "hint": hint, "hint_note": note}
         return state
