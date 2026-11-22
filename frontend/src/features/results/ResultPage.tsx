@@ -9,6 +9,7 @@ import type { Counts, Result } from '../../api/types'
 import { Button, Card, ErrorBox, PageHeader, Spinner, StatTile } from '../../components/ui'
 import { formatPercent, formatValue } from '../../lib/format'
 import { FORM_LABELS, maskNames } from '../../lib/outputs'
+import { READY_UNSUPPORTED } from '../../lib/ready'
 import { fromForm, toForm, type RulesForm } from '../../lib/rules'
 import { OutputNotices } from '../bundles/OutputView'
 import { ArtifactCard } from './ArtifactCard'
@@ -22,6 +23,9 @@ const NEUTRAL = new Set(['保留', '予測なし'])
 
 // 表の 1 ページの行の数
 const PAGE = 50
+
+// 種類ごとの確率の列 (p:<種類>) を表に出す数の上限 (多ければ CSV だけ. ImageNet は 1000)
+const MAX_PROBABILITY_COLUMNS = 20
 
 // 予測と判断の列 (元の列と分けて右に寄せる)
 const OWN = new Set([
@@ -165,9 +169,13 @@ function RowsTable({ result, onView }: { result: Result; onView?: (row: number) 
     ...(result.summary?.decisions?.map((item) => item.decision) ?? []),
     ...((result.summary?.skipped ?? 0) > 0 ? ['予測なし'] : []),
   ]
+  const probabilities = rows.data?.columns.filter((name) => name.startsWith('p:')) ?? []
+  const manyProbabilities = probabilities.length > MAX_PROBABILITY_COLUMNS
   const columns = rows.data
     ? [
-        ...rows.data.columns.filter((name) => OWN.has(name) || name.startsWith('p:')),
+        ...rows.data.columns.filter(
+          (name) => OWN.has(name) || (name.startsWith('p:') && !manyProbabilities),
+        ),
         ...rows.data.columns.filter((name) => !OWN.has(name) && !name.startsWith('p:')),
       ]
     : []
@@ -225,6 +233,12 @@ function RowsTable({ result, onView }: { result: Result; onView?: (row: number) 
       {rows.isPending && <Spinner />}
       {rows.data && (
         <>
+          {manyProbabilities && (
+            <p className="border-b border-line px-4 py-2 text-xs text-ink-3">
+              種類が {probabilities.length.toLocaleString()} あるので, 種類ごとの確率の列 (p:種類)
+              は表に出さず, CSV に入れます
+            </p>
+          )}
           <div className="max-h-[32rem] overflow-auto">
             <table className="w-full text-xs">
               <caption className="sr-only">予測と判断の表</caption>
@@ -407,6 +421,8 @@ export function ResultPage() {
     data.overall_count ?? data.sentences.length - Math.min(summary?.groups?.length ?? 0, 10)
   // 列の出力でない一式の結果は件数だけ (決め方, 意思決定, 列の効きは使えない)
   const column = data.column_output !== false
+  // 既製のモデルの一式の結果は, 意思決定, たどり直し, 外れ方の確かめを使えない
+  const readyModel = data.kind === 'ready'
   const form = data.artifacts?.form ?? data.output_form ?? ''
   return (
     <>
@@ -468,14 +484,15 @@ export function ResultPage() {
           {summary && <DecisionBars counts={summary} />}
         </Card>
         {/* 決め直した後は, 使った決め方で編集を作り直す */}
-        {column && (
+        {readyModel && <p className="text-xs text-ink-2">{READY_UNSUPPORTED}</p>}
+        {column && !readyModel && (
           <DecisionCard
             key={`decision:${JSON.stringify(data.decision?.decision ?? null)}`}
             result={data}
             bundleAlive={bundleAlive}
           />
         )}
-        {column && (
+        {column && !readyModel && (
           <RemeasureCard
             key={`remeasure:${data.id}`}
             result={data}

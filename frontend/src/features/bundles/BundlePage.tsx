@@ -19,6 +19,7 @@ import {
   PREPARE_LABELS,
   sourceLabel,
 } from '../../lib/outputs'
+import { classesText, licenseAlert, preprocessText, READY_UNSUPPORTED } from '../../lib/ready'
 import { fromForm, toForm, withCleared, type RulesForm } from '../../lib/rules'
 import { DecisionEditor } from '../results/DecisionEditor'
 import { ResultList } from '../results/ResultList'
@@ -65,6 +66,43 @@ function ItemsRows({ items }: { items: NonNullable<Description['items']> }) {
   )
 }
 
+/** 既製のモデルの一式 (版 6) の出どころ, 前処理, 重みの置き場 */
+function ReadyRows({ ready }: { ready: NonNullable<Description['ready']> }) {
+  return (
+    <>
+      <Row label="データ">画像 (既製のモデル. データセットも学習の結果も無い)</Row>
+      <Row label="出どころ">
+        {ready.library} の <span className="font-mono text-xs">{ready.model}</span> (重み{' '}
+        <span className="font-mono text-xs">{ready.weights}</span>)
+      </Row>
+      <Row label="前処理">{preprocessText(ready.preprocess)}</Row>
+      <Row label="重みのファイル">
+        <span className="font-mono text-xs break-all">{ready.weights_file}</span>
+        <span className="block text-xs text-ink-2">
+          {ready.weights_cached
+            ? '出どころから読んで置き場にあります (次からはこれを読み, hash で確かめます)'
+            : '置き場にありません. 推論のときに出どころから取りに行きます (ネットワークを使えない場所では, このファイルを置きます)'}
+        </span>
+      </Row>
+    </>
+  )
+}
+
+/** 既製のモデルの一式の注意 (ライセンスの警告は推論の前に気付けるように上に出す) */
+function ReadyNotices({ ready }: { ready: NonNullable<Description['ready']> }) {
+  const alert = licenseAlert(ready.license)
+  if (!alert) return null
+  return (
+    <p
+      role="note"
+      aria-label="ライセンスの警告"
+      className="rounded-lg border border-warning-text/40 bg-surface p-2 text-sm text-warning-text"
+    >
+      ライセンスの警告: {alert}
+    </p>
+  )
+}
+
 /** 一式の説明 (何を入れると何が出るか, どの学習の結果か) */
 function DescriptionView({ description }: { description: Description }) {
   const run = description.run
@@ -72,11 +110,15 @@ function DescriptionView({ description }: { description: Description }) {
   const items = description.items
   // 雑音だけの一式はデータセットを持たず, 件数と種から作る
   const noise = description.kind === 'noise'
+  // 既製のモデルの一式は読み込みと前処理の代わりに出どころと重みの前処理
+  const ready = description.ready
   const unit = items ? '件' : '行'
   return (
     <dl className="text-sm">
       {items ? (
         <ItemsRows items={items} />
+      ) : ready ? (
+        <ReadyRows ready={ready} />
       ) : noise ? (
         <Row label="データ">雑音だけ (データセットなし. 推論は件数と種から作る)</Row>
       ) : (
@@ -86,14 +128,18 @@ function DescriptionView({ description }: { description: Description }) {
           {description.target && ` (目的の列 ${description.target})`}
         </Row>
       )}
-      {description.classes.length > 0 && <Row label="クラス">{description.classes.join(', ')}</Row>}
+      {description.classes.length > 0 && (
+        <Row label={`クラス (${description.classes.length.toLocaleString()})`}>
+          {classesText(description.classes)}
+        </Row>
+      )}
       {description.features.length > 0 && (
         <Row label={`学習に使う列 (${description.features.length})`}>
           <span className="font-mono text-xs">{description.features.join(', ')}</span>
         </Row>
       )}
       {description.text_column && <Row label="文の列">{description.text_column}</Row>}
-      {!items && !noise && (
+      {!items && !noise && !ready && (
         <>
           <Row label="読み込み">
             <span className="font-mono text-xs">
@@ -182,6 +228,8 @@ function PredictCard({
   const textual = description.kind === 'text' && !!description.text_column
   // 雑音だけの一式はファイルと文の代わりに件数と種 (種は空なら一式の手順の種)
   const noise = description.kind === 'noise'
+  // 既製のモデルの一式は画像だけで, 意思決定を使えない (結論の決め方は使える)
+  const readyModel = description.kind === 'ready'
   const info = useQuery({ queryKey: ['info'], queryFn: api.info, staleTime: Infinity })
   const maxSamples = info.data?.max_samples ?? 1000
   const [count, setCount] = useState('4')
@@ -217,7 +265,7 @@ function PredictCard({
     decisionForm,
     description.classes,
   )
-  const problems = column ? [...ruleProblems, ...decisionProblems] : []
+  const problems = column ? [...ruleProblems, ...(readyModel ? [] : decisionProblems)] : []
   if (noise) {
     const number = Number(count)
     if (!/^\d+$/.test(count.trim()) || number < 1 || number > maxSamples)
@@ -241,15 +289,17 @@ function PredictCard({
             ? mode === 'texts'
               ? { texts: texts.split('\n') }
               : { source: source.trim() }
-            : mode === 'texts'
-              ? { texts: texts.split('\n'), rules: withCleared(rules), decision: decision ?? {} }
-              : {
-                  source: source.trim(),
-                  rules: withCleared(rules),
-                  forecast: canForecast && ahead,
-                  // 意思決定しない場合は空 (省くと一式の既定値になる)
-                  decision: decision ?? {},
-                },
+            : readyModel
+              ? { source: source.trim(), rules: withCleared(rules) }
+              : mode === 'texts'
+                ? { texts: texts.split('\n'), rules: withCleared(rules), decision: decision ?? {} }
+                : {
+                    source: source.trim(),
+                    rules: withCleared(rules),
+                    forecast: canForecast && ahead,
+                    // 意思決定しない場合は空 (省くと一式の既定値になる)
+                    decision: decision ?? {},
+                  },
       ),
     onSuccess: (result) => {
       client.invalidateQueries({ queryKey: ['results'] })
@@ -324,13 +374,19 @@ function PredictCard({
           <div>
             <PathField
               id="predict-source"
-              label={sourceLabel(description.items?.input_kind, description.kind)}
+              label={
+                readyModel
+                  ? '推論する画像 (画像のファイルか, 画像を並べたディレクトリ)'
+                  : sourceLabel(description.items?.input_kind, description.kind)
+              }
               value={source}
               onChange={setSource}
               hint={
-                description.items
-                  ? '学習のときと同じ 1 件の扱いをかけます (撮影は同じ正規化も). 読めない件は理由を付けて飛ばします'
-                  : '目的の列は有っても無くてもかまいません. 学習のときと同じ読み込みで読みます'
+                readyModel
+                  ? '重みの説明の前処理 (大きさ, 切り出し, 正規化) をかけ, 種類の名前と確信度を出します. 読めない画像は理由を付けて飛ばします'
+                  : description.items
+                    ? '学習のときと同じ 1 件の扱いをかけます (撮影は同じ正規化も). 読めない件は理由を付けて飛ばします'
+                    : '目的の列は有っても無くてもかまいません. 学習のときと同じ読み込みで読みます'
               }
             />
             {bundle.sample_input && (
@@ -412,7 +468,8 @@ function PredictCard({
             結論は推論した件数だけです. 結論の決め方と意思決定は使えません
           </p>
         )}
-        {column && (
+        {readyModel && <p className="text-xs text-ink-2">{READY_UNSUPPORTED}</p>}
+        {column && !readyModel && (
           <section aria-label="意思決定">
             <h3 className="mb-2 text-xs font-semibold text-ink-2">
               意思決定 (任意. だから何をするか. 結果の画面で変えて決め直せます)
@@ -483,7 +540,9 @@ export function BundlePage() {
   const bundle = useQuery({ queryKey: ['bundles', id], queryFn: () => api.bundle(id) })
   const results = useQuery({ queryKey: ['results', id], queryFn: () => api.results(id) })
   // 雑音だけの一式はデータも正解も無く, 問題の設定の結論を扱わないので問題の設定を読まない
-  const noise = bundle.data?.description?.kind === 'noise'
+  // 既製のモデルの一式も, 問題の設定の意思決定を使えないので読まない
+  const kind = bundle.data?.description?.kind
+  const noise = kind === 'noise' || kind === 'ready'
   const problem = useQuery({
     queryKey: ['bundle-problem', id],
     queryFn: () => api.bundleProblem(id),
@@ -544,6 +603,7 @@ export function BundlePage() {
             </div>
           )}
           <div className="flex min-w-0 flex-col gap-4">
+            {data.description.ready && <ReadyNotices ready={data.description.ready} />}
             <OutputNotices
               target={data.description.target_info}
               warnings={data.description.pretrained_warnings}

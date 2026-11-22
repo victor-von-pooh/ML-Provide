@@ -14,11 +14,16 @@ dependencies = [
     # 一式を作る画面でファイルの組のデータセットの項目を読む (load_items)
     "ml-eda",
     "ml-inference[all]",
+    # 既製のモデルの一式の下見でライセンスの情報を読む (pretrained_info)
+    "ml-modelcontrol",
     "ml-quest",
     "pydantic>=2.9",
     "pyyaml>=6.0",
     # ML-Inference が使う. Linux では下の pytorch-cpu から取る
     "torch>=2.2",
+    # 既製のモデルの一式 (torchvision の学習済みの画像の分類). Linux では
+    # 下の pytorch-cpu から取る
+    "torchvision>=0.17",
     "uvicorn>=0.32"
 ]
 
@@ -38,9 +43,11 @@ dev = [
 [tool.uv.sources]
 ml-eda = { git = "https://github.com/victor-von-pooh/ML-EDA.git" }
 ml-inference = { path = "../ML-Inference", editable = true }
+ml-modelcontrol = { git = "https://github.com/victor-von-pooh/ML-ModelControl.git" }
 ml-quest = { path = "../ML-Quest", editable = true }
 # Linux (CI) では CUDA の無い軽い PyTorch を使う
 torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torchvision = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"

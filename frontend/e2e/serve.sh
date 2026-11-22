@@ -104,9 +104,27 @@ uv run python ../frontend/e2e/make_policy.py "$WORK/policy-project"
 # 拡散のモデルの雑音の予測器の定義と, 少しだけ学習した実験 (雑音だけの一式の元)
 uv run python ../frontend/e2e/make_noise.py "$WORK/noise"
 
+# 既製のモデルの一式で推論する画像 (赤, 緑, 青と, 読めないファイル)
+uv run python - "$WORK/ready-images" <<'PY'
+import sys
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+folder = Path(sys.argv[1])
+folder.mkdir(parents=True)
+for index, name in enumerate(["a_red", "b_green", "c_blue"]):
+    array = np.zeros((24, 32, 3), dtype=np.uint8)
+    array[:, :, index] = 255
+    Image.fromarray(array).save(folder / f"{name}.png")
+(folder / "d_broken.png").write_bytes(b"not an image")
+PY
+
 # 決まったトークンで起動. 自作の部品は起動の設定 (環境変数) で明示した
-# 見本のモジュール (e2e/e2e_units.py) だけを読む
-export PYTHONPATH="$E2E_DIR${PYTHONPATH:+:$PYTHONPATH}" ML_PROVIDE_UNITS=e2e_units \
+# 見本のモジュール (e2e/e2e_units.py と, 既製のモデルの作り物の出どころを足す
+# e2e/e2e_ready.py) だけを読む
+export PYTHONPATH="$E2E_DIR${PYTHONPATH:+:$PYTHONPATH}" ML_PROVIDE_UNITS=e2e_units,e2e_ready \
   ML_PATHFINDER_HOME="$WORK/pathfinder" ML_PROVIDE_TOKEN=e2e-token
 if [ -n "${E2E_AS_HOME:-}" ]; then
   # 作業用の置き場をホームにし, 一式の置き場を既定の ~/.ml-provide にする
