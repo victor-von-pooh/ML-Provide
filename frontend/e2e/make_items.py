@@ -23,7 +23,6 @@ import torch
 import yaml
 from ml_eda import export_capture_clouds, export_image_masks, load_items
 from ml_eda.synthetic import write_image_masks, write_shape_captures
-from ml_inference.items import backproject
 from ml_modelcontrol import build_model, load_example
 from PIL import Image
 
@@ -146,7 +145,7 @@ def cloud_batch(dataset: Path) -> tuple[torch.Tensor, torch.Tensor]:
     observed, targets = [], []
     for position, item in enumerate(load_items(dataset).split("train")):
         rng = np.random.default_rng([SEED, position])
-        points = backproject(item["capture"])
+        points = ml_inference.backproject(item["capture"])
         cloud = np.asarray(item["cloud"])
         observed.append(points[rng.choice(len(points), INPUT_POINTS)])
         targets.append(cloud[rng.choice(len(cloud), TARGET_POINTS)])

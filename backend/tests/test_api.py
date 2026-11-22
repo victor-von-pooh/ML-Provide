@@ -554,6 +554,51 @@ def test_rows_for() -> None:
     assert tail == list(range(2000 - reasons.LAG_ROWS + 1, 2001))
 
 
+
+def test_read_input_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    結果の入力を読めない文は中の例外の文を出さずに確かめ方を添え, 無い
+    場所とディレクトリの文はそのまま出すことを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        一時ディレクトリ
+    monkeypatch: pytest.MonkeyPatch
+        ML-Inference の読み込みの差し替え
+
+    Returns
+    ----------
+    None
+    """
+    path = tmp_path / "input.csv"
+
+    def fail(message: str) -> None:
+        def read_source(*args: Any) -> None:
+            raise ValueError(message)
+
+        monkeypatch.setattr(ml_inference, "read_source", read_source)
+
+    # 読めない場合: 括弧の中の英語の例外は出さない
+    fail("input.csv を読めません (Error tokenizing data. C error)")
+    with pytest.raises(ValueError) as caught:
+        reasons.read_input(None, path, None)  # type: ignore[arg-type]
+    assert str(caught.value) == (
+        "input.csv を読めません. 推論したときの読み込みの設定で読める"
+        "ファイルかを確かめてください"
+    )
+
+    # 無い場所とディレクトリの文はそのまま
+    for message in (f"{path} がありません",
+                    f"{tmp_path} はディレクトリです. table の一式には"
+                    "ファイルを選んでください"):
+        fail(message)
+        with pytest.raises(ValueError) as caught:
+            reasons.read_input(None, path, None)  # type: ignore[arg-type]
+        assert str(caught.value) == message
+
 def test_row_reason_lag(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

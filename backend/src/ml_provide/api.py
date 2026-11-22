@@ -14,13 +14,6 @@ import yaml
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi import Path as FastPath
 from fastapi.responses import FileResponse, Response
-from ml_inference.conclude import (
-    RULE_KEYS,
-    conclude_outputs,
-    origin_sentence,
-    sentences_of,
-)
-from ml_inference.predict import target_of
 from pydantic import BaseModel, Field, StrictInt
 
 from ml_provide.cache import (
@@ -322,7 +315,7 @@ def get_info(request: Request) -> dict[str, Any]:
     """
     info = {
         "version": ml_inference.__version__,
-        "rule_keys": list(RULE_KEYS),
+        "rule_keys": list(ml_inference.RULE_KEYS),
         "result_version": ml_inference.RESULT_FORMAT_VERSION,
         "procedures": registered(),
         "procedure_modules": list(
@@ -965,8 +958,10 @@ def predict(
         source_path=str(source) if isinstance(source, Path) else None,
         role=bundle.role, output_form=bundle.form,
         column_output=bundle.column_output,
-        target_info=target_of(bundle),
-        origin_note=origin_sentence(target_of(bundle)),
+        target_info=ml_inference.target_of(bundle),
+        origin_note=ml_inference.origin_sentence(
+            ml_inference.target_of(bundle)
+        ),
         pretrained_warnings=warned
     )
     # 書いた表を読み直して結論を出し直す (出し直しと同じ型の値でまとめ,
@@ -1056,7 +1051,7 @@ def count_into(place: Path, meta: dict[str, Any]) -> None:
     # artifacts/ はそのまま)
     result = ml_inference.read_result(place)
     frame = result["frame"].drop(columns=["decision"], errors="ignore")
-    conclusion = conclude_outputs(frame)
+    conclusion = ml_inference.conclude_outputs(frame)
     result.update(conclusion)
     ml_inference.write_result(result, place)
 
@@ -1371,8 +1366,9 @@ def result_view(result_id: str, place: Path) -> dict[str, Any]:
         "summary": meta.get("summary"),
         "sentences": meta.get("sentences") or [],
         "overall_count": overall_count(meta),
-        "origin_note": meta.get("origin_note") or origin_sentence(
-            meta.get("target_info")
+        "origin_note": (
+            meta.get("origin_note")
+            or ml_inference.origin_sentence(meta.get("target_info"))
         ),
         "columns": columns,
         "kind": meta.get("kind"),
@@ -1414,7 +1410,9 @@ def overall_count(meta: dict[str, Any]) -> int:
     if not summary.get("groups"):
         return count
     try:
-        head = sentences_of({**summary, "groups": []}, str(meta.get("task")))
+        head = ml_inference.summary_sentences(
+            {**summary, "groups": []}, str(meta.get("task"))
+        )
     except (KeyError, TypeError, ValueError):
         return count
     if sentences[:len(head)] == head:
