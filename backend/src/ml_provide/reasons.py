@@ -78,7 +78,10 @@ def read_input(
         try:
             data = load_data(path, **merged)
         except Exception:
-            raise ValueError(f"{path.name} を読めません ({first})") from first
+            raise ValueError(
+                f"{path.name} を読めません. 推論したときの読み込みの設定で"
+                "読めるファイルかを確かめてください"
+            ) from first
     frame: pd.DataFrame = data.frame.reset_index(drop=True)
 
     return frame

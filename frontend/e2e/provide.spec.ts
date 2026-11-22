@@ -48,7 +48,7 @@ test('見本の一式を入れ, 見本の新しいデータを推論して結論
   const reason = page.getByRole('list', { name: '列ごとの効き' })
   await expect(reason).toContainText('months', { timeout: 30_000 })
   await expect(reason.getByRole('listitem').filter({ hasText: /^id/ })).toContainText('0.000')
-  await expect(page.getByLabel('行 (#)')).toHaveValue('0')
+  await expect(page.getByLabel('行の番号')).toHaveValue('0')
 })
 
 test('文の見本に文を書いて推論する', async ({ page }) => {

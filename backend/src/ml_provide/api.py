@@ -1845,8 +1845,7 @@ def explain_row(
     require_column(meta)
     if meta.get("kind") not in ("table", "timeseries"):
         raise HTTPException(
-            400, "行ごとの理由は, 表と時系列の一式の結果だけで求めます (1 件"
-            "の中身が列ではないため)"
+            400, "行ごとの理由は, 表と時系列の一式の結果だけで求めます"
         )
     if meta.get("forecast"):
         raise HTTPException(

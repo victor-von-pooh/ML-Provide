@@ -510,7 +510,14 @@ def test_row_reason(
     assert reason["effects"][-1]["column"] == "shop"
     assert reason["reason"] is None or "shop" not in reason["reason"]
 
-    # 無い行は 404, 書いた文のような入力のファイルの無い結果は 400
+    # 比べる行の上限より行が少なければ, 全ての行を渡す (40 行)
+    monkeypatch.setattr(reasons, "COMPARE_ROWS", 200)
+    whole = client.post(f"/api/results/{result['id']}/rows/0/reason").json()
+    assert whole["rows"] == 40 and passed[-1] == 40
+
+    # 負の行は 422, 無い行は 404, 入力のファイルの無い結果は 400
+    negative = client.post(f"/api/results/{result['id']}/rows/-1/reason")
+    assert negative.status_code == 422
     missing = client.post(f"/api/results/{result['id']}/rows/40/reason")
     assert missing.status_code == 404
     paths["csv"].unlink()
@@ -518,7 +525,38 @@ def test_row_reason(
     assert gone.status_code == 400 and "入力のファイル" in gone.text
 
 
-def test_row_reason_lag(client: TestClient) -> None:
+def test_rows_for() -> None:
+    """
+    1 行の理由に渡す行の選び方 (比べる行の上限, 前の続いた行の上限,
+    先頭に近い行) を確かめる関数
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    ----------
+    None
+    """
+    # 過去の値を使わない一式: 選んだ行と, 等しい間隔の 200 行
+    rows = reasons.rows_for(0, 1000, False)
+    assert len(rows) == reasons.COMPARE_ROWS + 1 and rows[0] == 0
+    assert rows == sorted(set(rows)) and rows[-1] == 999
+    assert reasons.rows_for(7, 40, False) == list(range(40))
+    middle = reasons.rows_for(500, 1000, False)
+    assert 500 in middle and len(middle) == reasons.COMPARE_ROWS + 1
+
+    # 過去の値を使う一式: 選んだ行までの続いた行 (上限 1000 行. 先頭に
+    # 近い行は先頭から)
+    assert reasons.rows_for(3, 5000, True) == [0, 1, 2, 3]
+    tail = reasons.rows_for(2000, 5000, True)
+    assert len(tail) == reasons.LAG_ROWS and tail[-1] == 2000
+    assert tail == list(range(2000 - reasons.LAG_ROWS + 1, 2001))
+
+
+def test_row_reason_lag(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """
     過去の値の列を作る一式では, 選んだ行までの続いた行を渡して理由を
     求め, 何段も先の予測の結果は断ることを確かめる関数
@@ -527,6 +565,8 @@ def test_row_reason_lag(client: TestClient) -> None:
     ----------
     client: TestClient
         クライアント
+    monkeypatch: pytest.MonkeyPatch
+        前の続いた行の上限を小さくする
 
     Returns
     ----------
@@ -550,6 +590,12 @@ def test_row_reason_lag(client: TestClient) -> None:
     names = {e["column"] for e in reason["effects"]}
     assert "sales (過去の値)" in names
     assert reason["reason"]
+
+    # 前の続いた行の上限 (小さくして, 選んだ行までの 60 行だけ)
+    monkeypatch.setattr(reasons, "LAG_ROWS", 60)
+    capped = client.post(f"/api/results/{result['id']}/rows/{row}/reason")
+    assert capped.status_code == 200, capped.text
+    assert capped.json()["rows"] == 60
 
     # 何段も先の予測の結果は求めない
     ahead = client.post(

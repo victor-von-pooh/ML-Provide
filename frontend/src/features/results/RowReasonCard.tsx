@@ -49,7 +49,7 @@ export function RowReasonCard({
           if (valid) onRow(typed)
         }}
       >
-        <label htmlFor="reason-row">行 (#)</label>
+        <label htmlFor="reason-row">行の番号</label>
         <input
           id="reason-row"
           type="number"

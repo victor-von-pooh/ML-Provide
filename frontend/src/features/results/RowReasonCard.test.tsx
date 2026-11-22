@@ -61,7 +61,7 @@ describe('1 行の予測の理由', () => {
     expect(rowReason).not.toHaveBeenCalled()
     const button = screen.getByRole('button', { name: '理由を求める' })
     expect(button).toBeDisabled()
-    fireEvent.change(screen.getByLabelText('行 (#)'), { target: { value: '3' } })
+    fireEvent.change(screen.getByLabelText('行の番号'), { target: { value: '3' } })
     fireEvent.click(button)
     expect(await screen.findByText(/shop \(\+30\.2\), temperature \(-4\.1\)/)).toBeInTheDocument()
     expect(rowReason).toHaveBeenCalledTimes(1)
@@ -79,7 +79,7 @@ describe('1 行の予測の理由', () => {
         <Harness />
       </QueryClientProvider>,
     )
-    fireEvent.change(screen.getByLabelText('行 (#)'), { target: { value: '50' } })
+    fireEvent.change(screen.getByLabelText('行の番号'), { target: { value: '50' } })
     expect(screen.getByRole('button', { name: '理由を求める' })).toBeDisabled()
   })
 
