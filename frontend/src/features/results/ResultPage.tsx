@@ -28,7 +28,7 @@ const PAGE = 50
 // 種類ごとの確率の列 (p:<種類>) を表に出す数の上限 (多ければ CSV だけ. ImageNet は 1000)
 const MAX_PROBABILITY_COLUMNS = 20
 
-// 予測と判断の列 (元の列と分けて右に寄せる)
+// 予測と判断の列 (元の列と分けて右に寄せる. 外れ方を分ける列にもしない. API の OWN_COLUMNS と同じ)
 const OWN = new Set([
   'index',
   'status',

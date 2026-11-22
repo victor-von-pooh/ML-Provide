@@ -564,7 +564,7 @@ def test_remeasure(client: TestClient) -> None:
     assert groups["column"] == "shop" and groups["count"] >= 2
 
     # 無い列と目的の列では分けられない (空は分けない)
-    for column in ("nothing", "visitors"):
+    for column in ("nothing", "visitors", "prediction", "p:x", "status"):
         bad = client.post(f"/api/results/{result['id']}/remeasure",
                           json={"write": False, "groups": column})
         assert bad.status_code == 400

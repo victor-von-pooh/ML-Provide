@@ -80,6 +80,14 @@ NOISE_SHAPE_HINT = (
 # 雑音だけの一式を作るときに ML-Inference が確かめで作る件数
 CHECK_SAMPLES = 2
 
+# 予測と判断の列 (外れ方を分ける列にしない. 画面の結果の表の右に寄せる列
+# と同じ)
+OWN_COLUMNS = frozenset({
+    "index", "status", "reason", "step", "prediction", "confidence",
+    "decision", "action", "level", "expected_cost", "point_expected_cost",
+    "gain_if_acted", "expected_gain",
+})
+
 # 推論の誤りとして画面に返す例外
 USER_ERRORS = (
     ValueError, FileNotFoundError, KeyError, TypeError, yaml.YAMLError
@@ -1969,6 +1977,16 @@ def remeasure_result(
         入力のファイルが無い場合, 目的の列が無い場合, 行が少ない場合,
         分ける列が使えない場合は 400
     """
+    # 予測と判断の列と種類ごとの確率の列では分けない (画面と同じ決まり.
+    # 入力の列ではないので, 種類にならない)
+    if body.groups and (
+        body.groups in OWN_COLUMNS or body.groups.startswith("p:")
+    ):
+        raise HTTPException(
+            400, f"groups の列 {body.groups} は予測か判断か確率の列なので, "
+            "外れ方を分けられません (入力の列を選んでください)"
+        )
+
     # 入力のファイルと一式の場所 (覚えた一式は書き換えず, 読み直させる)
     place = find_result(request, result_id)
     meta = read_meta(place)
