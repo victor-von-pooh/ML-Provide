@@ -84,11 +84,12 @@ describe('受け持ちと出力の形', () => {
     expect(maskNames(undefined)).toEqual({})
   })
 
-  it('推論するデータの欄の名前は, 版 4 の一式なら入力の項目の種類から', () => {
+  it('推論するデータの欄の名前は, 版 4 の一式なら入力の項目の種類から, 他は一式の種類から', () => {
     expect(sourceLabel('image')).toContain('画像のファイル')
     expect(sourceLabel('capture')).toContain('撮影のディレクトリ')
     expect(sourceLabel('point_cloud')).toContain('点群のファイル')
     expect(sourceLabel(undefined)).toContain('同じ列のファイル')
+    expect(sourceLabel(undefined, 'audio')).toContain('音声のファイル')
   })
 })
 

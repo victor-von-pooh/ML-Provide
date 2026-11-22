@@ -134,14 +134,16 @@ export const PREPARE_LABELS: Record<string, string> = {
   points: '決まった数の点を選ぶ',
 }
 
-/** 推論するデータの欄の名前 (版 4 の一式は入力の項目の種類から) */
-export function sourceLabel(inputKind: string | null | undefined): string {
+/** 推論するデータの欄の名前 (版 4 の一式は入力の項目の種類から, 他は一式の種類から) */
+export function sourceLabel(inputKind: string | null | undefined, kind?: string): string {
   if (inputKind === 'image')
     return '推論するデータ (画像のファイルか, 画像を並べたディレクトリ. 版 2 のデータセットも)'
   if (inputKind === 'capture')
     return '推論するデータ (撮影のディレクトリか, 撮影を並べたディレクトリ. 版 2 のデータセットも)'
   if (inputKind === 'point_cloud')
     return '推論するデータ (点群のファイルかディレクトリ. 版 2 のデータセットも)'
+  if (kind === 'audio')
+    return '推論するデータ (音声のファイルか, 音声を並べたディレクトリ. WAVE, FLAC など)'
   return '推論するデータ (学習のときと同じ列のファイルか, 画像などのディレクトリ)'
 }
 
