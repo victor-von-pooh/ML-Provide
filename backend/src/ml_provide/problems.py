@@ -265,10 +265,39 @@ def find_hint(
     return found
 
 
-def training_columns(bundle: ml_inference.Bundle) -> Optional[list[str]]:
+def named_columns(value: Any) -> list[str]:
     """
-    一式の学習に使ったデータのファイルの列の名前を読む関数 (推論する
-    データも同じ列を持つ)
+    レシピの手順の引数や当てはめた値から, 列の名前を取り出す関数
+
+    Parameters
+    ----------
+    value: Any
+        列の名前 1 つか並び (auto などの文字もそのまま 1 つの名前)
+
+    Returns
+    ----------
+    names: list[str]
+        列の名前 (並びでない値と空は空)
+    """
+    # 文字 1 つか, 文字の並び
+    if isinstance(value, str):
+        names = [value] if value else []
+    elif isinstance(value, list):
+        names = [str(item) for item in value if isinstance(item, str)]
+    else:
+        names = []
+
+    return names
+
+
+def recipe_columns(bundle: ml_inference.Bundle) -> Optional[list[str]]:
+    """
+    一式のデータセットの説明とレシピから, 学習のデータの列の名前を集める
+    関数
+
+    学習に使う列, 目的の列, レシピの手順が読む列 (当てはめた列を含む),
+    読み込みの設定の列を合わせる. 手順で作った列 (ワンホットの列など) も
+    入るので, 実際の列より多いことがある
 
     Parameters
     ----------
@@ -278,17 +307,82 @@ def training_columns(bundle: ml_inference.Bundle) -> Optional[list[str]]:
     Returns
     ----------
     columns: Optional[list[str]]
-        列の名前 (データのファイルが無いか読めなければ None)
+        列の名前 (表と時系列でない一式は None. 表の列が説明に残らないため)
     """
-    # データセットに残る元のデータの場所の 1 行目
-    source = bundle.dataset.info.get("source") or {}
-    columns: Optional[list[str]] = None
-    try:
-        columns = ml_quest.read_columns(str(source.get("path") or ""))
-    except (OSError, *SHAPE_ERRORS):
-        columns = None
+    # 表と時系列だけ (画像や文は学習に使う列を持たない)
+    info = bundle.dataset.info
+    if info.get("kind", "table") not in ("table", "timeseries"):
+        return None
+    names = [str(item.get("name")) for item in info.get("features") or []
+             if isinstance(item, dict) and item.get("name") is not None]
+    names += named_columns(info.get("target"))
+
+    # 手順の引数と当てはめた値の列 (auto は列の名前でない)
+    for step in bundle.dataset.recipe.get("steps") or []:
+        if not isinstance(step, dict):
+            continue
+        state = step.get("state")
+        if not isinstance(state, dict):
+            state = {}
+        for value in (step.get("columns"), step.get("by"), step.get("time"),
+                      step.get("column"), state.get("columns")):
+            names += [n for n in named_columns(value) if n != "auto"]
+    split = bundle.dataset.recipe.get("split") or {}
+    if isinstance(split, dict):
+        names += named_columns(split.get("column"))
+
+    # 読み込みの設定の列 (時刻の列など)
+    source = info.get("source") or {}
+    options = source.get("options") if isinstance(source, dict) else None
+    for key, value in (options or {}).items():
+        if str(key).endswith("_column"):
+            names += named_columns(value)
+    columns = list(dict.fromkeys(names))
 
     return columns
+
+
+def training_columns(
+    bundle: ml_inference.Bundle
+) -> tuple[Optional[list[str]], bool]:
+    """
+    一式の学習に使ったデータの列の名前を返す関数 (推論するデータも同じ列
+    を持つ)
+
+    次の順で取る. 1. 元のデータの場所 (source.path. 手元の場所を残す版 1 の書き出し) が
+    読めればそのファイルの列 2. 説明に残る入力の列 (source.columns. 今の
+    ML-EDA は手元の場所の代わりに残す) 3. 説明とレシピから集めた列 (自動
+    で見つけた時刻の列などが抜けるので, 列が全てとは限らない)
+
+    Parameters
+    ----------
+    bundle: ml_inference.Bundle
+        推論の一式
+
+    Returns
+    ----------
+    found: tuple[Optional[list[str]], bool]
+        列の名前 (どこからも分からなければ None) と, 列が全てか (1 と 2 は
+        True, 3 は False)
+    """
+    # 元のデータの場所の 1 行目, 説明の入力の列, 説明とレシピの順
+    source = bundle.dataset.info.get("source") or {}
+    if not isinstance(source, dict):
+        source = {}
+    path = source.get("path")
+    if path:
+        try:
+            found = (ml_quest.read_columns(str(path)), True)
+            return found
+        except (OSError, *SHAPE_ERRORS):
+            pass
+    listed = source.get("columns")
+    if isinstance(listed, list) and listed:
+        found = ([str(name) for name in listed], True)
+        return found
+    found = (recipe_columns(bundle), False)
+
+    return found
 
 
 def issues_of(
@@ -322,7 +416,10 @@ def issues_of(
             f"問題の設定の目的の列 {target} と, 一式の目的の列 "
             f"{bundle_target} が違います (別の問題の設定かもしれません)"
         )
-    columns = training_columns(bundle)
+    # 「データに無い」の知らせは列が全て分かる場合だけ (説明とレシピから
+    # 集めた列では, 自動で見つけた列を誤って無いと知らせるため)
+    known, complete = training_columns(bundle)
+    columns = known if complete else None
     if decision:
         issues += [
             f"意思決定: {message}" for message in

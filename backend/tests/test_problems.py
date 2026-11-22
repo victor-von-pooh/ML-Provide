@@ -1,7 +1,8 @@
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
+import ml_inference
 import ml_quest
 import pytest
 import yaml
@@ -9,7 +10,8 @@ from fastapi.testclient import TestClient
 from ml_quest.examples import example_problem
 
 from ml_provide.app import create_app
-from ml_provide.problems import with_baseline
+from ml_provide.problems import issues_of, training_columns, with_baseline
+from ml_provide.samples import SAMPLES, write_sample
 
 # テストで使うトークン
 TOKEN = "test-token"
@@ -601,3 +603,110 @@ def test_origin_hint(client: TestClient, tmp_path: Path) -> None:
     state = client.get(url).json()
     assert state["hint"] == str((project / "problem.yaml").resolve())
     assert "場所を持ちません" in state["hint_note"]
+
+
+def set_source(
+    bundle: Path, path: Optional[Path] = None,
+    columns: Optional[list[str]] = None
+) -> None:
+    """
+    一式のデータセットの説明の source の元の場所と入力の列を書き換える関数
+    (古い ML-EDA の書き出しは手元の場所 path を残し, 今の書き出しは名前と
+    入力の列 columns だけ)
+
+    Parameters
+    ----------
+    bundle: Path
+        一式のディレクトリ
+    path: Optional[Path]
+        残す元のデータの場所 (None なら除いて名前だけにする)
+    columns: Optional[list[str]]
+        残す入力の列 (None なら除く)
+
+    Returns
+    ----------
+    None
+    """
+    # path と columns を書くか除く
+    described = bundle / "dataset" / "dataset.yaml"
+    info = yaml.safe_load(described.read_text(encoding="utf-8"))
+    info["source"].pop("path", None)
+    info["source"].pop("columns", None)
+    if path is None:
+        info["source"]["name"] = "train.csv"
+        info["source"]["paths"] = "name_only"
+    else:
+        info["source"]["path"] = str(path)
+    if columns is not None:
+        info["source"]["columns"] = columns
+    described.write_text(yaml.safe_dump(info, allow_unicode=True),
+                         encoding="utf-8")
+
+
+def test_columns_without_path(tmp_path: Path) -> None:
+    """
+    元のデータの場所の無いデータセットの一式でも, 学習のデータの列を
+    説明の入力の列か, 説明とレシピから取ることを確かめる関数 (説明と
+    レシピから集めた列では, データに無い列を知らせない)
+
+    Parameters
+    ----------
+    tmp_path: Path
+        一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 場所の残る古いデータセットは, そのファイルの列 (入力の列より先)
+    names = list(SAMPLES)
+    daily = names.index("見本: 日々の売上の予測 (時系列, 先の予測)")
+    place, _, _ = write_sample(tmp_path, names[daily], daily, 0)
+    set_source(place, place.parent / "train.csv", ["other"])
+    assert training_columns(ml_inference.load_bundle(place)) == (
+        ["date", "shop", "sales"], True
+    )
+
+    # 場所が無いか読めなければ, 説明に残る入力の列
+    set_source(place, tmp_path / "none.csv", ["date", "shop", "sales"])
+    assert training_columns(ml_inference.load_bundle(place)) == (
+        ["date", "shop", "sales"], True
+    )
+    set_source(place, None, ["date", "shop", "sales"])
+    bundle = ml_inference.load_bundle(place)
+    assert "path" not in bundle.dataset.info["source"]
+    assert training_columns(bundle) == (["date", "shop", "sales"], True)
+
+    # 入力の列ではデータに無い列 (まとめる列と今のやり方の列) を知らせる
+    quantity = {"type": "quantity", "under_cost": 2, "over_cost": 1}
+    missing = {**quantity, "current": {"type": "column", "column": "planned"}}
+    issues = issues_of(bundle, "sales", missing, {"group_by": "store"})
+    assert any("まとめる列 store" in text for text in issues)
+    assert any("今のやり方" in text and "planned" in text for text in issues)
+    assert issues_of(bundle, "sales", {
+        **quantity, "current": {"type": "lag", "periods": 7, "time": "date",
+                                "by": ["shop"]},
+    }, {"group_by": "shop"}) == []
+
+    # どちらも無ければ説明とレシピから集めた列 (手順で作った列も入る).
+    # 全てとは限らないので, データに無い列は知らせない
+    set_source(place, None)
+    bundle = ml_inference.load_bundle(place)
+    columns, complete = training_columns(bundle)
+    assert columns is not None and not complete
+    assert {"date", "shop", "sales"} <= set(columns)
+    assert issues_of(bundle, "sales", missing, {"group_by": "store"}) == []
+
+    # 落とした列 (意思決定の値の列) も集めた列に入る
+    churn = names.index("見本: 解約の予測 (表の分類)")
+    place, _, _ = write_sample(tmp_path, names[churn], churn, 0)
+    set_source(place, None)
+    columns, complete = training_columns(ml_inference.load_bundle(place))
+    assert columns is not None and not complete
+    assert {"id", "yearly", "plan", "months", "label"} <= set(columns)
+
+    # 文の一式は表の列が説明に残らないので分からない
+    review = names.index("見本: レビューの分類 (文)")
+    place, _, _ = write_sample(tmp_path, names[review], review, 0)
+    set_source(place, None)
+    assert training_columns(ml_inference.load_bundle(place)) == (None, False)
