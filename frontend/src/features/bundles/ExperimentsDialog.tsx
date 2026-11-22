@@ -3,25 +3,70 @@ import { FolderInput } from 'lucide-react'
 import { Link } from 'react-router'
 
 import { api } from '../../api/client'
-import type { ExperimentRow } from '../../api/types'
+import type { ExperimentList, ExperimentRow, PolicyExperimentRow } from '../../api/types'
 import { Dialog } from '../../components/Dialog'
 import { Button, ErrorBox, Spinner } from '../../components/ui'
 
 /** 一覧から登録する一式の名前 (問題の設定の名前と実験の場所) */
-function experimentName(row: ExperimentRow): string {
+function experimentName(row: { problem: string; experiment: string }): string {
   return `${row.problem} (${row.experiment})`
 }
 
+/** 一覧の 1 行と, 登録済みなら開く画面の場所 */
+interface Row {
+  row: ExperimentRow | PolicyExperimentRow
+  opened: string | null
+}
+
+/** 一式の種類ごとの, 一覧の読み方と文 */
+const KINDS = {
+  bundle: {
+    key: 'experiments',
+    load: async (): Promise<ExperimentList<Row>> => {
+      const data = await api.experiments()
+      return {
+        ...data,
+        experiments: data.experiments.map((row) => ({
+          row,
+          opened: row.bundle_id ? `/bundles/${row.bundle_id}` : null,
+        })),
+      }
+    },
+    caption: '推論の一式を持つ実験',
+    intro: '学習が推論の一式 (inference) を作った実験',
+    checking: '一式を確かめています',
+  },
+  policy: {
+    key: 'policy-experiments',
+    load: async (): Promise<ExperimentList<Row>> => {
+      const data = await api.policyExperiments()
+      return {
+        ...data,
+        experiments: data.experiments.map((row) => ({
+          row,
+          opened: row.policy_id ? `/policies/${row.policy_id}` : null,
+        })),
+      }
+    },
+    caption: '方策の一式を持つ実験',
+    intro: '学習が方策の一式 (policy. policy.json を持つ) を書き出した実験',
+    checking: '方策の一式を確かめています',
+  },
+} as const
+
 /**
- * 問題の設定 (ML-Pathfinder) に記録したプロジェクトの, 推論の一式を持つ実験の一覧.
+ * 問題の設定 (ML-Pathfinder) に記録したプロジェクトの, 推論の一式か方策の一式を持つ実験の一覧.
  * 場所を打たずに, 学習した実験の一式を登録する
  */
 export function ExperimentsDialog({
+  kind = 'bundle',
   onClose,
   onRegister,
   pending,
   error,
 }: {
+  /** 並べる一式の種類 (推論の一式か方策の一式) */
+  kind?: keyof typeof KINDS
   onClose: () => void
   /** 一式の場所と, 登録する名前 (問題の設定の名前と実験の場所) */
   onRegister: (path: string, name: string) => void
@@ -30,20 +75,21 @@ export function ExperimentsDialog({
   error: Error | null
 }) {
   // 開くたびに読み直す (学習が終わった実験を拾うため)
+  const config = KINDS[kind]
   const listing = useQuery({
-    queryKey: ['experiments'],
-    queryFn: api.experiments,
+    queryKey: [config.key],
+    queryFn: config.load,
     staleTime: 0,
   })
   const data = listing.data
   return (
     <Dialog title="実験の一覧から登録" onClose={onClose}>
       <p className="mb-3 text-xs text-ink-3">
-        ML-Pathfinder で骨組みを書き出した問題の設定のプロジェクトから, 学習が推論の一式 (inference)
-        を作った実験を新しい順に並べます. 一式は写さずに, 場所だけを覚えます.
+        ML-Pathfinder で骨組みを書き出した問題の設定のプロジェクトから, {config.intro}
+        を新しい順に並べます. 一式は写さずに, 場所だけを覚えます.
       </p>
       {listing.isPending && <Spinner label="実験を探しています" />}
-      {pending && <Spinner label="一式を確かめています" />}
+      {pending && <Spinner label={config.checking} />}
       {error && (
         <div className="mb-3">
           <ErrorBox error={error} />
@@ -59,7 +105,7 @@ export function ExperimentsDialog({
       )}
       {data && data.experiments.length > 0 && (
         <table className="w-full text-sm">
-          <caption className="sr-only">推論の一式を持つ実験</caption>
+          <caption className="sr-only">{config.caption}</caption>
           <thead className="text-xs text-ink-3">
             <tr className="border-b border-line">
               <th scope="col" className="px-2 py-1 text-left font-normal">
@@ -74,7 +120,7 @@ export function ExperimentsDialog({
             </tr>
           </thead>
           <tbody>
-            {data.experiments.map((row) => (
+            {data.experiments.map(({ row, opened }) => (
               <tr key={row.path} className="border-b border-line last:border-0">
                 <th scope="row" className="px-2 py-2 text-left font-normal">
                   <span className="font-medium">{row.problem}</span>{' '}
@@ -87,9 +133,9 @@ export function ExperimentsDialog({
                   {new Date(row.modified).toLocaleString('ja-JP')}
                 </td>
                 <td className="px-2 py-2 text-right">
-                  {row.bundle_id ? (
+                  {opened ? (
                     <Link
-                      to={`/bundles/${row.bundle_id}`}
+                      to={opened}
                       onClick={onClose}
                       className="text-xs text-accent-text hover:underline"
                     >

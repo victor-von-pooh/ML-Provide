@@ -9,6 +9,7 @@ from fastapi import APIRouter, Request
 from ml_quest.handoff import project_of
 
 from ml_provide.api import get_store
+from ml_provide.policies import SPEC_FILE, read_policies
 from ml_provide.settings import get_problems_dir
 
 router = APIRouter(prefix="/api")
@@ -27,8 +28,12 @@ RUN_DEPTH = 5
 # 一覧に出す実験の数の上限 (大きなディレクトリで止まらないように)
 MAX_EXPERIMENTS = 500
 
-# 学習の実験の中の一式のディレクトリの名前 (骨組みの学習のスクリプト)
+# 学習の実験の中の一式のディレクトリと, 一式を見分けるファイルの名前
+# (骨組みの学習のスクリプト. 推論の一式と方策の一式)
 BUNDLE_DIR = "inference"
+BUNDLE_FILE = "inference.yaml"
+POLICY_DIR = "policy"
+POLICY_FILE = SPEC_FILE
 
 
 def known_projects(problems_dir: Path) -> list[dict[str, Any]]:
@@ -76,9 +81,12 @@ def known_projects(problems_dir: Path) -> list[dict[str, Any]]:
     return projects
 
 
-def project_bundles(project: Path, limit: int) -> list[Path]:
+def project_bundles(
+    project: Path, limit: int, folder: str = BUNDLE_DIR,
+    marker: str = BUNDLE_FILE
+) -> list[Path]:
     """
-    プロジェクトの実験の出力先から, 推論の一式を持つ実験を探す関数
+    プロジェクトの実験の出力先から, 一式を持つ実験を探す関数
 
     Parameters
     ----------
@@ -86,11 +94,16 @@ def project_bundles(project: Path, limit: int) -> list[Path]:
         プロジェクトのディレクトリ
     limit: int
         探す数の上限
+    folder: str = BUNDLE_DIR
+        実験の中の一式のディレクトリの名前
+    marker: str = BUNDLE_FILE
+        一式を見分けるファイルの名前
 
     Returns
     ----------
     bundles: list[Path]
-        一式のディレクトリ (inference.yaml を持つ inference)
+        一式のディレクトリ (marker を持つ folder. 既定は inference.yaml を
+        持つ inference)
     """
     # 出力先の下を決まった深さまで, 名前の新しい順 (日付と時刻の
     # ディレクトリ) に. 上限で打ち切っても新しい実験が残るように. リンク
@@ -102,16 +115,16 @@ def project_bundles(project: Path, limit: int) -> list[Path]:
     for current, dirs, _ in os.walk(root):
         place = Path(current)
         depth = len(place.relative_to(root).parts)
-        bundle = place / BUNDLE_DIR
-        if BUNDLE_DIR in dirs and not bundle.is_symlink() and (
-            bundle / "inference.yaml"
+        bundle = place / folder
+        if folder in dirs and not bundle.is_symlink() and (
+            bundle / marker
         ).is_file():
             bundles.append(bundle)
             if len(bundles) >= limit:
                 break
         dirs[:] = sorted(
             (name for name in dirs
-             if name != BUNDLE_DIR and depth + 1 < RUN_DEPTH),
+             if name != folder and depth + 1 < RUN_DEPTH),
             reverse=True
         )
 
@@ -119,7 +132,8 @@ def project_bundles(project: Path, limit: int) -> list[Path]:
 
 
 def experiment_row(
-    bundle: Path, project: dict[str, Any], registered: dict[str, str]
+    bundle: Path, project: dict[str, Any], registered: dict[str, str],
+    marker: str = BUNDLE_FILE, key: str = "bundle_id"
 ) -> dict[str, Any]:
     """
     一覧の 1 行 (実験の一式) を作る関数
@@ -132,27 +146,85 @@ def experiment_row(
         プロジェクトの記録 (known_projects の 1 つ)
     registered: dict[str, str]
         登録した一式の場所 (と写した元の場所) から id
+    marker: str = BUNDLE_FILE
+        一式を見分けるファイルの名前 (更新の時刻を読む)
+    key: str = "bundle_id"
+        登録済みの id の項目の名前
 
     Returns
     ----------
     row: dict[str, Any]
         path, project, problem, experiment (出力先からの実験の場所),
-        modified (一式の更新の時刻), bundle_id (登録済みならその id)
+        modified (一式の更新の時刻), key (登録済みならその id)
     """
     # 実験の場所は出力先からの相対 (名前/日付/時刻)
     resolved = bundle.resolve()
     run = bundle.parent.relative_to(Path(project["path"]) / OUTPUTS)
-    stamp = (bundle / "inference.yaml").stat().st_mtime
+    stamp = (bundle / marker).stat().st_mtime
     row = {
         "path": str(resolved),
         "project": project["path"],
         "problem": project["problem"],
         "experiment": run.as_posix(),
         "modified": datetime.fromtimestamp(stamp).astimezone().isoformat(),
-        "bundle_id": registered.get(str(resolved)),
+        key: registered.get(str(resolved)),
     }
 
     return row
+
+
+def collect_rows(
+    registered: dict[str, str], folder: str, marker: str, key: str
+) -> dict[str, Any]:
+    """
+    問題の設定に記録したプロジェクトの, 一式を持つ実験の一覧を作る関数
+
+    Parameters
+    ----------
+    registered: dict[str, str]
+        登録した一式の場所から id
+    folder: str
+        実験の中の一式のディレクトリの名前
+    marker: str
+        一式を見分けるファイルの名前
+    key: str
+        登録済みの id の項目の名前
+
+    Returns
+    ----------
+    listing: dict[str, Any]
+        problems (探した問題の設定の置き場), projects (見たプロジェクトの
+        数), experiments (新しい順の行), truncated (上限で打ち切ったか)
+    """
+    # プロジェクトごとの実験 (読めなくなったものは飛ばす)
+    problems_dir = get_problems_dir()
+    projects = known_projects(problems_dir)
+    rows: list[dict[str, Any]] = []
+    truncated = False
+    for project in projects:
+        limit = MAX_EXPERIMENTS - len(rows)
+        if limit <= 0:
+            truncated = True
+            break
+        # 1 つ多く探して, 上限を超えたかを見分ける
+        found = project_bundles(
+            Path(project["path"]), limit + 1, folder, marker
+        )
+        if len(found) > limit:
+            truncated = True
+            found = found[:limit]
+        for bundle in found:
+            try:
+                rows.append(experiment_row(
+                    bundle, project, registered, marker, key
+                ))
+            except (OSError, ValueError):
+                continue
+    rows.sort(key=row_time, reverse=True)
+    listing = {"problems": str(problems_dir), "projects": len(projects),
+               "experiments": rows, "truncated": truncated}
+
+    return listing
 
 
 @router.get("/experiments")
@@ -170,38 +242,45 @@ def list_experiments(request: Request) -> dict[str, Any]:
     ----------
     listing: dict[str, Any]
         problems (探した問題の設定の置き場), projects (見たプロジェクトの
-        数), experiments (新しい順の行), truncated (上限で打ち切ったか)
+        数), experiments (新しい順の行. bundle_id), truncated (上限で
+        打ち切ったか)
     """
     # 登録済みの一式は, 場所と写した元の場所の両方で見分ける
-    problems_dir = get_problems_dir()
     registered: dict[str, str] = {}
     for entry in get_store(request).read():
         for key in ("path", "copied_from"):
             if isinstance(entry.get(key), str):
                 registered[entry[key]] = str(entry["id"])
+    listing = collect_rows(registered, BUNDLE_DIR, BUNDLE_FILE, "bundle_id")
 
-    # プロジェクトごとの実験 (読めなくなったものは飛ばす)
-    projects = known_projects(problems_dir)
-    rows: list[dict[str, Any]] = []
-    truncated = False
-    for project in projects:
-        limit = MAX_EXPERIMENTS - len(rows)
-        if limit <= 0:
-            truncated = True
-            break
-        # 1 つ多く探して, 上限を超えたかを見分ける
-        found = project_bundles(Path(project["path"]), limit + 1)
-        if len(found) > limit:
-            truncated = True
-            found = found[:limit]
-        for bundle in found:
-            try:
-                rows.append(experiment_row(bundle, project, registered))
-            except (OSError, ValueError):
-                continue
-    rows.sort(key=row_time, reverse=True)
-    listing = {"problems": str(problems_dir), "projects": len(projects),
-               "experiments": rows, "truncated": truncated}
+    return listing
+
+
+@router.get("/experiments/policies")
+def list_policy_experiments(request: Request) -> dict[str, Any]:
+    """
+    問題の設定に記録したプロジェクトの, 方策の一式 (policy.json を持つ
+    policy) を持つ実験の一覧を返す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+
+    Returns
+    ----------
+    listing: dict[str, Any]
+        problems (探した問題の設定の置き場), projects (見たプロジェクトの
+        数), experiments (新しい順の行. policy_id), truncated (上限で
+        打ち切ったか)
+    """
+    # 登録済みの方策の一式は場所で見分ける
+    registered = {
+        str(entry["path"]): str(entry["id"])
+        for entry in read_policies(get_store(request))
+        if isinstance(entry.get("path"), str)
+    }
+    listing = collect_rows(registered, POLICY_DIR, POLICY_FILE, "policy_id")
 
     return listing
 

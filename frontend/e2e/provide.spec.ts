@@ -661,6 +661,52 @@ test('骨組みの学習が実験の中に作った版 4 の一式を, 実験の
   await expect(page.getByText('画素を 0 から 1 にする')).toBeVisible()
 })
 
+test('骨組みの学習が実験の中に書き出した方策の一式を, 実験の一覧から登録して行動を決める', async ({
+  page,
+}) => {
+  const run = path.resolve(
+    import.meta.dirname,
+    '.work',
+    'project',
+    'outputs',
+    'cartpole',
+    '2026-01-04',
+    '09-00-00',
+  )
+  await page.goto('/policies')
+  await page.getByRole('button', { name: '実験の一覧から登録' }).click()
+  const dialog = page.getByRole('dialog', { name: '実験の一覧から登録' })
+  const table = dialog.getByRole('table', { name: '方策の一式を持つ実験' })
+  await expect(table).toContainText('cartpole/2026-01-04/09-00-00')
+  await expect(table).toContainText(path.join(run, 'policy'))
+  // 推論の一式の実験は並べない
+  await expect(table).not.toContainText('sales/2026-01-02/09-00-00')
+  await dialog
+    .getByRole('button', { name: '総菜の作る量 (cartpole/2026-01-04/09-00-00) を登録' })
+    .click()
+
+  // 方策の画面に移り, 一式に写した定義から組み立てた方策で行動を決める
+  await expect(
+    page.getByRole('heading', { name: '総菜の作る量 (cartpole/2026-01-04/09-00-00)' }),
+  ).toBeVisible({ timeout: 30_000 })
+  await page
+    .getByLabel(/^観測/)
+    .fill('0.5478467492858172, -0.9208531449445188, -0.18361059042552214, -1.9338894578858836')
+  await page.getByRole('button', { name: '行動を決める' }).click()
+  const result = page.getByRole('status').filter({ hasText: '行動' })
+  await expect(result).toContainText('1')
+  await expect(result).toContainText('そのまま')
+
+  // 一覧では登録済みと出る
+  await page.goto('/policies')
+  await page.getByRole('button', { name: '実験の一覧から登録' }).click()
+  await expect(
+    page
+      .getByRole('dialog', { name: '実験の一覧から登録' })
+      .getByRole('link', { name: '登録済み' }),
+  ).toBeVisible()
+})
+
 /** 同じ場所の登録を外してから, 場所で一式を登録して id を返す */
 async function registerFresh(request: APIRequestContext, place: string): Promise<string> {
   const listed = (await (await request.get('/api/bundles')).json()) as {

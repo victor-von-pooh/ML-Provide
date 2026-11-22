@@ -9,6 +9,7 @@ import type {
   Listing,
   Policy,
   PolicyAct,
+  PolicyExperimentRow,
   ProblemState,
   Remeasure,
   Result,
@@ -70,6 +71,8 @@ export const api = {
   createBundle: (body: BundleCreateBody) =>
     request<Bundle>('/api/bundles/create', json('POST', body)),
   experiments: () => request<ExperimentList>('/api/experiments'),
+  policyExperiments: () =>
+    request<ExperimentList<PolicyExperimentRow>>('/api/experiments/policies'),
   describeDataset: (path: string) =>
     request<DatasetDescription>(`/api/datasets/describe?path=${encodeURIComponent(path)}`),
   addSamples: () => request<Bundle[]>('/api/samples', json('POST', {})),

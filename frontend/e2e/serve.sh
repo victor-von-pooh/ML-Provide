@@ -80,6 +80,9 @@ uv run python ../frontend/e2e/make_v3.py "$WORK/v3"
 # 骨組みのプロジェクトの実験の中にも, 学習のスクリプトのように推論の一式 (版 4) を作る
 uv run python ../frontend/e2e/make_items.py "$WORK/items" "$WORK/project"
 
+# 骨組みのプロジェクトの実験の中に, 方策の骨組みの学習のように方策の一式 (policy) を置く
+uv run python ../frontend/e2e/make_policy.py "$WORK/project"
+
 # 拡散のモデルの雑音の予測器の定義と, 少しだけ学習した実験 (雑音だけの一式の元)
 uv run python ../frontend/e2e/make_noise.py "$WORK/noise"
 
