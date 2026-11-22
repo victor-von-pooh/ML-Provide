@@ -324,7 +324,7 @@ function PredictCard({
           <div>
             <PathField
               id="predict-source"
-              label={sourceLabel(description.items?.input_kind)}
+              label={sourceLabel(description.items?.input_kind, description.kind)}
               value={source}
               onChange={setSource}
               hint={

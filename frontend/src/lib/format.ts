@@ -73,6 +73,7 @@ export const KIND_LABELS: Record<string, string> = {
   image: '画像',
   text: '文',
   pointcloud: '点群',
+  audio: '音声',
   items: 'ファイルの組',
   noise: '雑音だけ',
 }
