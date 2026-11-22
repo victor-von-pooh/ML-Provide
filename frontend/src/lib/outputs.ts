@@ -148,15 +148,36 @@ export function sourceLabel(inputKind: string | null | undefined, kind?: string)
 }
 
 /**
+ * 数, 真偽, null に見える文字か (大文字と小文字を区別しない).
+ * 設定の欄 (10 進の数と true, false) と YAML 1.1 (yes, on, ~, 0x10, 1_000, 1:30, .inf, 日付など) で
+ * 文字でない値に読まれるものと, JavaScript と Python の数の書き方 (Infinity, nan, 0b1, 0o7) を含む
+ */
+function looksTyped(text: string): boolean {
+  const lower = text.toLowerCase()
+  if (/^(true|false|yes|no|on|off|y|n|null|none|~)$/.test(lower)) return true
+  // 10 進 (桁の _ を含む), 0x, 0o, 0b, 60 進 (1:30), 無限と非数, 日付と日時
+  return (
+    /^[+-]?(\d[\d_]*\.?[\d_]*|\.\d[\d_]*)(e[+-]?\d+)?$/.test(lower) ||
+    /^[+-]?0(x[\da-f_]+|o[0-7_]+|b[01_]+)$/.test(lower) ||
+    /^[+-]?\d[\d_]*(:[0-5]?\d)+(\.[\d_]*)?$/.test(lower) ||
+    /^[+-]?\.?(inf|infinity|nan)$/.test(lower) ||
+    // YAML 1.1 の日付と日時 (2026-11-22, 2026-11-22T10:00:00Z)
+    /^\d{4}-\d\d?-\d\d?([Tt ]\d\d?:\d\d:\d\d(\.\d*)?\s*(Z|[+-]\d\d?(:\d\d)?)?)?$/.test(text)
+  )
+}
+
+/**
  * 設定の辞書を「名前 値」の並びの文にする (eta 0, train_steps 1000).
- * 入れ子の値と, 区切りと紛れる文字 (空, 空白, カンマ, 括弧を含む) は JSON で引用符を付ける
+ * 入れ子の値と, 区切りや別の型と紛れる文字 (空, 空白, カンマ, 括弧を含む. 引用符や [ { で始まる.
+ * 数, 真偽, null に見える) は JSON で引用符を付ける (文字の "0" と数の 0 を見分けるため)
  */
 export function optionsText(options: Record<string, unknown>): string {
   return Object.entries(options)
     .map(([key, value]) => {
       const quoted =
         (value !== null && typeof value === 'object') ||
-        (typeof value === 'string' && (value === '' || /[\s,()]/.test(value)))
+        (typeof value === 'string' &&
+          (value === '' || /[\s,()]/.test(value) || /^["'[{]/.test(value) || looksTyped(value)))
       return `${key} ${quoted ? JSON.stringify(value) : String(value)}`
     })
     .join(', ')
