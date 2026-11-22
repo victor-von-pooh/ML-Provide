@@ -57,7 +57,7 @@ ML-Inference と ML-Quest は submodule. 形の決まりを 2 か所に持たな
 | メソッドとパス | 内容 |
 | --- | --- |
 | `GET /api/auth` | 起動したときのトークンを Cookie に保存して画面に移る |
-| `GET /api/info` | ML-Inference の版, 結論の決め方の項目, 繰り返しの手順の登録簿 (名前, 組み込みか, 始まり (`noise` は雑音, `given` は渡した番号の並び), 時刻を渡すか, 設定の名前. 設定は手順の関数の引数から読み, 何でも受け取る自作の手順と引数を読めない手順は `null`. 設定の既定値 (`defaults`. 有限の数, 真偽値, 文字の既定値だけ. inf, NaN, None は除く) も), 起動の設定で読んだ手順のモジュール (`procedure_modules`) と部品のモジュール (`unit_modules`), 雑音だけの一式で一度に作る件数の上限 (`max_samples`), 画面で作る一式の手順の回数の上限 (`max_procedure_steps`), 既製のモデルの出どころ (`ready_libraries`. ML-Inference の `READY_LIBRARIES` の名前) |
+| `GET /api/info` | ML-Inference の版, 結論の決め方の項目, 繰り返しの手順の登録簿 (名前, 組み込みか, 始まり (`noise` は雑音, `given` は渡した番号の並び), 時刻を渡すか, 設定の名前. 設定の名前と既定値は ML-Inference の `procedure_options` から得る (決まりを ML-Inference の 1 か所に置くため). 名前は手順の関数の 5 つ目からの引数で `*args` の名前は入らず, 何でも受け取る自作の手順と引数を読めない手順は `null`. 設定の既定値 (`defaults`. 有限の数, 真偽値, 文字の既定値だけ. inf, NaN, None は除く) も), 起動の設定で読んだ手順のモジュール (`procedure_modules`) と部品のモジュール (`unit_modules`), 雑音だけの一式で一度に作る件数の上限 (`max_samples`), 画面で作る一式の手順の回数の上限 (`max_procedure_steps`), 既製のモデルの出どころ (`ready_libraries`. ML-Inference の `READY_LIBRARIES` の名前) |
 | `GET /api/browse` | ディレクトリの中身 (ファイルとディレクトリを選ぶため) |
 | `GET /api/bundles` | 登録した一式の一覧 (読めない一式は理由付き) |
 | `POST /api/samples` | 見本の一式 (表の分類, 表の回帰, 時系列の先の予測, 文の分類, 画像の領域の分割) を, 見本のデータでその場で学習して作り登録する. 列の見本には意思決定の既定値と, たどり直しを試す目的の列のある過去のデータも付ける (時系列は 120 日. 7 段先までの外れ方を段ごとに測れる長さ). 領域の見本の新しいデータは画像を並べたディレクトリで, 過去のデータは無い (列の予測でない一式の画面を, 自分の一式を作らずに試すため) |

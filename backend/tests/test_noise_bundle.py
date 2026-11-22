@@ -17,7 +17,6 @@ from test_bundle_v3 import head_spec, make_v3, register, write_unlabeled
 
 import ml_provide.api as api_module
 from ml_provide.app import create_app
-from ml_provide.procedures import option_defaults, option_names
 
 # テストで使うトークン
 TOKEN = "test-token"
@@ -372,8 +371,8 @@ def test_procedure_options(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """
-    手順の設定の名前を関数の引数から読み, 読めない手順でも登録簿の一覧を
-    返すことを確かめる関数
+    手順の設定の名前と既定値を ML-Inference の procedure_options から読み,
+    引数を読めない手順でも登録簿の一覧を返すことを確かめる関数
 
     Parameters
     ----------
@@ -386,7 +385,9 @@ def test_procedure_options(
     ----------
     None
     """
-    # 設定の無い関数は空, **kwargs と引数を読めない関数は None
+    # 設定の無い関数は空, **kwargs と引数を読めない関数は None, *args の
+    # 名前は設定に入らない. 既定値は有限の数, 真偽値, 文字だけ (inf, NaN,
+    # None は除く)
     def plain(model: Any, state: Any, steps: int, generator: Any) -> Any:
         return state
 
@@ -395,11 +396,12 @@ def test_procedure_options(
     ) -> Any:
         return state
 
-    assert option_names(plain) == []
-    assert option_names(anything) is None
-    assert option_names(max) is None
+    def spread(
+        model: Any, state: Any, steps: int, generator: Any, *rest: Any,
+        scale: float = 1.0
+    ) -> Any:
+        return state
 
-    # 既定値は有限の数, 真偽値, 文字だけ (inf, NaN, None は除く)
     def limits(
         model: Any, state: Any, steps: int, generator: Any,
         low: float = float("-inf"), rate: float = float("nan"),
@@ -408,17 +410,23 @@ def test_procedure_options(
     ) -> Any:
         return state
 
-    assert option_defaults(limits) == {
-        "mode": "fast", "flag": True, "step": 0.5
-    }
-
-    # 引数を読めない手順があっても /api/info は返す
+    # 登録簿の一覧 (/api/info) は ML-Inference の procedure_options から
     ddim = PROCEDURES["ddim"]
-    broken = dataclasses.replace(ddim, name="broken", function=max)
-    monkeypatch.setitem(PROCEDURES, "broken", broken)
+    for name, function in (("plain", plain), ("anything", anything),
+                           ("spread", spread), ("limits", limits),
+                           ("broken", max)):
+        monkeypatch.setitem(PROCEDURES, name, dataclasses.replace(
+            ddim, name=name, function=function
+        ))
     response = client.get("/api/info")
     assert response.status_code == 200
     listed = {p["name"]: p for p in response.json()["procedures"]}
+    assert listed["plain"]["options"] == []
+    assert listed["anything"]["options"] is None
+    assert listed["spread"]["options"] == ["scale"]
+    assert listed["limits"]["defaults"] == {
+        "mode": "fast", "flag": True, "step": 0.5
+    }
     assert listed["broken"]["options"] is None
     assert listed["ddim"]["options"] == [
         "train_steps", "beta_start", "beta_end", "eta"
