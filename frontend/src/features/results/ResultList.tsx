@@ -8,11 +8,14 @@ export function ResultList({
   showBundle,
   selected,
   onToggle,
+  full = false,
 }: {
   results: Result[]
   showBundle: boolean
   selected?: ReadonlySet<string>
   onToggle?: (id: string) => void
+  /** 選べる数の上限まで選んだか (選んでいない結果は選べなくする) */
+  full?: boolean
 }) {
   if (results.length === 0) return <p className="text-sm text-ink-3">まだ結果がありません.</p>
   return (
@@ -26,6 +29,7 @@ export function ResultList({
                 type="checkbox"
                 className="mt-1"
                 checked={selected?.has(result.id) ?? false}
+                disabled={full && !selected?.has(result.id)}
                 onChange={() => onToggle(result.id)}
                 aria-label={`${time} の結果を比べる`}
               />

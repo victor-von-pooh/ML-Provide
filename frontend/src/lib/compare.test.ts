@@ -69,7 +69,11 @@ describe('結果どうしの比べ', () => {
       differs: true,
     })
     expect(find(sections, '意思決定', '見込みの得')?.values).toEqual(['40', '25'])
-    expect(find(sections, '意思決定', '全てに行動するの見込み')?.differs).toBe(false)
+    expect(find(sections, '意思決定', '基準 (全てに行動する) の見込みの得')).toMatchObject({
+      values: ['-5', '-5'],
+      differs: false,
+    })
+    expect(find(sections, '意思決定', '基準 (全てに行動する) の見込みの損')).toBeUndefined()
   })
 
   it('判断の内訳は全ての結果の名前の和で, 無い結果は 0 件', () => {

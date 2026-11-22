@@ -223,10 +223,17 @@ function decisions(results: Result[]): CompareSection | null {
         '予測の値どおりに置いた損',
         results.map((r) => summary(r, 'baseline_cost')),
       ),
-      ...baselines.map((name) =>
-        row(
-          `${name}の見込み`,
-          results.map((r) => show(r.decision?.summary.baselines?.[name])),
+      // 基準のやり方の見込みは, 選ぶ型は得, 他の型は損 (上の見込みの得と損の行と同じ向き)
+      ...baselines.flatMap((name) =>
+        (['得', '損'] as const).map((side) =>
+          row(
+            `基準 (${name}) の見込みの${side}`,
+            results.map((r) =>
+              (r.decision?.decision.type === 'select') === (side === '得')
+                ? show(r.decision?.summary.baselines?.[name])
+                : NONE,
+            ),
+          ),
         ),
       ),
       ...policies.map((name) =>

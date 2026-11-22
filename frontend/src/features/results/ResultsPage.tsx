@@ -53,7 +53,13 @@ export function ResultsPage() {
           {results.isPending && <Spinner />}
           {results.error && <ErrorBox error={results.error} />}
           {results.data && (
-            <ResultList results={results.data} showBundle selected={selected} onToggle={toggle} />
+            <ResultList
+              results={results.data}
+              showBundle
+              selected={selected}
+              onToggle={toggle}
+              full={chosen.length >= MAX_COMPARE}
+            />
           )}
         </Card>
         <Card title="方策の結果">

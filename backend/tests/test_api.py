@@ -919,10 +919,17 @@ def test_compare_results(tmp_path: Path, client: TestClient) -> None:
     assert "一式も入力も違う" in neither["reasons"][0]
     assert len(neither["results"]) == 2
 
-    # 選び方の誤り
+    # 空の区切りと前後の空白は除く
+    spaced = client.get(
+        f"/api/results/compare?ids= {held},, {free} ,"
+    ).json()
+    assert [r["id"] for r in spaced["results"]] == [held, free]
+
+    # 選び方の誤り (長すぎる ids も 400)
     for ids, status in (
         (held, 400), (f"{held},{held}", 400),
         (",".join([held] * 7), 400), (f"{held},missing", 404),
+        ("a" * 1001, 400),
     ):
         response = client.get(f"/api/results/compare?ids={ids}")
         assert response.status_code == status, ids
@@ -945,6 +952,12 @@ def test_comparison_reasons() -> None:
     assert ["タスク" in r for r in found["reasons"]] == [True]
     found = comparison([table, {**table, "column_output": False}])
     assert ["列の出力でない" in r for r in found["reasons"]] == [True]
+    # 一式の id が無い古い結果は一式の場所で見る
+    old = {"bundle": {"path": "/bundles/a"}, "task": "classification"}
+    found = comparison([old, {**old, "bundle_id": None}])
+    assert found["basis"] == ["bundle"] and found["reasons"] == []
+    found = comparison([old, {**old, "bundle": {"path": "/bundles/b"}}])
+    assert found["basis"] == []
     # 書いた文 (読んだファイルの無い入力) は同じ入力としない
     texts = {"bundle_id": "a", "task": "classification"}
     found = comparison([texts, {**texts, "bundle_id": "b"}])

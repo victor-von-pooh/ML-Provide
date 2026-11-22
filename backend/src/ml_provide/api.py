@@ -52,6 +52,9 @@ MAX_ROWS = 500
 # 一度に比べる結果の数の上限 (画面の列が読める幅に収まるように)
 MAX_COMPARE = 6
 
+# 比べる結果の id を並べた文字の長さの上限
+MAX_COMPARE_IDS = 1000
+
 # 名前に使える長さ
 MAX_NAME = 80
 
@@ -1336,7 +1339,9 @@ def read_frame(place: Path, meta: dict[str, Any]) -> pd.DataFrame:
     return frame
 
 
-def result_view(result_id: str, place: Path) -> dict[str, Any]:
+def result_view(
+    result_id: str, place: Path, meta: Optional[dict[str, Any]] = None
+) -> dict[str, Any]:
     """
     結果のまとめを返す関数
 
@@ -1346,6 +1351,8 @@ def result_view(result_id: str, place: Path) -> dict[str, Any]:
         結果の id
     place: Path
         結果のディレクトリ
+    meta: Optional[dict[str, Any]] = None
+        読んだ result.yaml の中身 (省くと読む)
 
     Returns
     ----------
@@ -1353,7 +1360,8 @@ def result_view(result_id: str, place: Path) -> dict[str, Any]:
         id, 一式, 入力, 時刻, タスク, クラス, 決め方, まとめ, 文, 列
     """
     # 表の列は先頭の行だけ読んで決める
-    meta = read_meta(place)
+    if meta is None:
+        meta = read_meta(place)
     columns = list(
         pd.read_csv(place / "predictions.csv", encoding="utf-8-sig", nrows=0)
     )
@@ -1445,17 +1453,47 @@ def find_result(request: Request, result_id: str) -> Path:
     HTTPException
         無い場合は 404
     """
+    place, _ = find_result_meta(request, result_id)
+
+    return place
+
+
+def find_result_meta(
+    request: Request, result_id: str
+) -> tuple[Path, dict[str, Any]]:
+    """
+    結果のディレクトリを探し, result.yaml の中身と一緒に返す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    result_id: str
+        結果の id
+
+    Returns
+    ----------
+    place: Path
+        結果のディレクトリ
+    meta: dict[str, Any]
+        result.yaml の中身
+
+    Raises
+    ----------
+    HTTPException
+        無い場合は 404, 新しい版の結果は 400, 読めない場合は 500
+    """
     place = get_store(request).result_dir(result_id)
     if place is None:
         raise HTTPException(404, "結果が見つかりません")
     try:
-        read_meta(place)
+        meta = read_meta(place)
     except NewerResult as error:
         raise HTTPException(400, str(error)) from error
     except (ValueError, yaml.YAMLError) as error:
         raise HTTPException(500, str(error)) from error
 
-    return place
+    return place, meta
 
 
 @router.get("/results")
@@ -1536,8 +1574,9 @@ def comparison(metas: list[dict[str, Any]]) -> dict[str, Any]:
         同じもの (`basis`. `bundle` は一式, `source` は入力のファイル) と,
         比べられない理由 (`reasons`)
     """
-    # 一式は id (前の結果は場所), 入力は読んだファイルの場所 (書いた文は
-    # 同じ件数でも中身が違いうるので同じ入力としない)
+    # 一式は id (一式の id が無い古い結果は一式の場所), 入力は読んだ
+    # ファイルの場所 (書いた文は同じ件数でも中身が違いうるので同じ入力と
+    # しない. ファイルの中身が後から変わっても同じ場所なら同じ入力)
     bundles = [
         m.get("bundle_id") or (m.get("bundle") or {}).get("path")
         for m in metas
@@ -1570,7 +1609,7 @@ def comparison(metas: list[dict[str, Any]]) -> dict[str, Any]:
 
 @router.get("/results/compare")
 def compare_results(
-    request: Request, ids: str = Query(..., max_length=1000)
+    request: Request, ids: str
 ) -> dict[str, Any]:
     """
     選んだ結果のまとめを並べ, 比べられるかを返す関数
@@ -1591,10 +1630,13 @@ def compare_results(
     Raises
     ----------
     HTTPException
-        選んだ数が範囲の外か同じ結果を 2 度選んだ場合は 400,
-        無い結果は 404
+        ids が長すぎるか, 選んだ数が範囲の外か, 同じ結果を 2 度選んだ
+        場合は 400, 無い結果は 404
     """
-    # 結果の読み込みは 1 つの結果の画面と同じ (表は読まない)
+    # 結果の読み込みは 1 つの結果の画面と同じ (表は読まない. result.yaml
+    # は 1 つにつき 1 回)
+    if len(ids) > MAX_COMPARE_IDS:
+        raise HTTPException(400, "選んだ結果の id が長すぎます")
     chosen = [part.strip() for part in ids.split(",") if part.strip()]
     if len(chosen) < 2:
         raise HTTPException(400, "比べる結果を 2 つ以上選んでください")
@@ -1604,12 +1646,16 @@ def compare_results(
         )
     if len(set(chosen)) < len(chosen):
         raise HTTPException(400, "同じ結果を 2 度選んでいます")
-    places = [find_result(request, result_id) for result_id in chosen]
-    found = comparison([read_meta(place) for place in places])
+    found_metas = [
+        find_result_meta(request, result_id) for result_id in chosen
+    ]
+    found = comparison([meta for _, meta in found_metas])
     view = {
         "results": [
-            result_view(result_id, place)
-            for result_id, place in zip(chosen, places, strict=True)
+            result_view(result_id, place, meta)
+            for result_id, (place, meta) in zip(
+                chosen, found_metas, strict=True
+            )
         ],
         "comparable": not found["reasons"],
         **found,
