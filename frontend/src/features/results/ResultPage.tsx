@@ -10,6 +10,7 @@ import { Button, Card, ErrorBox, PageHeader, Spinner, StatTile } from '../../com
 import { formatPercent, formatValue } from '../../lib/format'
 import { FORM_LABELS, maskNames } from '../../lib/outputs'
 import { READY_UNSUPPORTED } from '../../lib/ready'
+import { groupColumns } from '../../lib/remeasure'
 import { fromForm, toForm, type RulesForm } from '../../lib/rules'
 import { OutputNotices } from '../bundles/OutputView'
 import { ArtifactCard } from './ArtifactCard'
@@ -424,6 +425,9 @@ export function ResultPage() {
   // 既製のモデルの一式の結果は, 意思決定, たどり直し, 外れ方の確かめを使えない
   const readyModel = data.kind === 'ready'
   const form = data.artifacts?.form ?? data.output_form ?? ''
+  // 外れ方を種類ごとに分けられる列 (回帰と予測の一式の, 予測と判断と目的の列を除いた列)
+  const target = bundle.data?.description?.target
+  const groups = groupColumns(data.task, data.columns ?? [], target, OWN)
   return (
     <>
       <PageHeader
@@ -498,6 +502,7 @@ export function ResultPage() {
             result={data}
             bundleAlive={bundleAlive}
             forecastable={!!bundle.data?.description?.forecastable}
+            groupColumns={groups}
           />
         )}
         {summary && (

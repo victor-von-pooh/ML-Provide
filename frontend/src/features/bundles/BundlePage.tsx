@@ -687,6 +687,8 @@ function UncertaintyText({ summary }: { summary: UncertaintySummary }) {
       {!!summary.horizon &&
         !summary.steps_measured &&
         `. 何段も先の外れ方は ${summary.horizon} 段先まで測ろうとしたが, 誤りが少なく測れなかった`}
+      {summary.groups &&
+        `. ${summary.groups.column ?? '–'} ごとに ${summary.groups.count} 種類で測った (少ない種類は全ての行の外れ方)`}
     </>
   )
 }

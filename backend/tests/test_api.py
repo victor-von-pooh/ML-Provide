@@ -554,6 +554,25 @@ def test_remeasure(client: TestClient) -> None:
     assert described["description"]["uncertainty"]["split"] == "recent"
     assert described["description"]["uncertainty"]["restorable"] is True
 
+    # 店ごとに分けて測り, 書き戻すと一式の説明に分けた列と種類の数
+    grouped = client.post(f"/api/results/{result['id']}/remeasure",
+                          json={"write": True, "groups": "shop"})
+    assert grouped.status_code == 200, grouped.text
+    assert any("shop ごとの外れ方" in s for s in grouped.json()["sentences"])
+    described = client.get(f"/api/bundles/{shop['id']}").json()
+    groups = described["description"]["uncertainty"]["groups"]
+    assert groups["column"] == "shop" and groups["count"] >= 2
+
+    # 無い列と目的の列では分けられない (空は分けない)
+    for column in ("nothing", "visitors"):
+        bad = client.post(f"/api/results/{result['id']}/remeasure",
+                          json={"write": False, "groups": column})
+        assert bad.status_code == 400
+        assert "groups" in bad.json()["detail"]
+    plain = client.post(f"/api/results/{result['id']}/remeasure",
+                        json={"write": False, "groups": ""}).json()
+    assert not any("ごとの外れ方" in s for s in plain["sentences"])
+
     # 作ったときの記録に戻すと, もう戻せない
     back = client.post(
         f"/api/bundles/{shop['id']}/restore-uncertainty"

@@ -141,6 +141,7 @@ class RemeasureRequest(BaseModel):
     write: bool = False
     horizon: Optional[int] = None
     time: Optional[str] = None
+    groups: Optional[str] = None
 
 
 def get_store(request: Request) -> Store:
@@ -1954,7 +1955,8 @@ def remeasure_result(
         結果の id
     body: RemeasureRequest
         write (一式に書き戻すか), horizon (何段も先の外れ方も測る段の
-        数), time (予測を始める時刻の列)
+        数), time (予測を始める時刻の列), groups (外れ方を種類ごとに
+        分けて測る列. 回帰と予測の一式だけ)
 
     Returns
     ----------
@@ -1964,8 +1966,8 @@ def remeasure_result(
     Raises
     ----------
     HTTPException
-        入力のファイルが無い場合, 目的の列が無い場合, 行が少ない場合は
-        400
+        入力のファイルが無い場合, 目的の列が無い場合, 行が少ない場合,
+        分ける列が使えない場合は 400
     """
     # 入力のファイルと一式の場所 (覚えた一式は書き換えず, 読み直させる)
     place = find_result(request, result_id)
@@ -1996,7 +1998,8 @@ def remeasure_result(
             measured = ml_inference.remeasure(
                 str(target), Path(source),
                 options=meta.get("options"), write=body.write,
-                horizon=body.horizon, time=body.time or None
+                horizon=body.horizon, time=body.time or None,
+                groups=body.groups or None
             )
             if copied is not None:
                 store.relocate(entry["id"], copied)
