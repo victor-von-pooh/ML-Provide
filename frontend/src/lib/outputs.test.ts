@@ -145,6 +145,11 @@ describe('optionsText', () => {
       'null',
       'None',
       '~',
+      '2026-11-22',
+      '2026-1-2',
+      '2026-11-22T10:00:00',
+      '2026-11-22t10:00:00.5Z',
+      '2026-11-22 10:00:00 +09:00',
     ]
     for (const text of typed) expect(optionsText({ v: text })).toBe(`v ${JSON.stringify(text)}`)
     expect(optionsText({ n: 0, s: '0', t: true, u: 'true', z: null, w: 'null' })).toBe(
@@ -156,7 +161,18 @@ describe('optionsText', () => {
     expect(optionsText({ a: '"x"', b: '[1]', c: '{}', d: "'q'" })).toBe(
       'a "\\"x\\"", b "[1]", c "{}", d "\'q\'"',
     )
-    for (const text of ['fast', 'linear', '1a', 'v2', 'e3', 'info', 'nope', '0xg'])
+    for (const text of [
+      'fast',
+      'linear',
+      '1a',
+      'v2',
+      'e3',
+      'info',
+      'nope',
+      '0xg',
+      '2026-11',
+      '2026-11-22T10',
+    ])
       expect(optionsText({ v: text })).toBe(`v ${text}`)
   })
 })

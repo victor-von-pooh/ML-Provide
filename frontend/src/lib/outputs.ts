@@ -149,18 +149,20 @@ export function sourceLabel(inputKind: string | null | undefined, kind?: string)
 
 /**
  * 数, 真偽, null に見える文字か (大文字と小文字を区別しない).
- * 設定の欄 (10 進の数と true, false) と YAML 1.1 (yes, on, ~, 0x10, 1_000, 1:30, .inf など) で
+ * 設定の欄 (10 進の数と true, false) と YAML 1.1 (yes, on, ~, 0x10, 1_000, 1:30, .inf, 日付など) で
  * 文字でない値に読まれるものと, JavaScript と Python の数の書き方 (Infinity, nan, 0b1, 0o7) を含む
  */
 function looksTyped(text: string): boolean {
   const lower = text.toLowerCase()
   if (/^(true|false|yes|no|on|off|y|n|null|none|~)$/.test(lower)) return true
-  // 10 進 (桁の _ を含む), 0x, 0o, 0b, 60 進 (1:30), 無限と非数
+  // 10 進 (桁の _ を含む), 0x, 0o, 0b, 60 進 (1:30), 無限と非数, 日付と日時
   return (
     /^[+-]?(\d[\d_]*\.?[\d_]*|\.\d[\d_]*)(e[+-]?\d+)?$/.test(lower) ||
     /^[+-]?0(x[\da-f_]+|o[0-7_]+|b[01_]+)$/.test(lower) ||
     /^[+-]?\d[\d_]*(:[0-5]?\d)+(\.[\d_]*)?$/.test(lower) ||
-    /^[+-]?\.?(inf|infinity|nan)$/.test(lower)
+    /^[+-]?\.?(inf|infinity|nan)$/.test(lower) ||
+    // YAML 1.1 の日付と日時 (2026-11-22, 2026-11-22T10:00:00Z)
+    /^\d{4}-\d\d?-\d\d?([Tt ]\d\d?:\d\d:\d\d(\.\d*)?\s*(Z|[+-]\d\d?(:\d\d)?)?)?$/.test(text)
   )
 }
 
