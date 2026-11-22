@@ -432,6 +432,23 @@ export interface Explanation {
   }[]
 }
 
+/** 1 行の列ごとの効きと理由 (ML-Inference の explain_rows) */
+export interface RowReason {
+  row: number
+  measure: 'probability' | 'value'
+  status: string
+  prediction: string | number | null
+  /** 効きの大きい 3 列の文 (無ければ null) */
+  reason: string | null
+  /** 効きの絶対値の大きい順 (求められない列は最後) */
+  effects: { column: string; effect: number | null }[]
+  /** 列の名前から求められない理由 */
+  errors: Record<string, string>
+  /** 選んだ行と一緒に渡した行の数 */
+  rows: number
+  repeats: number
+}
+
 export interface Rows {
   total: number
   offset: number

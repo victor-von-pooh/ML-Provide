@@ -33,6 +33,7 @@ from ml_provide.cache import (
 from ml_provide.previews import PREVIEW_LIMIT, array_preview, dtype_problem
 from ml_provide.procedures import missing_procedure, registered
 from ml_provide.ready import FetchError, make_ready, preview_ready
+from ml_provide.reasons import read_input, row_reason
 from ml_provide.samples import write_samples
 from ml_provide.store import Store
 from ml_provide.units import unit_hint
@@ -1810,6 +1811,75 @@ def explain_result(request: Request, result_id: str) -> dict[str, Any]:
     view = result_view(result_id, place)
 
     return view
+
+
+@router.post("/results/{result_id}/rows/{row}/reason")
+def explain_row(
+    request: Request, result_id: str, row: int = FastPath(ge=0)
+) -> dict[str, Any]:
+    """
+    結果の 1 行の, 列ごとの予測の効きと理由を求める関数 (結果には残さない)
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    result_id: str
+        結果の id
+    row: int = FastPath(ge=0)
+        行の位置 (予測の表の index)
+
+    Returns
+    ----------
+    reason: dict[str, Any]
+        行の理由 (reasons.row_reason の形)
+
+    Raises
+    ----------
+    HTTPException
+        求められない結果と行の場合は 400, 行が無い場合は 404
+    """
+    # 表と時系列の, ファイルを 1 つ先まで推論した結果だけ
+    place = find_result(request, result_id)
+    meta = read_meta(place)
+    require_column(meta)
+    if meta.get("kind") not in ("table", "timeseries"):
+        raise HTTPException(
+            400, "行ごとの理由は, 表と時系列の一式の結果だけで求めます (1 件"
+            "の中身が列ではないため)"
+        )
+    if meta.get("forecast"):
+        raise HTTPException(
+            400, "何段も先の予測の結果は, 行ごとの理由を求めません (並べ替えて"
+            "推論し直すのは 1 つ先の予測のため)"
+        )
+    source = meta.get("source_path")
+    if not source or not Path(source).exists():
+        raise HTTPException(
+            400, "入力のファイルが無いので求められません (書いた文の結果は"
+            "求めない)"
+        )
+    frame = read_frame(place, meta)
+    if row >= len(frame):
+        raise HTTPException(404, f"{row} 行目はありません")
+    if frame["status"].iloc[row] != ml_inference.OK:
+        raise HTTPException(400, "予測しなかった行の理由は求めません")
+    bundle = result_bundle(request, meta)
+
+    # 推論を繰り返すので, 推論と同じく 1 つずつ
+    with PREDICT_LOCK:
+        try:
+            given = read_input(bundle, Path(source), meta.get("options"))
+            if len(given) != len(frame):
+                raise ValueError(
+                    "入力のファイルの行の数が推論したときと違うので, 行を"
+                    "合わせられません. 推論し直してください"
+                )
+            reason = row_reason(bundle, given, row)
+        except (OSError, *USER_ERRORS) as error:
+            raise user_error(error) from error
+
+    return reason
 
 
 def result_bundle(
