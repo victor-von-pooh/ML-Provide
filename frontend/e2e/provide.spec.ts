@@ -757,12 +757,33 @@ test('骨組みの学習が実験の中に書き出した方策の一式を, 実
     page.getByRole('heading', { name: '棒を立てる制御 (cartpole/2026-01-04/09-00-00)' }),
   ).toBeVisible({ timeout: 30_000 })
   await page
-    .getByLabel(/^観測/)
+    .getByLabel(/^観測 \(/)
     .fill('0.5478467492858172, -0.9208531449445188, -0.18361059042552214, -1.9338894578858836')
   await page.getByRole('button', { name: '行動を決める' }).click()
   const result = page.getByRole('status').filter({ hasText: '行動' })
   await expect(result).toContainText('1')
   await expect(result).toContainText('そのまま')
+
+  // 観測の CSV でまとめて決め, 結果の一覧から開き直す (範囲の外の 1 件は元の制御に戻す)
+  const observations = path.resolve(import.meta.dirname, '.work', 'observations.csv')
+  fs.writeFileSync(
+    observations,
+    'x,v,theta,omega\n0.5478467492858172,-0.9208531449445188,-0.18361059042552214,-1.9338894578858836\n2.5,0,0,0\n',
+  )
+  await page.getByLabel(/^観測のファイル/).fill(observations)
+  await page.getByRole('button', { name: 'まとめて決める' }).click()
+  const bars = page.getByRole('list', { name: '守りの結果ごとの件数' })
+  await expect(bars).toContainText('そのまま1 件', { timeout: 30_000 })
+  await expect(bars).toContainText('元の制御に戻した1 件')
+  await page.goto('/results')
+  await page
+    .locator('section', { has: page.getByRole('heading', { name: '方策の結果' }) })
+    .getByRole('link')
+    .first()
+    .click()
+  await expect(page.getByRole('table', { name: '観測ごとの行動と守りの結果の表' })).toContainText(
+    '元の制御に戻した',
+  )
 
   // 一覧では登録済みと出る
   await page.goto('/policies')

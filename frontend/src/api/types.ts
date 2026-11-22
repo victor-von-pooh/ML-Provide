@@ -639,6 +639,33 @@ export interface Policy {
   unused_keys: string[] | null
 }
 
+/** 観測のファイルでまとめて決めた方策の結果 (置き場の policy_results) */
+export interface PolicyResult {
+  id: string
+  policy_id: string
+  policy: { name: string; path: string } | null
+  /** 観測のファイル */
+  source: string
+  created_at: string | null
+  rows: number
+  /** 守りの結果ごとの件数 (ok, clipped, fallback, stop, handover の順) */
+  counts: Record<PolicyAct['status'], number>
+}
+
+/** 方策の結果の表の一部 (観測と行動は JSON の文字) */
+export interface PolicyResultRows {
+  total: number
+  offset: number
+  rows: {
+    index: number
+    observation: string
+    action: string
+    status: PolicyAct['status']
+    /** 守りが働いた理由 (「 / 」で並べる) */
+    reasons: string
+  }[]
+}
+
 /** 守りを当てた行動の結果 */
 export interface PolicyAct {
   /** 行動 (番号か数の入れ子の並び). 止めるか元の制御に戻す場合は null */

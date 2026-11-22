@@ -6,6 +6,7 @@ import { BundlePage } from './features/bundles/BundlePage'
 import { BundlesPage } from './features/bundles/BundlesPage'
 import { PoliciesPage } from './features/policies/PoliciesPage'
 import { PolicyPage } from './features/policies/PolicyPage'
+import { PolicyResultPage } from './features/policies/PolicyResults'
 import { ResultPage } from './features/results/ResultPage'
 import { ResultsPage } from './features/results/ResultsPage'
 import { useTheme } from './lib/themeContext'
@@ -71,6 +72,7 @@ export function App() {
           <Route path="/results/:id" element={<ResultPage />} />
           <Route path="/policies" element={<PoliciesPage />} />
           <Route path="/policies/:id" element={<PolicyPage />} />
+          <Route path="/policy-results/:id" element={<PolicyResultPage />} />
           <Route path="*" element={<p className="text-ink-3">ページが見つかりません.</p>} />
         </Routes>
       </main>
