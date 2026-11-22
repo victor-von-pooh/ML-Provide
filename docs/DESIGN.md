@@ -33,7 +33,7 @@ ML-Inference と ML-Quest は submodule. 形の決まりを 2 か所に持たな
 | 推論の結果 (`predictions.csv`, `result.yaml`, `artifacts/`) | ML-Inference | 置き場に書いて読む (`write_result`, `read_result`) | 1 と 2. `RESULT_FORMAT_VERSION` より新しい版は「この版の結果は読めません」で止める (一覧では飛ばす) |
 | 問題の設定 (`problem.yaml`) | ML-Quest | 読むだけ (受け渡しの `handoff` の `inference` と, 今のやり方 `action.current`, 写しの元の場所 `problem_origin`, 書き出したプロジェクトの記録 `project`). 書き戻さない | 1 と 2. 新しい版は読めない理由を出して止まる |
 | データセット | ML-EDA (ML-Fathom で書き出す) | 一式を作るときに `make_bundle` に渡す. 読めるのは `make_bundle` が読む形 (版 1 の列のデータセットと, 版 2 と版 3 のファイルの組). 一式を作る画面でファイルの組の項目と中身の手順を見せるために, ML-EDA の `load_items` で読む (書かない). 見本の一式は ML-Inference の `make_sample_bundle` が作る |
-| 既製のモデルの出どころ (重みの説明とライセンス) | ML-Inference (`READY_LIBRARIES`), ML-ModelControl (`pretrained_info`) | 一式を作る前の下見で, 種類の名前の表, 前処理, 重みのファイルの名前を `READY_LIBRARIES[library](model, weights)` で読み, ライセンスの情報を ML-ModelControl の `pretrained_info` で読む (このアプリが ML-ModelControl を直接使うのはここだけ). 読んだライセンスの情報を `make_ready_bundle` に渡す | ML-Inference に従う | ML-Inference に従う |
+| 既製のモデルの出どころ (重みの説明とライセンス) | ML-Inference (`READY_LIBRARIES`), ML-ModelControl (`pretrained_info`) | 一式を作る前の下見で, 種類の名前の表, 前処理, 重みのファイルの名前を `READY_LIBRARIES[library](model, weights)` で読み, ライセンスの情報を ML-ModelControl の `pretrained_info` で読む (このアプリが ML-ModelControl を直接使うのはここだけ). 読んだライセンスの情報を `make_ready_bundle` に渡す | ML-Inference に従う |
 | モデルの定義 | ML-ModelControl (ML-CreateArchitecture で組む) | 一式を作るときに `make_bundle` に渡す | ML-Inference に従う |
 | 実験のディレクトリ (重み, `run.json`) | ML-Found | 一式を作るときに読む. 書かない |  |
 | 方策の一式 (`policy.json`, `policy.pt`, 写したモデルの定義) | ML-Inference (ML-Found が書き出す) | 登録した場所から読む (`read_policy_spec`, `load_policy`). 書かない | 1. 新しい版は ML-Inference が読まずに止まる |
