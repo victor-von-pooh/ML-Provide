@@ -132,6 +132,9 @@ test('解約の見本の過去のデータで, 外れ方を確かめて一式に
   await page.getByRole('button', { name: '推論する' }).click()
   await expect(page.getByText(/300 件のうち 10 件/)).toBeVisible({ timeout: 30_000 })
 
+  // 分類の一式は外れ方を種類ごとに分けない (確率の当たり具合だけ)
+  await expect(page.getByLabel(/外れ方を分ける列/)).toHaveCount(0)
+
   // 確かめるだけでは一式は変わらない
   const status = page.getByRole('status', { name: '外れ方の確かめの状態' })
   await page.getByRole('button', { name: '確かめる' }).click()
