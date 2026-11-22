@@ -1,4 +1,6 @@
+import csv
 import hashlib
+import io
 import json
 import shutil
 import threading
@@ -626,3 +628,183 @@ def test_batch_refuses(
     missing = client.post("/api/policies/none/batch",
                           json={"source": str(many)})
     assert missing.status_code == 404
+
+
+def test_batch_npy_checked_before_reading(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    .npy は中身を読む前に, ファイルの大きさ, ヘッダの形の値の数, 値の型で
+    断ることを確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    monkeypatch: pytest.MonkeyPatch
+        中身を読まないことの確かめと, 上限の差し替え
+
+    Returns
+    ----------
+    None
+    """
+    view = register(client, copy_policy("cartpole", tmp_path))
+    url = f"/api/policies/{view['id']}/batch"
+
+    # ヘッダだけが巨大な形の小さなファイル (中身は読まない)
+    huge = tmp_path / "huge.npy"
+    with open(huge, "wb") as handle:
+        np.lib.format.write_array_header_1_0(handle, {
+            "descr": "<f8", "fortran_order": False,
+            "shape": (10 ** 7, 1000),
+        })
+
+    def never(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("中身を読みました")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(policy_results.np, "load", never)
+        response = client.post(url, json={"source": str(huge)})
+    assert response.status_code == 400
+    assert "1,000,000 個まで" in response.json()["detail"]
+
+    # 数でない型 (文字, 複素数, 構造) は理由付きで断る
+    for name, array in (
+        ("text", np.asarray([["a", "b", "c", "d"]])),
+        ("complex", np.zeros((2, 4), dtype=complex)),
+        ("record", np.zeros(2, dtype=[("x", "f8"), ("y", "f8")])),
+    ):
+        path = tmp_path / f"{name}.npy"
+        np.save(path, array)
+        response = client.post(url, json={"source": str(path)})
+        assert response.status_code == 400, name
+        assert "観測にできません" in response.json()["detail"], name
+
+    # 整数と真偽値は読む
+    for name, array in (("int", np.zeros((2, 4), dtype=int)),
+                        ("bool", np.zeros((2, 4), dtype=bool))):
+        path = tmp_path / f"{name}.npy"
+        np.save(path, array)
+        response = client.post(url, json={"source": str(path)})
+        assert response.status_code == 201, (name, response.text)
+
+    # 値の総数とファイルの大きさの上限 (小さくして確かめる)
+    small = tmp_path / "small.npy"
+    np.save(small, np.zeros((2, 4)))
+    csv_file = tmp_path / "small.csv"
+    csv_file.write_text("0,0,0,0\n0,0,0,0\n", encoding="utf-8")
+    monkeypatch.setattr(policy_results, "MAX_BATCH_VALUES", 7)
+    for path in (small, csv_file):
+        response = client.post(url, json={"source": str(path)})
+        assert response.status_code == 400, path
+        assert "7 個まで" in response.json()["detail"]
+    monkeypatch.setattr(policy_results, "MAX_NPY_BYTES", 100)
+    response = client.post(url, json={"source": str(small)})
+    assert response.status_code == 400
+    assert "大きすぎます" in response.json()["detail"]
+
+    # .npy の形式でないファイルは英語の誤りを出さずに断る
+    broken = tmp_path / "broken.npy"
+    broken.write_bytes(b"not an array")
+    response = client.post(url, json={"source": str(broken)})
+    assert response.status_code == 400
+    assert "形式ではありません" in response.json()["detail"]
+
+
+def test_batch_download_and_deleted(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """
+    持ち出しの CSV は式として読まれる文字の欄の頭に ' を付け, 消した後か
+    消している途中に読むと 404 にすることを確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 数でない欄の観測 (=1+1) は守りの外れたときの動きで, 理由に残る
+    view = register(client, copy_policy("cartpole", tmp_path))
+    source = tmp_path / "observations.csv"
+    source.write_text("x,v,theta,omega\n=1+1,0,0,0\n0,0,0,0\n",
+                      encoding="utf-8")
+    result = client.post(
+        f"/api/policies/{view['id']}/batch", json={"source": str(source)}
+    ).json()
+    response = client.get(f"/api/policy-results/{result['id']}/download")
+    assert response.status_code == 200
+    assert "attachment" in response.headers["content-disposition"]
+    lines = list(csv.reader(io.StringIO(response.text.lstrip("﻿"))))
+    assert lines[0] == policy_results.ACTION_COLUMNS
+    assert all(
+        not cell.startswith(policy_results.FORMULA_HEADS)
+        or cell.lstrip("+-").replace(".", "", 1).isdigit()
+        for line in lines for cell in line
+    )
+    assert policy_results.safe_cell("=1+1") == "'=1+1"
+    assert policy_results.safe_cell("-1") == "-1"
+    assert policy_results.safe_cell("-0.5") == "-0.5"
+    assert policy_results.safe_cell("@x") == "'@x"
+    assert policy_results.safe_cell("[1, 2]") == "[1, 2]"
+
+    # 表のファイルだけが先に消えた (消している途中) 場合も 404
+    place = tmp_path / "home" / "policy_results" / result["id"]
+    (place / "actions.csv").unlink()
+    for path in ("rows", "download"):
+        response = client.get(f"/api/policy-results/{result['id']}/{path}")
+        assert response.status_code == 404, path
+    assert client.delete(
+        f"/api/policy-results/{result['id']}"
+    ).status_code == 204
+    for path in ("", "/rows", "/download"):
+        response = client.get(f"/api/policy-results/{result['id']}{path}")
+        assert response.status_code == 404, path
+
+
+@pytest.mark.parametrize(("text", "header", "rows"), [
+    # 数だけの 1 行目は観測 (nan, inf, 指数, 負の数も数)
+    ("1,2\n3,4\n", None, [[1, 2], [3, 4]]),
+    ("nan,-inf\n-1e3,0.5\n", None, None),
+    # 数にできない欄が 1 つでもあれば列の名前
+    ("x,2\n3,4\n", ["x", "2"], [[3, 4]]),
+    (" a , b \n1,2\n", ["a", "b"], [[1, 2]]),
+    # 列の名前だけの CSV は観測が無い
+    ("a,b\n", ["a", "b"], []),
+    # 空の行は飛ばし, 空の欄は文字のまま
+    ("\n1,\n", None, [[1, ""]]),
+])
+def test_csv_header_edges(
+    text: str, header: Any, rows: Any
+) -> None:
+    """
+    CSV の 1 行目を列の名前として読むかの決まりの端を確かめる関数
+
+    Parameters
+    ----------
+    text: str
+        CSV の中身
+    header: Any
+        期待の列の名前 (無ければ None)
+    rows: Any
+        期待の行 (None は数えるだけ)
+
+    Returns
+    ----------
+    None
+    """
+    found, names = policy_results.csv_rows(text)
+    assert names == header
+    if rows is None:
+        assert len(found) == 2 and all(
+            isinstance(v, float) for v in found[0]
+        )
+    else:
+        assert found == rows

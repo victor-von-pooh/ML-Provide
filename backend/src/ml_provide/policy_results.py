@@ -11,7 +11,7 @@ from typing import Any, Optional
 import numpy as np
 import yaml
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from ml_provide.api import MAX_ROWS, get_store, user_error
@@ -40,6 +40,17 @@ POLICY_RESULT_VERSION = 1
 # 動かすので, 長く止まらないように)
 MAX_BATCH_ROWS = 10_000
 MAX_BATCH_VALUES = 1_000_000
+
+# 読む前に止めるファイルの大きさの上限 (CSV は 1 つの値に 32 バイトまで
+# で約 32 MB. .npy は 1 つの値に 8 バイトまでとヘッダの分)
+MAX_CSV_BYTES = MAX_BATCH_VALUES * 32
+MAX_NPY_BYTES = MAX_BATCH_VALUES * 8 + 65_536
+
+# .npy で読む値の型 (小数, 整数, 真偽値. 文字や複素数や構造は観測にしない)
+NPY_KINDS = {"f": "小数", "i": "整数", "u": "整数", "b": "真偽値"}
+
+# CSV の持ち出しで, 表計算のソフトが式として読む欄の頭
+FORMULA_HEADS = ("=", "+", "-", "@")
 
 # 守りの結果の並び (件数を出す順. ML-Inference の GuardedPolicy の status)
 STATUSES = ("ok", "clipped", "fallback", "stop", "handover")
@@ -122,8 +133,7 @@ def read_meta(place: Path) -> dict[str, Any]:
     version = meta.get("format_version")
     if not isinstance(version, int) or version > POLICY_RESULT_VERSION:
         raise ValueError(
-            f"format_version {version} の方策の結果は, このアプリでは読め"
-            "ません"
+            "この方策の結果は新しい版のため, このアプリでは読めません"
         )
 
     return meta
@@ -171,14 +181,17 @@ def csv_rows(text: str) -> tuple[list[list[Any]], Optional[list[str]]]:
     Returns
     ----------
     rows: tuple[list[list[Any]], Optional[list[str]]]
-        行ごとの欄の値と, 列の名前 (1 行目に数にできない欄があれば列の
-        名前として読む. 無ければ None)
+        行ごとの欄の値と, 列の名前 (1 行目に空でない数にできない欄があれ
+        ば列の名前として読む. 無ければ None)
     """
     # 空の行は飛ばす
     lines = [row for row in csv.reader(io.StringIO(text)) if row]
     header: Optional[list[str]] = None
+    # (空の欄は列の名前にならないので見ない. 欠けた値のある観測の行を
+    # 列の名前と読まないため)
     if lines and any(
-        isinstance(cell_value(cell), str) for cell in lines[0]
+        cell.strip() and isinstance(cell_value(cell), str)
+        for cell in lines[0]
     ):
         header = [cell.strip() for cell in lines[0]]
         lines = lines[1:]
@@ -221,6 +234,96 @@ def shaped(row: list[Any], space: dict[str, Any]) -> Any:
     return row
 
 
+def npy_header(path: Path) -> tuple[tuple[int, ...], np.dtype]:
+    """
+    .npy のヘッダだけを読み, 配列の形と型を返す関数 (中身は読まない)
+
+    Parameters
+    ----------
+    path: Path
+        .npy のファイル
+
+    Returns
+    ----------
+    header: tuple[tuple[int, ...], np.dtype]
+        形と型
+
+    Raises
+    ----------
+    ValueError
+        .npy の形式でない場合と, 読めない版の場合
+    """
+    # 版 1 と 2 のヘッダ (版 3 は文字の名前の構造の型にだけ使う)
+    readers = {(1, 0): np.lib.format.read_array_header_1_0,
+               (2, 0): np.lib.format.read_array_header_2_0}
+    try:
+        with open(path, "rb") as handle:
+            version = np.lib.format.read_magic(handle)
+            reader = readers.get(version)
+            if reader is not None:
+                shape, _, dtype = reader(handle)
+    except Exception as error:
+        raise ValueError(f"{path.name} は .npy の形式ではありません") from error
+    if reader is None:
+        raise ValueError(
+            f"{path.name} は読めない版 ({version[0]}.{version[1]}) の .npy "
+            "です"
+        )
+    header = (tuple(int(n) for n in shape), np.dtype(dtype))
+
+    return header
+
+
+def read_npy(path: Path) -> list[Any]:
+    """
+    .npy の並びを, 読む前に大きさと型を確かめてから 1 件ずつの観測にする
+    関数
+
+    Parameters
+    ----------
+    path: Path
+        .npy のファイル
+
+    Returns
+    ----------
+    observations: list[Any]
+        先頭の次元の並び
+
+    Raises
+    ----------
+    ValueError
+        大きすぎる場合, 型が数でない場合, 1 つの値だけの配列の場合
+    """
+    # ファイルの大きさ, ヘッダの形の値の数, 型の順に, 中身を読む前に止める
+    if path.stat().st_size > MAX_NPY_BYTES:
+        raise ValueError(
+            f"{path.name} が大きすぎます ({MAX_NPY_BYTES:,} バイトまで)"
+        )
+    shape, dtype = npy_header(path)
+    if not shape:
+        raise ValueError(
+            ".npy は先頭の次元を観測の並びにします. 1 つの値だけの配列は"
+            "読めません"
+        )
+    if math.prod(shape) > MAX_BATCH_VALUES:
+        raise ValueError(
+            f"観測の値は全てで {MAX_BATCH_VALUES:,} 個までにしてください "
+            f"(形 {shape})"
+        )
+    if dtype.kind not in NPY_KINDS or dtype.fields is not None:
+        raise ValueError(
+            f"{path.name} の値の型 {dtype} は観測にできません (小数, 整数, "
+            "真偽値の配列にしてください)"
+        )
+    try:
+        array = np.load(path, allow_pickle=False)
+    except MemoryError as error:
+        raise ValueError(f"{path.name} を読む記憶が足りません") from error
+    observations: list[Any] = [item.tolist() for item in array]
+
+    return observations
+
+
 def read_observations(
     path: Path, space: dict[str, Any]
 ) -> list[Any]:
@@ -246,21 +349,14 @@ def read_observations(
     """
     # .npy は先頭の次元を件の並びに (pickle は読まない)
     suffix = path.suffix.lower()
+    observations: list[Any]
     if suffix == ".npy":
-        array = np.load(path, allow_pickle=False)
-        if array.ndim == 0:
-            raise ValueError(
-                ".npy は先頭の次元を観測の並びにします. 1 つの値だけの配列は"
-                "読めません"
-            )
-        if array.size > MAX_BATCH_VALUES:
-            raise ValueError(
-                f"観測の値は全てで {MAX_BATCH_VALUES:,} 個までにしてください"
-            )
-        observations: list[Any] = [item.tolist() for item in array]
+        observations = read_npy(path)
     elif suffix == ".csv":
-        if path.stat().st_size > MAX_BATCH_VALUES * 32:
-            raise ValueError(f"{path.name} が大きすぎます")
+        if path.stat().st_size > MAX_CSV_BYTES:
+            raise ValueError(
+                f"{path.name} が大きすぎます ({MAX_CSV_BYTES:,} バイトまで)"
+            )
         rows, _ = csv_rows(path.read_text(encoding="utf-8-sig"))
         if sum(len(row) for row in rows) > MAX_BATCH_VALUES:
             raise ValueError(
@@ -405,24 +501,26 @@ def act_batch(
     # 1 件ずつ守りを当てる (観測の誤りは守りの外れたときの動き)
     rows = []
     counts = dict.fromkeys(STATUSES, 0)
-    with ACT_LOCK:
-        for index, observation in enumerate(observations):
-            if count_items(observation, MAX_OBSERVATION) > MAX_OBSERVATION:
-                outcome: dict[str, Any] = {
-                    "action": None, "status": "stop",
-                    "reasons": [f"観測の要素が {MAX_OBSERVATION} 個を超えます"],
-                }
-            else:
+    # (鍵は件ごとに取り直す. 長いファイルの間も 1 件ずつの行動を待たせ
+    # ないように)
+    for index, observation in enumerate(observations):
+        if count_items(observation, MAX_OBSERVATION) > MAX_OBSERVATION:
+            outcome: dict[str, Any] = {
+                "action": None, "status": "stop",
+                "reasons": [f"観測の要素が {MAX_OBSERVATION} 個を超えます"],
+            }
+        else:
+            with ACT_LOCK:
                 outcome = policy.act(observation)
-            status = str(outcome["status"])
-            counts[status] = counts.get(status, 0) + 1
-            rows.append({
-                "index": index,
-                "observation": json_text(observation),
-                "action": json_text(outcome["action"]),
-                "status": status,
-                "reasons": " / ".join(str(r) for r in outcome["reasons"]),
-            })
+        status = str(outcome["status"])
+        counts[status] = counts.get(status, 0) + 1
+        rows.append({
+            "index": index,
+            "observation": json_text(observation),
+            "action": json_text(outcome["action"]),
+            "status": status,
+            "reasons": " / ".join(str(r) for r in outcome["reasons"]),
+        })
 
     # 隣に書いてから置き換える (書き出しの途中の結果を残さない)
     store = get_store(request)
@@ -557,13 +655,18 @@ def get_rows(
         status, reasons. 観測と行動は JSON の文字)
     """
     # 絞ってから切り出す
+    # (消している途中で無くなった結果は 404)
     place = find_place(request, result_id)
-    with open(place / ACTIONS_FILE, encoding="utf-8-sig", newline="") as f:
-        records = [
-            {**row, "index": int(row["index"])}
-            for row in csv.DictReader(f)
-            if not status or row.get("status") == status
-        ]
+    try:
+        with open(place / ACTIONS_FILE, encoding="utf-8-sig",
+                  newline="") as handle:
+            records = [
+                {**row, "index": int(row["index"])}
+                for row in csv.DictReader(handle)
+                if not status or row.get("status") == status
+            ]
+    except FileNotFoundError as error:
+        raise HTTPException(404, "方策の結果が見つかりません") from error
     rows = {
         "total": len(records),
         "offset": offset,
@@ -573,8 +676,34 @@ def get_rows(
     return rows
 
 
+def safe_cell(text: str) -> str:
+    """
+    表計算のソフトが式として読む文字の欄の頭に ' を付ける関数
+
+    Parameters
+    ----------
+    text: str
+        欄の文字
+
+    Returns
+    ----------
+    cell: str
+        数ならそのまま, = + - @ で始まる文字なら頭に ' を付けたもの
+    """
+    # 数 (-1 や -0.5 の行動) は式でないのでそのまま
+    if not text.startswith(FORMULA_HEADS):
+        return text
+    try:
+        float(text)
+    except ValueError:
+        cell = f"'{text}"
+        return cell
+
+    return text
+
+
 @router.get("/policy-results/{result_id}/download")
-def download(request: Request, result_id: str) -> FileResponse:
+def download(request: Request, result_id: str) -> Response:
     """
     方策の結果の表の CSV を返す関数
 
@@ -587,13 +716,30 @@ def download(request: Request, result_id: str) -> FileResponse:
 
     Returns
     ----------
-    response: FileResponse
-        actions.csv (結果の id の名前で保存させる)
+    response: Response
+        actions.csv の中身 (式として読まれる文字の欄は頭に ' を付ける.
+        結果の id の名前で保存させる)
+
+    Raises
+    ----------
+    HTTPException
+        無い場合と, 消している途中で無くなった場合は 404
     """
+    # 欄ごとに式の頭を外して書き直す
     place = find_place(request, result_id)
-    response = FileResponse(
-        place / ACTIONS_FILE, media_type="text/csv",
-        filename=f"actions-{result_id}.csv"
+    try:
+        with open(place / ACTIONS_FILE, encoding="utf-8-sig",
+                  newline="") as handle:
+            lines = list(csv.reader(handle))
+    except FileNotFoundError as error:
+        raise HTTPException(404, "方策の結果が見つかりません") from error
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerows([[safe_cell(cell) for cell in line] for line in lines])
+    response = Response(
+        content="\ufeff" + buffer.getvalue(), media_type="text/csv",
+        headers={"Content-Disposition":
+                 f'attachment; filename="actions-{result_id}.csv"'}
     )
 
     return response
@@ -617,7 +763,10 @@ def delete_result(request: Request, result_id: str) -> Response:
         204
     """
     place = find_place(request, result_id)
-    shutil.rmtree(place)
+    try:
+        shutil.rmtree(place)
+    except FileNotFoundError as error:
+        raise HTTPException(404, "方策の結果が見つかりません") from error
     response = Response(status_code=204)
 
     return response
