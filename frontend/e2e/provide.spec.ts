@@ -667,7 +667,7 @@ test('骨組みの学習が実験の中に書き出した方策の一式を, 実
   const run = path.resolve(
     import.meta.dirname,
     '.work',
-    'project',
+    'policy-project',
     'outputs',
     'cartpole',
     '2026-01-04',
@@ -682,12 +682,12 @@ test('骨組みの学習が実験の中に書き出した方策の一式を, 実
   // 推論の一式の実験は並べない
   await expect(table).not.toContainText('sales/2026-01-02/09-00-00')
   await dialog
-    .getByRole('button', { name: '総菜の作る量 (cartpole/2026-01-04/09-00-00) を登録' })
+    .getByRole('button', { name: '棒を立てる制御 (cartpole/2026-01-04/09-00-00) を登録' })
     .click()
 
   // 方策の画面に移り, 一式に写した定義から組み立てた方策で行動を決める
   await expect(
-    page.getByRole('heading', { name: '総菜の作る量 (cartpole/2026-01-04/09-00-00)' }),
+    page.getByRole('heading', { name: '棒を立てる制御 (cartpole/2026-01-04/09-00-00)' }),
   ).toBeVisible({ timeout: 30_000 })
   await page
     .getByLabel(/^観測/)

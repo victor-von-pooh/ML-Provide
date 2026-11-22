@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # 画面の通しのテスト (Playwright) 用に, 作業用の置き場でアプリを起動する.
-# 画面は pnpm build で作っておく
+# 画面は pnpm build で作っておく. README の画面の例を撮るときは e2e/screens.sh から,
+# 作業用の置き場の場所 (E2E_WORK) を変え, そこをホーム (E2E_AS_HOME) にして起動する
 set -euo pipefail
 
 cd "$(dirname "$0")"
-WORK="$PWD/.work"
+WORK="${E2E_WORK:-$PWD/.work}"
 E2E_DIR="$PWD"
 PORT="${E2E_PORT:-8794}"
 
@@ -80,14 +81,37 @@ uv run python ../frontend/e2e/make_v3.py "$WORK/v3"
 # 骨組みのプロジェクトの実験の中にも, 学習のスクリプトのように推論の一式 (版 4) を作る
 uv run python ../frontend/e2e/make_items.py "$WORK/items" "$WORK/project"
 
-# 骨組みのプロジェクトの実験の中に, 方策の骨組みの学習のように方策の一式 (policy) を置く
-uv run python ../frontend/e2e/make_policy.py "$WORK/project"
+# 方策の問題の設定 (棒を立てる制御) とそこから書き出した骨組みのプロジェクトを別に作り,
+# その実験の中に, 方策の骨組みの学習のように方策の一式 (policy) を置く.
+# 実験の一覧に出る名前のためのもので, 問題の設定の中身は総菜の見本の名前だけを変えたもの
+uv run python - "$WORK" <<'PY'
+import sys
+from pathlib import Path
+
+import ml_quest
+
+work = Path(sys.argv[1])
+problem = ml_quest.load_problem(work / "problem")
+problem["name"] = "棒を立てる制御"
+store = work / "pathfinder" / "problems" / "p2"
+project = work / "policy-project"
+ml_quest.save_problem(problem, store)
+ml_quest.make_project(problem, project, origin=store)
+ml_quest.save_problem(ml_quest.record_project(problem, project), store)
+PY
+uv run python ../frontend/e2e/make_policy.py "$WORK/policy-project"
 
 # 拡散のモデルの雑音の予測器の定義と, 少しだけ学習した実験 (雑音だけの一式の元)
 uv run python ../frontend/e2e/make_noise.py "$WORK/noise"
 
 # 決まったトークンで起動. 自作の部品は起動の設定 (環境変数) で明示した
 # 見本のモジュール (e2e/e2e_units.py) だけを読む
-PYTHONPATH="$E2E_DIR${PYTHONPATH:+:$PYTHONPATH}" ML_PROVIDE_UNITS=e2e_units \
-  ML_PROVIDE_HOME="$WORK/home" ML_PATHFINDER_HOME="$WORK/pathfinder" ML_PROVIDE_TOKEN=e2e-token \
-  exec uv run ml-provide --port "$PORT"
+export PYTHONPATH="$E2E_DIR${PYTHONPATH:+:$PYTHONPATH}" ML_PROVIDE_UNITS=e2e_units \
+  ML_PATHFINDER_HOME="$WORK/pathfinder" ML_PROVIDE_TOKEN=e2e-token
+if [ -n "${E2E_AS_HOME:-}" ]; then
+  # 作業用の置き場をホームにし, 一式の置き場を既定の ~/.ml-provide にする
+  # (画面の例に手元の場所が写らないように. uv の置き場が変わらないよう venv を直に呼ぶ)
+  unset ML_PROVIDE_HOME
+  HOME="$WORK" exec .venv/bin/ml-provide --port "$PORT"
+fi
+ML_PROVIDE_HOME="$WORK/home" exec uv run ml-provide --port "$PORT"

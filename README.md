@@ -8,20 +8,20 @@
 
 <table>
   <tr>
-    <td><img src="docs/images/bundles.png" alt="推論の一式の一覧: 見本の 4 つの一式 (表の分類, 表の回帰, 文の分類, 時系列の予測)"></td>
     <td><img src="docs/images/bundle.png" alt="一式の画面: 問題の設定, 推論するデータ, 意思決定と結論の決め方の欄, この一式の過去の結果"></td>
-  </tr>
-  <tr>
     <td><img src="docs/images/predictions.png" alt="予測の表: 予測, 確信, クラスごとの確率, 行ごとの行動と判断を元の列に足した表"></td>
-    <td><img src="docs/images/decision-result.png" alt="意思決定と, 過去のデータでのたどり直し: この方針と確率の高い順の実際の得と, 差の 90 % の幅"></td>
   </tr>
   <tr>
+    <td><img src="docs/images/decision-result.png" alt="意思決定と, 過去のデータでのたどり直し: この方針と確率の高い順の実際の得と, 差の 90 % の幅"></td>
     <td><img src="docs/images/decision-quantity.png" alt="量を決める意思決定: 欠品の損 3, 売れ残りの損 1 で, 先の 7 日に置く量とその前提"></td>
+  </tr>
+  <tr>
     <td><img src="docs/images/explain.png" alt="列の効き: 来店数の予測が店, 気温, 休日, 販促の順に頼っていることを示す横棒"></td>
+    <td><img src="docs/images/policy.png" alt="方策の一式の画面: 観測と行動の空間, 守り, 観測から決めた行動と守りの結果"></td>
   </tr>
 </table>
 
-画面の例は, 「見本の一式を入れる」で入る見本 (作り方の分かる合成のデータで, その場で学習した小さなモデル). 一番上と予測の表は解約の予測の新しいデータ 50 行, たどり直しは解約の予測の過去のデータ 300 行, 量を決めるのは日々の売上の先の 7 日, 列の効きは来店数の予測の新しいデータ. 置き場のパスは既定の `~/.ml-provide` で示している.
+画面の例は, 「見本の一式を入れる」で入る見本 (作り方の分かる合成のデータで, その場で学習した小さなモデル). 一番上と予測の表は解約の予測の新しいデータ 50 行, たどり直しは解約の予測の過去のデータ 300 行, 量を決めるのは日々の売上の先の 7 日, 列の効きは来店数の予測の新しいデータ. 方策は, 方策の骨組みの学習が実験の中に書き出した CartPole の方策の一式を「実験の一覧から登録」で登録したもの. 置き場のパスは既定の `~/.ml-provide` で示している.
 
 ## できること
 
@@ -74,6 +74,8 @@ make dev-frontend   # 画面 (別の端末で)
 make check          # lint, 型検査, テスト
 cd frontend && pnpm e2e   # 画面の通しのテスト
 ```
+
+README と操作ガイドの画面の例 (`docs/images/`) は, 画面の通しのテストと同じ見本で撮る. `cd frontend && pnpm build` の後, `bash e2e/screens.sh` で起動し, 別の端末の `frontend` で `node e2e/screens.ts` を実行する.
 
 | ディレクトリ | 内容 |
 | --- | --- |
