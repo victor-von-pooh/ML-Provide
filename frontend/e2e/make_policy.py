@@ -44,7 +44,9 @@ def main(project: Path) -> None:
     old["metadata"] = {
         **old["metadata"], "epoch": 2, "model": {"spec": MODEL_SPEC},
         "approver": "現場の責任者", "guards_set": True,
-        "guards_text": "行動は 0 か 1",
+        "guards_text": {
+            "action_limits": "行動は 0 か 1", "stop": "棒が倒れたら止める",
+        },
     }
     (policy / "policy.json").write_text(
         json.dumps(old, ensure_ascii=False, indent=2), encoding="utf-8"
