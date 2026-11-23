@@ -35,11 +35,11 @@ export function licenseAlert(license: ReadyLicense | null | undefined): string |
   return license.source ? `${message} (情報: ${license.source})` : message
 }
 
-/** 重みの hash の欄の誤り (空は決めない) */
+/** 重みのハッシュ値の欄の誤り (空は決めない) */
 export function sha256Problem(text: string): string | null {
   const value = text.trim()
   if (!value) return null
   return /^[0-9a-fA-F]{64}$/.test(value)
     ? null
-    : '重みの hash は sha256 の 16 進の 64 文字で書いてください'
+    : '重みのハッシュ値は sha256 の 16 進の 64 文字で書いてください'
 }

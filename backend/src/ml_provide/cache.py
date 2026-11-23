@@ -285,7 +285,7 @@ def with_cached_weights(description: dict[str, Any]) -> dict[str, Any]:
         ready.weights_cached を今のファイルで直した説明 (既製のモデルの
         一式でなければそのまま)
     """
-    # 置き場のファイルの有無だけ (中身の hash は読むときに確かめる)
+    # 置き場のファイルの有無だけ (中身のハッシュ値は読むときに確かめる)
     ready = description.get("ready")
     if not isinstance(ready, dict) or not ready.get("weights_file"):
         return description

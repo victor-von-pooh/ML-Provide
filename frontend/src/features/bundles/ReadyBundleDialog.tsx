@@ -75,8 +75,8 @@ export function ReadyBundleDialog({
     <Dialog title="既製のモデルから作る" onClose={onClose}>
       <p className="mb-3 text-xs text-ink-3">
         学習せずにそのまま使うモデル (ライブラリの学習済みの重み) の一式を作ります.
-        種類の名前の表と前処理は重みの説明から一式に書き, 重みは写さずに名前 (版) と hash
-        で固定します. 重みは初めに作るときに出どころから取りに行き, PyTorch
+        種類の名前の表と前処理は重みの説明から一式に書き, 重みは写さずに名前 (版)
+        とハッシュ値で固定します. 重みは初めに作るときに出どころから取りに行き, PyTorch
         の置き場に置いて次から読みます.
       </p>
       <form
@@ -171,7 +171,7 @@ export function ReadyBundleDialog({
             />
           </div>
           <div>
-            <Label htmlFor="ready-sha256">重みの hash (任意. sha256)</Label>
+            <Label htmlFor="ready-sha256">重みのハッシュ値 (任意. sha256)</Label>
             <input
               id="ready-sha256"
               value={sha256}
@@ -191,7 +191,7 @@ export function ReadyBundleDialog({
           </div>
         </div>
         {create.isPending && (
-          <Spinner label="重みを出どころから読んで hash を求めています (初めはネットワークから取りに行きます)" />
+          <Spinner label="重みを出どころから読んでハッシュ値を求めています (初めはネットワークから取りに行きます)" />
         )}
         {create.error && <ErrorBox error={create.error} />}
         <div className="flex justify-end">

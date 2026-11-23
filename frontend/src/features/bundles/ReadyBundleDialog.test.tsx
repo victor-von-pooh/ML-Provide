@@ -88,10 +88,10 @@ describe('既製のモデルから作る対話', () => {
     })
   })
 
-  it('形の違う hash では作れない', async () => {
+  it('形の違うハッシュ値では作れない', async () => {
     renderDialog()
     await screen.findByText('1,000 種類')
-    fireEvent.change(screen.getByLabelText(/重みの hash/), { target: { value: 'abc' } })
+    fireEvent.change(screen.getByLabelText(/重みのハッシュ値/), { target: { value: 'abc' } })
     expect(screen.getByText(/16 進の 64 文字/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '作って登録' })).toBeDisabled()
   })

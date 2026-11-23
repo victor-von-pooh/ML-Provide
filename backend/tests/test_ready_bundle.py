@@ -299,7 +299,7 @@ def test_ready_bundle_flow(tmp_path: Path, client: TestClient) -> None:
     ----------
     None
     """
-    # 作って登録 (重みは写さず, ライセンスの警告と hash を持つ)
+    # 作って登録 (重みは写さず, ライセンスの警告とハッシュ値を持つ)
     response = create_ready(client)
     assert response.status_code == 201, response.text
     view = response.json()
@@ -358,7 +358,7 @@ def test_ready_bundle_flow(tmp_path: Path, client: TestClient) -> None:
 
 def test_ready_bundle_refuses(client: TestClient) -> None:
     """
-    hash が違う場合と形が違う場合, 名前の無い場合に作らず登録もしない
+    ハッシュ値が違う場合と形が違う場合, 名前の無い場合に作らず登録もしない
     ことを確かめる関数
 
     Parameters
@@ -370,7 +370,7 @@ def test_ready_bundle_refuses(client: TestClient) -> None:
     ----------
     None
     """
-    # 決めておいた hash と違う重み, hash の形の誤り, 無い重み
+    # 決めておいたハッシュ値と違う重み, ハッシュ値の形の誤り, 無い重み
     for extra, word in [
         ({"sha256": "0" * 64}, "hash"),
         ({"sha256": "abc"}, "64 文字"),
@@ -382,7 +382,7 @@ def test_ready_bundle_refuses(client: TestClient) -> None:
         assert word in response.json()["detail"]
     assert client.get("/api/bundles").json() == []
 
-    # 読んだ hash を決めておけば作れる (大文字と前後の空白はそろえる)
+    # 読んだハッシュ値を決めておけば作れる (大文字と前後の空白はそろえる)
     first = create_ready(client).json()
     sha256 = first["description"]["pretrained"][0]["sha256"]
     response = create_ready(client, sha256=f" {sha256.upper()} ")
@@ -568,15 +568,15 @@ def test_ready_fetch_network_error(
         checkpoints = Path(torch.hub.get_dir()) / "checkpoints"
         assert list(checkpoints.iterdir()) == []
 
-    # 名前の hash の頭と違う中身 (一時ファイルも残さない)
+    # 名前のハッシュ値の頭と違う中身 (一時ファイルも残さない)
     use_fetch(monkeypatch, FakeResponse([b"weights"]))
     response = create_ready(client)
     assert response.status_code == 502
-    assert "hash の頭" in response.json()["detail"]
+    assert "ハッシュ値の頭" in response.json()["detail"]
     assert list(checkpoints.iterdir()) == []
     assert client.get("/api/bundles").json() == []
 
-    # 名前の hash の頭と合う中身は置き場に置く
+    # 名前のハッシュ値の頭と合う中身は置き場に置く
     content = b"tiny weights"
     file = f"tiny-{hashlib.sha256(content).hexdigest()[:8]}.pth"
     calls = use_fetch(monkeypatch, FakeResponse([content[:4], content[4:]]),
@@ -707,7 +707,7 @@ def test_ready_problem_link(
     assert linked["conclusion"] == {"min_confidence": 0.8}
     assert "意思決定を使えない" in linked["text"]
 
-    # 見本は torchvision の ResNet18 なので, 出どころ, モデル, 重み, hash が
+    # 見本は torchvision の ResNet18 なので, 出どころ, モデル, 重み, ハッシュ値が
     # 一式と違う
     issues = " / ".join(linked["issues"])
     for word in ("出どころ torchvision", "モデル resnet18",
@@ -746,7 +746,7 @@ def test_ready_problem_not_pretrained(client: TestClient) -> None:
 
 def test_ready_issues_match(tmp_path: Path, client: TestClient) -> None:
     """
-    決めておいた重みが一式と同じなら, 重みの名前の DEFAULT と hash の
+    決めておいた重みが一式と同じなら, 重みの名前の DEFAULT とハッシュ値の
     大文字も食い違いにしないことを確かめる関数
 
     Parameters
@@ -760,7 +760,7 @@ def test_ready_issues_match(tmp_path: Path, client: TestClient) -> None:
     ----------
     None
     """
-    # 一式が読んだ重みの hash を大文字で決めておく
+    # 一式が読んだ重みのハッシュ値を大文字で決めておく
     ml_inference.make_ready_bundle(
         tmp_path / "bundle", "tiny", "V1", library="test"
     )

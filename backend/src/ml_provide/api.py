@@ -580,7 +580,7 @@ def create_ready_bundle(
     request: Request
         リクエスト
     body: ReadyCreate
-        名前, 出どころ, モデル, 重み, 決めておいた hash
+        名前, 出どころ, モデル, 重み, 決めておいたハッシュ値
 
     Returns
     ----------
@@ -593,7 +593,7 @@ def create_ready_bundle(
         一式を作れない場合は 400 (理由付き). 重みを出どころから取れない
         場合と, 取得が時間の上限を超えた場合は 502
     """
-    # 重みを出どころから読んで hash を固定する (初回は取りに行く)
+    # 重みを出どころから読んでハッシュ値を固定する (初回は取りに行く)
     store = get_store(request)
     bundle_id, place = store.new_bundle_dir()
     try:

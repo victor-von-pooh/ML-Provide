@@ -40,7 +40,7 @@ describe('既製のモデルの一式の文', () => {
     expect(licenseAlert({ ...base, alert: null, status: 'commercial' })).toBeNull()
   })
 
-  it('重みの hash は空か 16 進の 64 文字', () => {
+  it('重みのハッシュ値は空か 16 進の 64 文字', () => {
     expect(sha256Problem('')).toBeNull()
     expect(sha256Problem(` ${'A'.repeat(64)} `)).toBeNull()
     expect(sha256Problem('abc')).toMatch(/64 文字/)

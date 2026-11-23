@@ -24,7 +24,7 @@ from ml_modelcontrol import pretrained_info
 # 名前の長さの上限 (モデルと重みの名前)
 MAX_READY_NAME = 120
 
-# 重みの hash の形 (sha256 の 16 進の 64 文字)
+# 重みのハッシュ値の形 (sha256 の 16 進の 64 文字)
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 # 既製のモデルの一式を作る処理を 1 つずつにする鍵 (初回は重みを取りに
@@ -44,7 +44,7 @@ FETCHED_LIBRARIES = ("torchvision",)
 # 重みを読む 1 回の大きさの上限 (バイト. 届いた分だけ読む)
 CHUNK = 1 << 16
 
-# torch.hub と同じ, ファイルの名前に入った hash の頭の形
+# torch.hub と同じ, ファイルの名前に入ったハッシュ値の頭の形
 HASH_PREFIX = re.compile(r"-([a-f0-9]*)\.")
 
 
@@ -218,7 +218,7 @@ def make_ready(
     name: str
         一式の名前
     sha256: Optional[str] = None
-        決めておいた重みの hash (渡すと, 読んだ重みと違えば作らない)
+        決めておいた重みのハッシュ値 (渡すと, 読んだ重みと違えば作らない)
 
     Returns
     ----------
@@ -228,17 +228,17 @@ def make_ready(
     Raises
     ----------
     ValueError
-        名前か hash の形が違う場合と, ML-Inference が作れない場合
+        名前かハッシュ値の形が違う場合と, ML-Inference が作れない場合
     FetchError
         重みを出どころから取れない場合と, 取得が時間の上限を超えた場合
     """
-    # hash は小文字の 16 進の 64 文字にそろえる
+    # ハッシュ値は小文字の 16 進の 64 文字にそろえる
     library, model, weights = ready_names(library, model, weights)
     pinned = (sha256 or "").strip().lower() or None
     if pinned is not None and not SHA256.match(pinned):
-        raise ValueError("重みの hash は sha256 の 16 進の 64 文字で書いてください")
+        raise ValueError("重みのハッシュ値は sha256 の 16 進の 64 文字で書いてください")
 
-    # 下見と同じライセンスの情報を渡し, 重みを読んで hash を固定 (読めない
+    # 下見と同じライセンスの情報を渡し, 重みを読んでハッシュ値を固定 (読めない
     # ライセンスも警告の付いた情報にして, 一式の画面で警告する)
     found = ml_inference.READY_LIBRARIES[library](model, weights)
     license = ready_license(found) or {
@@ -261,7 +261,7 @@ def fetch_weights(found: dict[str, Any]) -> None:
     付けて取りに行く関数
 
     置き場にあれば何もしない (ML-Inference はここから読む). 取ったファイル
-    は, 名前に hash の頭があれば torch.hub と同じく比べ, 確かめてから置く
+    は, 名前にハッシュ値の頭があれば torch.hub と同じく比べ, 確かめてから置く
 
     Parameters
     ----------
@@ -275,7 +275,7 @@ def fetch_weights(found: dict[str, Any]) -> None:
     Raises
     ----------
     FetchError
-        取れない場合, 時間の上限を超えた場合, hash の頭が違う場合, https
+        取れない場合, 時間の上限を超えた場合, ハッシュ値の頭が違う場合, https
         でない URL への転送
     """
     # URL もファイルの名前も無い出どころは, ライブラリの読み方に任せる
@@ -298,7 +298,7 @@ def fetch_weights(found: dict[str, Any]) -> None:
         match = HASH_PREFIX.search(name)
         if match and not digest.startswith(match.group(1)):
             raise FetchError(
-                f"取った重み {name} の hash が名前の hash の頭 "
+                f"取った重み {name} のハッシュ値が名前のハッシュ値の頭 "
                 f"{match.group(1)} と違います (取得の途中で壊れたか, "
                 "出どころが変わった)"
             )

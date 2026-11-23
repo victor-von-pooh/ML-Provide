@@ -153,7 +153,7 @@ export interface ReadyCreateBody {
   library: string
   model: string
   weights: string
-  /** 決めておいた重みの hash (読んだ重みと違えば作らない) */
+  /** 決めておいた重みのハッシュ値 (読んだ重みと違えば作らない) */
   sha256?: string | null
 }
 
