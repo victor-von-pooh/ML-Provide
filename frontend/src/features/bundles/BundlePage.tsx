@@ -80,7 +80,7 @@ function ReadyRows({ ready }: { ready: NonNullable<Description['ready']> }) {
         <span className="font-mono text-xs break-all">{ready.weights_file}</span>
         <span className="block text-xs text-ink-2">
           {ready.weights_cached
-            ? '出どころから読んで置き場にあります (次からはこれを読み, hash で確かめます)'
+            ? '出どころから読んで置き場にあります (次からはこれを読み, ハッシュ値で確かめます)'
             : '置き場にありません. 推論のときに出どころから取りに行きます (ネットワークを使えない場所では, このファイルを置きます)'}
         </span>
       </Row>
