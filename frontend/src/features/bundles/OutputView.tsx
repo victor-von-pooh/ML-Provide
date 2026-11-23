@@ -8,6 +8,7 @@ import {
   outputDetails,
   placeText,
   ROLE_LABELS,
+  tableColumnText,
   TARGET_KIND_LABELS,
   optionsText,
 } from '../../lib/outputs'
@@ -65,6 +66,7 @@ export function OutputView({
   const form = description.output?.form
   const column = isColumnOutput(description)
   const details = outputDetails(description.output, description.items?.values)
+  const columns = description.output?.columns ?? []
   const target = description.target_info
   const procedure = description.procedure
   const pretrained = description.pretrained ?? []
@@ -78,11 +80,27 @@ export function OutputView({
         {details.length > 0 && <span className="text-ink-2"> ({details.join('. ')})</span>}
         {!column && (
           <p className="text-xs text-ink-2">
-            列の出力でないので, 結論は件数だけです (結論の決め方と意思決定は使えません). 1
-            件ごとの出力は結果の画面で見られます
+            列の出力でないので, 結論は件数だけです (結論の決め方と意思決定は使えません).{' '}
+            {form === 'table'
+              ? '作った表は結果の画面で見て, CSV で持ち出せます'
+              : '1 件ごとの出力は結果の画面で見られます'}
           </p>
         )}
       </Row>
+      {form === 'table' && columns.length > 0 && (
+        <Row label="表の列">
+          <ul aria-label="表の列の名前と型" className="flex flex-col gap-0.5">
+            {columns.map((entry) => (
+              <li key={entry.name}>
+                <span className="font-mono text-xs">{entry.name}</span>: {tableColumnText(entry)}
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-ink-3">
+            列の符号化の順. 推論の結果は, 件ごとの番号, 種, 状態, 理由の後にこの順の列が並ぶ表です
+          </p>
+        </Row>
+      )}
       <Row label="正解">
         {target ? (
           <>

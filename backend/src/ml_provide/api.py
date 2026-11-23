@@ -968,23 +968,60 @@ def predict(
         origin_note=ml_inference.origin_sentence(
             ml_inference.target_of(bundle)
         ),
-        pretrained_warnings=warned
+        pretrained_warnings=warned,
+        table_columns=table_columns(bundle)
     )
     # 書いた表を読み直して結論を出し直す (出し直しと同じ型の値でまとめ,
     # 日時のような列のまとめの名前が, 後の出し直しで変わらないように)
     # (書き出しの途中で失敗した結果は, 壊れたまま残さずに削除)
     result_id, place = get_store(request).new_result_dir()
     meta = {k: v for k, v in result.items() if k != "frame"}
+    # (表の出力の結果は infer の件数だけの結論のまま. 読み直すと数に見える
+    # 種類の値が数になるため)
     try:
         ml_inference.write_result(result, place)
-        with RESULT_LOCK:
-            conclude_into(place, meta, meta.get("rules") or {})
+        if meta.get("output_form") != "table":
+            with RESULT_LOCK:
+                conclude_into(place, meta, meta.get("rules") or {})
     except Exception as error:
         shutil.rmtree(place, ignore_errors=True)
         raise user_error(error) from error
     view = result_view(result_id, place)
 
     return view
+
+
+def table_columns(bundle: Any) -> Optional[list[dict[str, Any]]]:
+    """
+    表の出力の一式の列の名前と型を返す関数
+
+    Parameters
+    ----------
+    bundle: Any
+        読んだ一式 (ML-Inference の Bundle)
+
+    Returns
+    ----------
+    columns: Optional[list[dict[str, Any]]]
+        列の符号化の順の name, type (number か category), integer (数の
+        列の整数か), categories (種類の列の値の種類の数). 表の出力でない
+        一式は None
+    """
+    # 結果に残し, 一式を消しても表の列の順と型が分かるように
+    if bundle.form != "table":
+        return None
+    columns: list[dict[str, Any]] = []
+    for entry in bundle.output_info.get("columns") or []:
+        column: dict[str, Any] = {
+            "name": str(entry["name"]), "type": str(entry["type"])
+        }
+        if column["type"] == "category":
+            column["categories"] = len(entry.get("categories") or [])
+        else:
+            column["integer"] = bool(entry.get("integer"))
+        columns.append(column)
+
+    return columns
 
 
 def conclude_into(
@@ -1325,10 +1362,16 @@ def read_frame(place: Path, meta: dict[str, Any]) -> pd.DataFrame:
                 frame[name] = column.where(column.notna(), "").astype(str)
         return frame
 
-    # クラスの名前と判断は文字のまま (数字のクラスも)
-    texts = {"status": str, "reason": str, "decision": str}
+    # クラスの名前と判断は文字のまま (数字のクラスも). 表の出力の種類の
+    # 列は文字, 整数の列は欠損を持てる整数 (予測しなかった行は欠損)
+    texts: dict[str, Any] = {"status": str, "reason": str, "decision": str}
     if meta.get("task") == "classification":
         texts["prediction"] = str
+    for column in meta.get("table_columns") or []:
+        if column.get("type") == "category":
+            texts[str(column["name"])] = str
+        elif column.get("integer"):
+            texts[str(column["name"])] = "Int64"
     frame = pd.read_csv(
         place / "predictions.csv", encoding="utf-8-sig", dtype=texts
     )
@@ -1395,6 +1438,7 @@ def result_view(
         "target_info": meta.get("target_info"),
         "pretrained_warnings": meta.get("pretrained_warnings") or [],
         "artifacts": meta.get("artifacts"),
+        "table_columns": meta.get("table_columns"),
     }
 
     return view

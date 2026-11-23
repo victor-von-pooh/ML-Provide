@@ -211,9 +211,29 @@ export interface OutputInfo {
   quantiles?: number[]
   /** 領域の番号ごとの名前 */
   classes?: string[]
-  /** 雑音から始まる手順の 1 件の形 */
+  /** 雑音から始まる手順の 1 件の形 (表は符号化した行の幅) */
   shape?: number[]
+  /** 表の出力の列の符号化 (列の順. ML-Inference の output.columns) */
+  columns?: TableColumnSpec[]
   [key: string]: unknown
+}
+
+/** 表の出力の 1 列の符号化 (数の列は mean, std, integer. 種類の列は categories) */
+export interface TableColumnSpec {
+  name: string
+  type: 'number' | 'category' | string
+  mean?: number
+  std?: number
+  integer?: boolean
+  categories?: unknown[]
+}
+
+/** 結果に残した表の出力の 1 列 (名前と型. 種類の列は種類の数) */
+export interface TableColumn {
+  name: string
+  type: 'number' | 'category' | string
+  integer?: boolean
+  categories?: number
 }
 
 /** 正解の出どころ (ML-EDA の版 2 の target.origin) */
@@ -366,6 +386,8 @@ export interface Result {
     form: string
     count: number
   } | null
+  /** 表の出力の結果の列 (列の符号化の順. 他の結果は無いか null) */
+  table_columns?: TableColumn[] | null
 }
 
 /** 結果どうしの比べ (GET /api/results/compare) */

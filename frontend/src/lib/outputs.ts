@@ -1,4 +1,12 @@
-import type { Description, ItemStep, PretrainedRecord, TargetInfo } from '../api/types'
+import type {
+  Description,
+  ItemStep,
+  PretrainedRecord,
+  TableColumn,
+  TableColumnSpec,
+  TargetInfo,
+} from '../api/types'
+import { formatValue } from './format'
 
 /** 受け持ちの日本語の名前 (ML-Quest と同じ言葉) */
 export const ROLE_LABELS: Record<string, string> = {
@@ -19,6 +27,7 @@ export const FORM_LABELS: Record<string, string> = {
   vector: 'ベクトル',
   text: '文',
   image: '画像',
+  table: '表',
 }
 
 /** 列の出力の形 (結論の決め方と意思決定を使える) */
@@ -91,10 +100,52 @@ export function outputDetails(output: Description['output'], values?: number[] |
     const pairs = output.classes.map((name, i) => `${values?.[i] ?? i}: ${name}`)
     details.push(`${values ? '値' : '番号'}ごとの名前 ${pairs.join(', ')}`)
   }
-  if (output.shape && output.shape.length > 0) {
+  if (output.form === 'table' && output.columns) {
+    // 表は 1 件の形の代わりに列の数と符号化した行の幅 (列ごとは tableColumnText)
+    details.push(
+      `列 ${output.columns.length}${output.shape?.length ? `, 符号化した行の幅 ${output.shape.join(', ')}` : ''}`,
+    )
+  } else if (output.shape && output.shape.length > 0) {
     details.push(`1 件の形 (${output.shape.join(', ')})`)
   }
   return details
+}
+
+/** 表の出力の結果で, 列の符号化の列より前に並べる列 (行の位置, 件の番号, 種, 状態, 理由) */
+const TABLE_LEAD = ['index', 'sample', 'seed', 'status', 'reason']
+
+/**
+ * 表の出力の結果の予測の表の列の並び. 行の位置, 件の番号, 種, 状態, 理由, 列の符号化の順の列,
+ * 残りの列の順. 判断の列 (列の出力でないので空) は出さない. 表の index の列は, 行の位置と
+ * 重ならないよう API が「index (入力)」にする
+ */
+export function tableRowColumns(columns: string[], table: TableColumn[]): string[] {
+  const present = new Set(columns)
+  const names = table.map((entry) => (entry.name === 'index' ? 'index (入力)' : entry.name))
+  const ordered = [...TABLE_LEAD, ...names].filter((name) => present.has(name))
+  const placed = new Set([...ordered, 'decision'])
+  return [...ordered, ...columns.filter((name) => !placed.has(name))]
+}
+
+/**
+ * 表の出力の 1 列の型の文 (数 (平均 10, 標準偏差 2), 整数 (…), 種類 (3 種類: blue, green, red)).
+ * 一式の説明の列の符号化 (値の種類も持つ) と, 結果に残した列 (種類の数だけ) のどちらも受け取る
+ */
+export function tableColumnText(column: TableColumnSpec | TableColumn): string {
+  if (column.type === 'category') {
+    const values = Array.isArray(column.categories) ? column.categories : null
+    const count = values ? values.length : Number(column.categories ?? 0)
+    if (!values) return `種類 (${count} 種類)`
+    // 種類が多い列は先頭の 10 個と残りの数
+    const head = values.slice(0, 10).map(String).join(', ')
+    const rest = values.length > 10 ? ` ほか ${values.length - 10}` : ''
+    return `種類 (${count} 種類: ${head}${rest})`
+  }
+  if (column.type !== 'number') return column.type
+  const kind = column.integer ? '整数' : '数'
+  const spec = column as TableColumnSpec
+  if (typeof spec.mean !== 'number' || typeof spec.std !== 'number') return kind
+  return `${kind} (平均 ${formatValue(spec.mean)}, 標準偏差 ${formatValue(spec.std)})`
 }
 
 /**

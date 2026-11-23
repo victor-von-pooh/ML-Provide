@@ -106,6 +106,17 @@ describe('学習の結果から作る対話', () => {
     ).toBeInTheDocument()
   })
 
+  it('出力の形に表は出さない (学習から作る一式だけ)', async () => {
+    renderDialog()
+    const form = screen.getByLabelText(/^出力の形 \(正解の無い/)
+    expect(form).toContainHTML('vector')
+    expect(form).not.toContainHTML('value="table"')
+    fireEvent.click(screen.getByLabelText('雑音だけから作る (データセットを使わない)'))
+    const noData = screen.getByLabelText('出力の形 (要る)')
+    expect(noData).toContainHTML('vector')
+    expect(noData).not.toContainHTML('value="table"')
+  })
+
   it('列のデータセットの誤りには「受け持ちと出力の形」の欄の名前が付く', async () => {
     renderDialog()
     fireEvent.change(screen.getByLabelText('データセット (dataset.yaml を持つディレクトリ)'), {
