@@ -186,9 +186,7 @@ describe('表の出力', () => {
       { name: 'n', type: 'number', mean: 3, std: 1.5, integer: true },
       { name: 'color', type: 'category', categories: ['blue', 'green', 'red'] },
     ]
-    expect(outputDetails({ form: 'table', shape: [5], columns })).toEqual([
-      '列 3, 符号化した行の幅 5',
-    ])
+    expect(outputDetails({ form: 'table', shape: [5], columns })).toEqual(['列 3, 1 件の幅 5'])
     expect(columns.map(tableColumnText)).toEqual([
       '数 (平均 10, 標準偏差 2)',
       '整数 (平均 3, 標準偏差 1.5)',

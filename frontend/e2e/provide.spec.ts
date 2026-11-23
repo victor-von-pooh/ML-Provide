@@ -794,7 +794,7 @@ test('表の生成の骨組みが実験の中に作った表の出力の一式�
   const id = new URL(page.url()).pathname.split('/').pop() ?? ''
   try {
     await expect(page.getByText(/雑音だけ \(データセットなし/)).toBeVisible()
-    await expect(page.getByText('(列 3, 符号化した行の幅 5)')).toBeVisible()
+    await expect(page.getByText('(列 3, 1 件の幅 5)')).toBeVisible()
     const columns = page.getByRole('list', { name: '表の列の名前と型' })
     await expect(columns).toContainText('price: 数 (平均 300, 標準偏差 50)')
     await expect(columns).toContainText('count: 整数 (平均 12, 標準偏差 4)')
@@ -810,10 +810,10 @@ test('表の生成の骨組みが実験の中に作った表の出力の一式�
     const rows = page.getByRole('table', { name: '作った表 (件ごとの列の値)' })
     await expect(rows.locator('thead th')).toHaveText([
       '#',
-      'sample',
-      'seed',
-      'status',
-      'reason',
+      '件の番号',
+      '種',
+      '状態',
+      '理由',
       'price',
       'count',
       'shop',

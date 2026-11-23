@@ -1372,8 +1372,14 @@ def read_frame(place: Path, meta: dict[str, Any]) -> pd.DataFrame:
             texts[str(column["name"])] = str
         elif column.get("integer"):
             texts[str(column["name"])] = "Int64"
+    # 表の出力は空の欄だけを欠損にする (種類の値の NA, null, None などを
+    # 文字のまま読むため)
+    blanks: dict[str, Any] = {}
+    if meta.get("output_form") == "table":
+        blanks = {"keep_default_na": False, "na_values": [""]}
     frame = pd.read_csv(
-        place / "predictions.csv", encoding="utf-8-sig", dtype=texts
+        place / "predictions.csv", encoding="utf-8-sig", dtype=texts,
+        **blanks
     )
     for name in ("reason", "decision"):
         if name in frame.columns:

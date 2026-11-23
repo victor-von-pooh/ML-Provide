@@ -8,7 +8,13 @@ import { api } from '../../api/client'
 import type { Counts, Result } from '../../api/types'
 import { Button, Card, ErrorBox, PageHeader, Spinner, StatTile } from '../../components/ui'
 import { formatPercent, formatValue } from '../../lib/format'
-import { FORM_LABELS, maskNames, tableColumnText, tableRowColumns } from '../../lib/outputs'
+import {
+  FORM_LABELS,
+  maskNames,
+  TABLE_HEADINGS,
+  tableColumnText,
+  tableRowColumns,
+} from '../../lib/outputs'
 import { READY_UNSUPPORTED } from '../../lib/ready'
 import { groupColumns } from '../../lib/remeasure'
 import { rowReasonable } from '../../lib/rowReason'
@@ -252,7 +258,7 @@ function RowsTable({
         <>
           {table && (
             <p className="border-b border-line px-4 py-2 text-xs text-ink-3">
-              1 件が 1 行で, 列は列の符号化の順 (
+              1 件が 1 行で, 列は学習のときの列の並び (
               {(result.table_columns ?? [])
                 .map((entry) => `${entry.name}: ${tableColumnText(entry)}`)
                 .join(', ')}
@@ -288,7 +294,7 @@ function RowsTable({
                       scope="col"
                       className="px-3 py-2 text-left font-normal whitespace-nowrap"
                     >
-                      {name === 'index' ? '#' : name}
+                      {table ? (TABLE_HEADINGS[name] ?? name) : name === 'index' ? '#' : name}
                     </th>
                   ))}
                 </tr>

@@ -85,7 +85,7 @@ describe('列の出力でない一式の画面', () => {
         modelLoaded={false}
       />,
     )
-    expect(screen.getByText('(列 3, 符号化した行の幅 5)')).toBeInTheDocument()
+    expect(screen.getByText('(列 3, 1 件の幅 5)')).toBeInTheDocument()
     expect(screen.getByText(/CSV で持ち出せます/)).toBeInTheDocument()
     const list = screen.getByRole('list', { name: '表の列の名前と型' })
     expect(list).toHaveTextContent('price: 数 (平均 100, 標準偏差 20)')

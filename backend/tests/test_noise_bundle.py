@@ -642,8 +642,13 @@ def test_table_output(tmp_path: Path, client: TestClient) -> None:
         "skipped", "予測の値を表に戻せません", "", "", ""
     ]
     table.to_csv(place / "predictions.csv", index=False, encoding="utf-8-sig")
+    table.loc[0, "shop"] = "NA"
+    table.loc[2, "shop"] = "null"
+    table.to_csv(place / "predictions.csv", index=False, encoding="utf-8-sig")
     rows = client.get(f"/api/results/{result['id']}/rows").json()["rows"]
     assert rows[1]["count"] is None and rows[1]["shop"] is None
+    # 欠損に見える種類の値 (NA, null) は文字のまま
+    assert rows[0]["shop"] == "NA" and rows[2]["shop"] == "null"
     assert isinstance(rows[0]["count"], int)
     skipped = client.get(f"/api/results/{result['id']}/rows",
                          params={"status": "skipped"}).json()

@@ -101,14 +101,23 @@ export function outputDetails(output: Description['output'], values?: number[] |
     details.push(`${values ? '値' : '番号'}ごとの名前 ${pairs.join(', ')}`)
   }
   if (output.form === 'table' && output.columns) {
-    // 表は 1 件の形の代わりに列の数と符号化した行の幅 (列ごとは tableColumnText)
+    // 表は 1 件の形の代わりに列の数と 1 件の幅 (符号化した行の幅. 列ごとは tableColumnText)
     details.push(
-      `列 ${output.columns.length}${output.shape?.length ? `, 符号化した行の幅 ${output.shape.join(', ')}` : ''}`,
+      `列 ${output.columns.length}${output.shape?.length ? `, 1 件の幅 ${output.shape.join(', ')}` : ''}`,
     )
   } else if (output.shape && output.shape.length > 0) {
     details.push(`1 件の形 (${output.shape.join(', ')})`)
   }
   return details
+}
+
+/** 作った表の見出しの日本語の名前 (CSV の見出しは英字のまま) */
+export const TABLE_HEADINGS: Record<string, string> = {
+  index: '#',
+  sample: '件の番号',
+  seed: '種',
+  status: '状態',
+  reason: '理由',
 }
 
 /** 表の出力の結果で, 列の符号化の列より前に並べる列 (行の位置, 件の番号, 種, 状態, 理由) */
