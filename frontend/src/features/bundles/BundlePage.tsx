@@ -21,8 +21,8 @@ import {
 } from '../../lib/outputs'
 import { classesText, licenseAlert, preprocessText, READY_UNSUPPORTED } from '../../lib/ready'
 import { fromForm, toForm, withCleared, type RulesForm } from '../../lib/rules'
+import { CompareResultsCard, MAX_COMPARE } from '../results/CompareResultsCard'
 import { DecisionEditor } from '../results/DecisionEditor'
-import { ResultList } from '../results/ResultList'
 import { RulesEditor } from '../results/RulesEditor'
 import { OutputNotices, OutputView } from './OutputView'
 import { ProblemCard } from './ProblemCard'
@@ -658,11 +658,12 @@ export function BundlePage() {
               </Card>
             )}
           </div>
-          <Card title="この一式の結果">
-            {results.isPending && <Spinner />}
-            {results.error && <ErrorBox error={results.error} />}
-            {results.data && <ResultList results={results.data} showBundle={false} />}
-          </Card>
+          <CompareResultsCard
+            title="この一式の結果"
+            results={results}
+            showBundle={false}
+            hint={`結果を 2 つから ${MAX_COMPARE} つ選ぶと, 結論, 判断の内訳, 意思決定を並べて比べます.`}
+          />
         </div>
       )}
     </>

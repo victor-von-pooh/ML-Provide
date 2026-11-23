@@ -132,7 +132,7 @@ test('解約の見本で, 過去のデータを既定の意思決定で推論し
   await expect(page.getByRole('region', { name: 'たどり直し' })).toHaveCount(0)
 })
 
-test('同じ入力の結果を選んで比べ, 違う意思決定を目立たせ, 比べられない組は理由を出す', async ({
+test('同じ入力の結果を結果と一式の画面で選んで比べ, 違う意思決定を目立たせ, 比べられない組は理由を出す', async ({
   page,
 }) => {
   // 前のテストで振り分けに決め直した結果と, 既定の意思決定 (対象を選ぶ) の結果
@@ -164,6 +164,17 @@ test('同じ入力の結果を選んで比べ, 違う意思決定を目立たせ
   await page.getByLabel('違う行だけを出す').check()
   await expect(page.getByRole('rowheader', { name: '一式', exact: true })).toHaveCount(0)
   await expect(kind).toBeVisible()
+
+  // 一式の画面の結果の一覧からも, 同じく選んで比べる
+  await page.goto('/')
+  await page.getByRole('link', { name: '見本: 解約の予測 (表の分類)' }).click()
+  const own = page.getByRole('listitem').filter({ hasText: 'past.csv' })
+  await expect(own).toHaveCount(2)
+  await expect(compare).toBeDisabled()
+  for (const item of await own.all()) await item.getByRole('checkbox').check()
+  await compare.click()
+  await expect(page.getByRole('heading', { name: '結果どうしの比べ' })).toBeVisible()
+  await expect(kind).toContainText('違う')
 
   // 一式も入力も違う組は理由を出す
   await toResults()
