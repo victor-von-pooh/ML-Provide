@@ -63,6 +63,36 @@ describe('列の出力でない一式の画面', () => {
     expect(screen.getByText(/推論のときに読み/)).toBeInTheDocument()
   })
 
+  it('表の出力の一式は列の名前と型, 種類の数を出し, 作った表を CSV で持ち出せると書く', () => {
+    render(
+      <OutputView
+        description={{
+          ...base,
+          kind: 'noise',
+          format_version: 7,
+          role: 'generate',
+          output: {
+            form: 'table',
+            shape: [5],
+            columns: [
+              { name: 'price', type: 'number', mean: 100, std: 20, integer: false },
+              { name: 'count', type: 'number', mean: 3, std: 1.5, integer: true },
+              { name: 'color', type: 'category', categories: ['blue', 'green', 'red'] },
+            ],
+          },
+          column_output: false,
+        }}
+        modelLoaded={false}
+      />,
+    )
+    expect(screen.getByText('(列 3, 1 件の幅 5)')).toBeInTheDocument()
+    expect(screen.getByText(/CSV で持ち出せます/)).toBeInTheDocument()
+    const list = screen.getByRole('list', { name: '表の列の名前と型' })
+    expect(list).toHaveTextContent('price: 数 (平均 100, 標準偏差 20)')
+    expect(list).toHaveTextContent('count: 整数 (平均 3, 標準偏差 1.5)')
+    expect(list).toHaveTextContent('color: 種類 (3 種類: blue, green, red)')
+  })
+
   it('版 2 の一式は予測するとクラスで, 件数だけとは書かない', () => {
     render(
       <OutputView

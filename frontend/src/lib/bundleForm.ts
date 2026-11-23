@@ -3,6 +3,12 @@ import type { InputSource, ProcedureEntry, Procedure } from '../api/types'
 /** 配列の出力の形 (雑音から始まる手順に使える. 1 件の形 shape を持てる) */
 export const ARRAY_FORMS = ['mask', 'point_cloud', 'vector', 'image']
 
+/**
+ * 一式を作る対話で選ばせない出力の形. 表 (table) は列の符号化が要り, 学習のスクリプト
+ * (ML-Quest の表の生成の骨組み) が実験の中に作る一式を登録して使う
+ */
+export const TRAINED_ONLY_FORMS = ['table']
+
 /** モデルの入力の出どころの名前 (ML-Inference の inputs の source) */
 export const SOURCE_LABELS: Record<string, string> = {
   features: '表の列',

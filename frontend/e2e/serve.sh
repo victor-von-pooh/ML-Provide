@@ -104,6 +104,10 @@ uv run python ../frontend/e2e/make_policy.py "$WORK/policy-project"
 # 拡散のモデルの雑音の予測器の定義と, 少しだけ学習した実験 (雑音だけの一式の元)
 uv run python ../frontend/e2e/make_noise.py "$WORK/noise"
 
+# 骨組みのプロジェクトの実験の中に, 表の生成の骨組みの学習のように, 表を作る拡散のモデルの
+# 重み, 列の符号化と, 表の出力の雑音だけの一式 (版 7. ML-Inference の make_bundle) を作る
+uv run python ../frontend/e2e/make_table.py "$WORK/project"
+
 # 既製のモデルの一式で推論する画像 (赤, 緑, 青と, 読めないファイル)
 uv run python - "$WORK/ready-images" <<'PY'
 import sys

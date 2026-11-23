@@ -9,6 +9,8 @@ import {
   placeText,
   sourceLabel,
   stepsText,
+  tableColumnText,
+  tableRowColumns,
 } from './outputs'
 
 describe('受け持ちと出力の形', () => {
@@ -174,5 +176,49 @@ describe('optionsText', () => {
       '2026-11-22T10',
     ])
       expect(optionsText({ v: text })).toBe(`v ${text}`)
+  })
+})
+
+describe('表の出力', () => {
+  it('一式の説明は列の数と符号化した行の幅, 列ごとの型の文', () => {
+    const columns = [
+      { name: 'x', type: 'number', mean: 10, std: 2, integer: false },
+      { name: 'n', type: 'number', mean: 3, std: 1.5, integer: true },
+      { name: 'color', type: 'category', categories: ['blue', 'green', 'red'] },
+    ]
+    expect(outputDetails({ form: 'table', shape: [5], columns })).toEqual(['列 3, 1 件の幅 5'])
+    expect(columns.map(tableColumnText)).toEqual([
+      '数 (平均 10, 標準偏差 2)',
+      '整数 (平均 3, 標準偏差 1.5)',
+      '種類 (3 種類: blue, green, red)',
+    ])
+    // 種類の多い列は先頭の 10 個と残りの数. 結果に残した列は種類の数だけ
+    const many = Array.from({ length: 12 }, (_, i) => `c${i}`)
+    expect(tableColumnText({ name: 'k', type: 'category', categories: many })).toBe(
+      '種類 (12 種類: c0, c1, c2, c3, c4, c5, c6, c7, c8, c9 ほか 2)',
+    )
+    expect(tableColumnText({ name: 'k', type: 'category', categories: 4 })).toBe('種類 (4 種類)')
+    expect(tableColumnText({ name: 'n', type: 'number', integer: true })).toBe('整数')
+  })
+
+  it('結果の表は件の番号と種の後に列の符号化の順で, 判断の列を出さない', () => {
+    const table = [
+      { name: 'color', type: 'category', categories: 3 },
+      { name: 'index', type: 'number', integer: true },
+      { name: 'x', type: 'number', integer: false },
+    ]
+    expect(
+      tableRowColumns(
+        ['index', 'sample', 'seed', 'status', 'reason', 'x', 'index (入力)', 'color', 'decision'],
+        table,
+      ),
+    ).toEqual(['index', 'sample', 'seed', 'status', 'reason', 'color', 'index (入力)', 'x'])
+    // 知らない列は後ろに残す
+    expect(tableRowColumns(['index', 'sample', 'x', 'extra'], table)).toEqual([
+      'index',
+      'sample',
+      'x',
+      'extra',
+    ])
   })
 })

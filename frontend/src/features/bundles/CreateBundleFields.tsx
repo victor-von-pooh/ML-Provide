@@ -8,6 +8,7 @@ import {
   NOISE_SOURCES,
   PREPEND_SOURCES,
   SOURCE_LABELS,
+  TRAINED_ONLY_FORMS,
   type InputRow,
   type OutputForm,
   type ProcedureForm,
@@ -149,9 +150,9 @@ export function OutputFields({
   onFields: (fields: OutputForm) => void
   noData: boolean
 }) {
-  // 雑音だけの一式は配列の出力の形だけ (省くとタスクから決められない)
+  // 雑音だけの一式は配列の出力の形だけ (省くとタスクから決められない). 表は学習から作る一式だけ
   const forms = Object.entries(FORM_LABELS).filter(
-    ([value]) => !noData || ARRAY_FORMS.includes(value),
+    ([value]) => !TRAINED_ONLY_FORMS.includes(value) && (!noData || ARRAY_FORMS.includes(value)),
   )
   return (
     <div className="grid gap-3 md:grid-cols-2">

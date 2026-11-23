@@ -557,3 +557,106 @@ def test_text_output_rows(tmp_path: Path, client: TestClient) -> None:
     rows = client.get(f"/api/results/{result['id']}/rows").json()["rows"]
     assert [row["prediction"] for row in rows] == ["5", "07", ""]
     assert "tokens" not in rows[0]
+
+
+def test_table_output(tmp_path: Path, client: TestClient) -> None:
+    """
+    表の出力の雑音だけの一式 (版 7) を登録して推論し, 列の符号化の順の列
+    と型を結果に残し, 表と CSV で返すことを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    client: TestClient
+        クライアント
+
+    Returns
+    ----------
+    None
+    """
+    # 見本の雑音の予測器を符号化した行の幅 (数の列 2 つと種類の 3 つ) に
+    # して, 列の符号化を写した一式を ML-Inference の make_bundle で作る
+    spec = load_example("diffusion_denoiser")
+    spec["inputs"]["x"]["shape"] = [8, 5]
+    spec["nodes"]["x_fc"]["params"]["in_features"] = 5
+    spec["nodes"]["head"]["params"]["out_features"] = 5
+    weights = tmp_path / "rows.pt"
+    torch.save(build_model(spec, seed=0).state_dict(), weights)
+    columns = [
+        {"name": "price", "type": "number", "mean": 100.0, "std": 20.0,
+         "integer": False},
+        {"name": "count", "type": "number", "mean": 3.0, "std": 1.5,
+         "integer": True},
+        {"name": "shop", "type": "category", "categories": ["01", "02", "10"]},
+    ]
+    path = tmp_path / "rows"
+    ml_inference.make_bundle(
+        path, spec, None, weights, form="table",
+        output_options={"columns": columns},
+        inputs={"x": {"source": "state"}, "t": {"source": "time"}},
+        procedure={"name": "ddim", "steps": 3, "seed": 0}
+    )
+    bundle = register(client, path)
+    description = bundle["description"]
+    assert description["format_version"] == 7
+    assert description["kind"] == "noise"
+    assert description["output"]["form"] == "table"
+    assert description["output"]["columns"] == columns
+    assert description["column_output"] is False
+
+    # 件数と種で推論すると, 配列を持たない版 1 の結果で, 列の名前と型を残す
+    response = client.post(f"/api/bundles/{bundle['id']}/predict",
+                           json={"count": 3, "seed": 1})
+    assert response.status_code == 201, response.text
+    result = response.json()
+    assert result["output_form"] == "table"
+    assert result["artifacts"] is None
+    assert result["format_version"] == 1
+    assert result["summary"] == {"rows": 3, "predicted": 3, "skipped": 0}
+    assert result["table_columns"] == [
+        {"name": "price", "type": "number", "integer": False},
+        {"name": "count", "type": "number", "integer": True},
+        {"name": "shop", "type": "category", "categories": 3},
+    ]
+    assert result["columns"][:7] == [
+        "sample", "seed", "status", "reason", "price", "count", "shop"
+    ]
+    assert "output" not in result["columns"]
+    assert "artifact" not in result["columns"]
+    reloaded = client.get(f"/api/results/{result['id']}").json()
+    assert reloaded["table_columns"] == result["table_columns"]
+
+    # 種類の列は数に見えても文字, 整数の列は整数のまま
+    rows = client.get(f"/api/results/{result['id']}/rows").json()["rows"]
+    assert [row["sample"] for row in rows] == [0, 1, 2]
+    assert {row["shop"] for row in rows} <= {"01", "02", "10"}
+    assert all(isinstance(row["count"], int) for row in rows)
+    assert all(isinstance(row["price"], float) for row in rows)
+
+    # 推論しなかった行の値は欠損 (整数の列も小数にしない)
+    place = tmp_path / "home" / "results" / result["id"]
+    table = pd.read_csv(place / "predictions.csv", encoding="utf-8-sig",
+                        dtype=str, keep_default_na=False)
+    table.loc[1, ["status", "reason", "price", "count", "shop"]] = [
+        "skipped", "予測の値を表に戻せません", "", "", ""
+    ]
+    table.to_csv(place / "predictions.csv", index=False, encoding="utf-8-sig")
+    table.loc[0, "shop"] = "NA"
+    table.loc[2, "shop"] = "null"
+    table.to_csv(place / "predictions.csv", index=False, encoding="utf-8-sig")
+    rows = client.get(f"/api/results/{result['id']}/rows").json()["rows"]
+    assert rows[1]["count"] is None and rows[1]["shop"] is None
+    # 欠損に見える種類の値 (NA, null) は文字のまま
+    assert rows[0]["shop"] == "NA" and rows[2]["shop"] == "null"
+    assert isinstance(rows[0]["count"], int)
+    skipped = client.get(f"/api/results/{result['id']}/rows",
+                         params={"status": "skipped"}).json()
+    assert skipped["total"] == 1
+
+    # CSV は表のまま (列の符号化の順の列)
+    text = client.get(f"/api/results/{result['id']}/download").text
+    header = text.lstrip("﻿").splitlines()[0].split(",")
+    assert header[:7] == [
+        "sample", "seed", "status", "reason", "price", "count", "shop"
+    ]

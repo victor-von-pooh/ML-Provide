@@ -775,6 +775,66 @@ test('骨組みの学習が実験の中に作った版 4 の一式を, 実験の
   await expect(page.getByText('画素を 0 から 1 にする')).toBeVisible()
 })
 
+test('表の生成の骨組みが実験の中に作った表の出力の一式を, 実験の一覧から登録して表を作り, CSV で持ち出す', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: '実験の一覧から登録' }).click()
+  const dialog = page.getByRole('dialog', { name: '実験の一覧から登録' })
+  const table = dialog.getByRole('table', { name: '推論の一式を持つ実験' })
+  await expect(table).toContainText('rows/2026-01-05/09-00-00')
+  await dialog
+    .getByRole('button', { name: '総菜の作る量 (rows/2026-01-05/09-00-00) を登録' })
+    .click()
+
+  // 一式の画面: 雑音だけ, 出力の形は表で, 列の名前と型と種類の数
+  await expect(
+    page.getByRole('heading', { name: '総菜の作る量 (rows/2026-01-05/09-00-00)' }),
+  ).toBeVisible({ timeout: 30_000 })
+  const id = new URL(page.url()).pathname.split('/').pop() ?? ''
+  try {
+    await expect(page.getByText(/雑音だけ \(データセットなし/)).toBeVisible()
+    await expect(page.getByText('(列 3, 1 件の幅 5)')).toBeVisible()
+    const columns = page.getByRole('list', { name: '表の列の名前と型' })
+    await expect(columns).toContainText('price: 数 (平均 300, 標準偏差 50)')
+    await expect(columns).toContainText('count: 整数 (平均 12, 標準偏差 4)')
+    await expect(columns).toContainText('shop: 種類 (3 種類: east, north, west)')
+
+    // 件数と種で作ると, 配列の出力でなく, 件ごとの列の値の表
+    await page.getByLabel(/^作る件数/).fill('6')
+    await page.getByLabel(/^乱数の種/).fill('2')
+    await page.getByRole('button', { name: '推論する' }).click()
+    await expect(page.getByText('6 件のうち 6 件を推論')).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText('件数 6, 種 2')).toBeVisible()
+    await expect(page.getByRole('heading', { name: /^1 件の出力/ })).toHaveCount(0)
+    const rows = page.getByRole('table', { name: '作った表 (件ごとの列の値)' })
+    await expect(rows.locator('thead th')).toHaveText([
+      '#',
+      '件の番号',
+      '種',
+      '状態',
+      '理由',
+      'price',
+      'count',
+      'shop',
+    ])
+    await expect(rows.locator('tbody tr')).toHaveCount(6)
+    const shop = await rows.locator('tbody tr').first().locator('td').nth(7).textContent()
+    expect(['east', 'north', 'west']).toContain(shop)
+    const count = await rows.locator('tbody tr').first().locator('td').nth(6).textContent()
+    expect(count).toMatch(/^-?[\d,]+$/)
+
+    // CSV は件の番号, 種, 状態, 理由と列の符号化の順の列
+    const href = await page.getByRole('link', { name: 'CSV' }).getAttribute('href')
+    const csv = await (await page.request.get(href ?? '')).text()
+    expect(csv.replace(/^\uFEFF/, '').split(/\r?\n/)[0]).toMatch(
+      /^sample,seed,status,reason,price,count,shop/,
+    )
+  } finally {
+    await page.request.delete(`/api/bundles/${id}`)
+  }
+})
+
 test('骨組みの学習が実験の中に書き出した方策の一式を, 実験の一覧から登録して行動を決める', async ({
   page,
 }) => {

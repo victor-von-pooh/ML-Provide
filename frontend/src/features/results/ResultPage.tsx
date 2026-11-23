@@ -8,7 +8,13 @@ import { api } from '../../api/client'
 import type { Counts, Result } from '../../api/types'
 import { Button, Card, ErrorBox, PageHeader, Spinner, StatTile } from '../../components/ui'
 import { formatPercent, formatValue } from '../../lib/format'
-import { FORM_LABELS, maskNames } from '../../lib/outputs'
+import {
+  FORM_LABELS,
+  maskNames,
+  TABLE_HEADINGS,
+  tableColumnText,
+  tableRowColumns,
+} from '../../lib/outputs'
 import { READY_UNSUPPORTED } from '../../lib/ready'
 import { groupColumns } from '../../lib/remeasure'
 import { rowReasonable } from '../../lib/rowReason'
@@ -182,19 +188,25 @@ function RowsTable({
   ]
   const probabilities = rows.data?.columns.filter((name) => name.startsWith('p:')) ?? []
   const manyProbabilities = probabilities.length > MAX_PROBABILITY_COLUMNS
-  const columns = rows.data
-    ? [
-        ...rows.data.columns.filter(
-          (name) => OWN.has(name) || (name.startsWith('p:') && !manyProbabilities),
-        ),
-        ...rows.data.columns.filter((name) => !OWN.has(name) && !name.startsWith('p:')),
-      ]
-    : []
+  // 表の出力の結果は作った表 (件の番号と種の後に列の符号化の順の列)
+  const table = result.output_form === 'table' && !!result.table_columns
+  const columns = !rows.data
+    ? []
+    : table
+      ? tableRowColumns(rows.data.columns, result.table_columns ?? [])
+      : [
+          ...rows.data.columns.filter(
+            (name) =>
+              (OWN.has(name) && (column || name !== 'decision')) ||
+              (name.startsWith('p:') && !manyProbabilities),
+          ),
+          ...rows.data.columns.filter((name) => !OWN.has(name) && !name.startsWith('p:')),
+        ]
   const total = rows.data?.total ?? 0
   const pages = Math.max(1, Math.ceil(total / PAGE))
   return (
     <Card
-      title="予測の表"
+      title={table ? '作った表' : '予測の表'}
       padded={false}
       actions={
         <>
@@ -244,6 +256,15 @@ function RowsTable({
       {rows.isPending && <Spinner />}
       {rows.data && (
         <>
+          {table && (
+            <p className="border-b border-line px-4 py-2 text-xs text-ink-3">
+              1 件が 1 行で, 列は学習のときの列の並び (
+              {(result.table_columns ?? [])
+                .map((entry) => `${entry.name}: ${tableColumnText(entry)}`)
+                .join(', ')}
+              ). 推論しなかった行の値は空です. 表の全ての行は CSV で持ち出せます
+            </p>
+          )}
           {manyProbabilities && (
             <p className="border-b border-line px-4 py-2 text-xs text-ink-3">
               種類が {probabilities.length.toLocaleString()} あるので, 種類ごとの確率の列 (p:種類)
@@ -252,7 +273,9 @@ function RowsTable({
           )}
           <div className="max-h-[32rem] overflow-auto">
             <table className="w-full text-xs">
-              <caption className="sr-only">予測と判断の表</caption>
+              <caption className="sr-only">
+                {table ? '作った表 (件ごとの列の値)' : '予測と判断の表'}
+              </caption>
               <thead className="sticky top-0 bg-surface text-ink-3">
                 <tr className="border-b border-line">
                   {onView && (
@@ -271,7 +294,7 @@ function RowsTable({
                       scope="col"
                       className="px-3 py-2 text-left font-normal whitespace-nowrap"
                     >
-                      {name === 'index' ? '#' : name}
+                      {table ? (TABLE_HEADINGS[name] ?? name) : name === 'index' ? '#' : name}
                     </th>
                   ))}
                 </tr>
