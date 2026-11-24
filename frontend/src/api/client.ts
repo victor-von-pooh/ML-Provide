@@ -119,7 +119,7 @@ export const api = {
     request<Comparison>(`/api/results/compare?ids=${ids.map(encodeURIComponent).join(',')}`),
   rows: (
     id: string,
-    params: { offset: number; limit: number; status?: string; decision?: string },
+    params: { offset: number; limit: number; status?: string; decision?: string; group?: number },
   ) => {
     const search = new URLSearchParams()
     for (const [key, value] of Object.entries(params)) {

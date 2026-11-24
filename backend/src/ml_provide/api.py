@@ -1,3 +1,4 @@
+import copy
 import json
 import math
 import os
@@ -94,6 +95,10 @@ MAX_REACTION_ROWS = MAX_RANK_ROWS
 
 # 並べるの一式で読む表のファイルの拡張子と区切り
 RANK_TABLES = {".csv": ",", ".tsv": "\t", ".parquet": None}
+
+# 推論の後に表を読み直して結論を出し直さない出力の形 (表の出力, 並べる,
+# 群分け. infer の結論のまま残す)
+KEPT_CONCLUSIONS = frozenset({"table", "ranking", "cluster"})
 
 # 並べるの一式だけに渡せる欄を, ほかの一式に渡したときの文
 RANK_ONLY = (
@@ -1224,19 +1229,20 @@ def predict(
         ),
         pretrained_warnings=warned,
         table_columns=table_columns(bundle),
-        ranking=ranking
+        ranking=ranking,
+        grouping=grouping_meta(bundle)
     )
     # 書いた表を読み直して結論を出し直す (出し直しと同じ型の値でまとめ,
     # 日時のような列のまとめの名前が, 後の出し直しで変わらないように)
     # (書き出しの途中で失敗した結果は, 壊れたまま残さずに削除)
     result_id, place = get_store(request).new_result_dir()
     meta = {k: v for k, v in result.items() if k != "frame"}
-    # (表の出力と並べるの結果は infer の結論のまま. 読み直すと数に見える
-    # 種類の値が数になり, 並べるの利用者ごとの数え方は件数だけの結論と違う
-    # ため)
+    # (表の出力, 並べる, 群分けの結果は infer の結論のまま. 読み直すと数に
+    # 見える種類の値が数になり, 並べるの利用者ごとの数え方と群分けの群の
+    # 要約と群の安定性は件数だけの結論に無いため)
     try:
         ml_inference.write_result(result, place)
-        if meta.get("output_form") not in ("table", "ranking"):
+        if meta.get("output_form") not in KEPT_CONCLUSIONS:
             with RESULT_LOCK:
                 conclude_into(place, meta, meta.get("rules") or {})
     except Exception as error:
@@ -1245,6 +1251,34 @@ def predict(
     view = result_view(result_id, place)
 
     return view
+
+
+def grouping_meta(bundle: Any) -> Optional[dict[str, Any]]:
+    """
+    群分けの結果に残す, 群を作る列と学習のときの群の要約を返す関数
+
+    Parameters
+    ----------
+    bundle: Any
+        読んだ一式 (ML-Inference の Bundle)
+
+    Returns
+    ----------
+    grouping: Optional[dict[str, Any]]
+        k, columns (群を作る列), learned (学習のときの群の要約の行. 最後は
+        全体). 群分けの一式でなければ None
+    """
+    # 一式を消しても, 学習のときの群の大きさと比べられるように写す
+    if not bundle.from_group:
+        return None
+    group = bundle.info["group"]
+    grouping = {
+        "k": int(group["k"]),
+        "columns": [str(name) for name in group["columns"]],
+        "learned": copy.deepcopy(list(group.get("summary") or [])),
+    }
+
+    return grouping
 
 
 def table_columns(bundle: Any) -> Optional[list[dict[str, Any]]]:
@@ -1634,6 +1668,9 @@ def read_frame(place: Path, meta: dict[str, Any]) -> pd.DataFrame:
     # 順位は欠損を持てる整数 (並べられない利用者の行は欠損)
     if meta.get("output_form") == "ranking":
         texts.update(user=str, item=str, rank="Int64")
+    # 群分けの結果の群の番号は欠損を持てる整数 (割り当てない行は欠損)
+    if meta.get("output_form") == "cluster":
+        texts["group"] = "Int64"
     blanks: dict[str, Any] = {}
     if meta.get("output_form") in ("table", "ranking"):
         blanks = {"keep_default_na": False, "na_values": [""]}
@@ -1706,6 +1743,7 @@ def result_view(
         "artifacts": meta.get("artifacts"),
         "table_columns": meta.get("table_columns"),
         "ranking": meta.get("ranking"),
+        "grouping": meta.get("grouping"),
     }
 
     return view
@@ -2001,7 +2039,8 @@ def get_result(request: Request, result_id: str) -> dict[str, Any]:
 def get_rows(
     request: Request, result_id: str,
     offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=MAX_ROWS),
-    status: Optional[str] = None, decision: Optional[str] = None
+    status: Optional[str] = None, decision: Optional[str] = None,
+    group: Optional[int] = Query(None, ge=0)
 ) -> dict[str, Any]:
     """
     予測の表の一部を返す関数
@@ -2020,17 +2059,27 @@ def get_rows(
         ok か skipped で絞る
     decision: Optional[str] = None
         判断で絞る
+    group: Optional[int] = Query(None, ge=0)
+        群の番号で絞る (群分けの結果だけ)
 
     Returns
     ----------
     rows: dict[str, Any]
         total (絞った後の行の数), offset, columns, rows (行の位置 index
         付き)
+
+    Raises
+    ----------
+    HTTPException
+        群分けでない結果に群の番号を渡した場合は 400
     """
     # 絞ってから切り出す
     # 行の位置の列 (同じ名前の元の列は名前を変えて残す)
     place = find_result(request, result_id)
-    frame = read_frame(place, read_meta(place))
+    meta = read_meta(place)
+    if group is not None and meta.get("output_form") != "cluster":
+        raise HTTPException(400, "群で絞れるのは群分けの結果だけです")
+    frame = read_frame(place, meta)
     if "index" in frame.columns:
         frame = frame.rename(columns={"index": "index (入力)"})
     # (列の多い表 (種類ごとの確率) は, 読んだ表が断片なのでまとめてから)
@@ -2040,6 +2089,8 @@ def get_rows(
         frame = frame[frame["status"] == status]
     if decision is not None and "decision" in frame.columns:
         frame = frame[frame["decision"] == decision]
+    if group is not None:
+        frame = frame[frame["group"] == group]
     part = frame.iloc[offset:offset + limit]
     records = json.loads(part.to_json(orient="records", force_ascii=False))
     rows = {

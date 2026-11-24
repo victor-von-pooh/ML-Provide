@@ -98,6 +98,67 @@ export interface Description {
   ready?: ReadyInfo | null
   /** 並べるの一式 (版 8) の番号の表と索引の大きさ, 件数の既定, 反応の表の列 */
   rank?: RankInfo | null
+  /** 群分けの一式 (版 9) の群の数, 群を作る列, 学習の群の安定性と群の要約 */
+  group?: GroupInfo | null
+}
+
+/**
+ * 群の要約の 1 行 (ML-Inference の group_summary. ML-EDA の describe_groups の行の形).
+ * group は群の番号か, 最後の行の「全体」. 群を作る列ごとの値は, 数の列は平均,
+ * 種類の列は最も多い値と割合の文 (行の無い群は null)
+ */
+export interface ClusterRow {
+  group: number | string
+  rows: number
+  share: number
+  /** 学習のときの作り直した群との Jaccard 係数の平均 (全体は null) */
+  stability: number | null
+  [column: string]: number | string | null
+}
+
+/** 学習の群の安定性 (実験の group_stability の行の写しと, 比べる相手の名前とエポック) */
+export interface ClusterStability {
+  k: number
+  /** seed (種を変えて作り直す) か sample (標本を変えて作り直す) */
+  method: string
+  repeats: number
+  ari: number
+  ari_baseline: number
+  ari_diff: number
+  ari_min: number
+  ari_min_baseline: number
+  ari_min_diff: number
+  silhouette: number
+  silhouette_baseline: number
+  silhouette_diff: number
+  baseline?: string | null
+  epoch?: number | null
+}
+
+/** 群分けの一式の group の欄 */
+export interface GroupInfo {
+  k: number
+  /** 群を作る列 (群の要約の列の順) */
+  columns: string[]
+  /** 符号化した行の幅と埋め込みの幅 */
+  features: number
+  width: number
+  /** 実験の群の割り当ての表の行を見分ける列 (行の番号なら null) */
+  id: string | null
+  /** 学習で群に分けた行の数 */
+  rows: number
+  stability: ClusterStability
+  /** 学習のときの群の要約 (最後は全体) */
+  summary: ClusterRow[]
+  /** 学習の表を一式で割り当て直した一致 (学習の表を渡して作った場合だけ) */
+  check: { rows: number; agreement: number } | null
+}
+
+/** 群分けの結果に残した, 群を作る列と学習のときの群の要約 */
+export interface GroupingInfo {
+  k: number
+  columns: string[]
+  learned: ClusterRow[]
 }
 
 /** 反応の表 (前に反応した品物と正解の反応) の列の名前 */
@@ -378,6 +439,8 @@ export interface Counts {
   /** 並べるの結果の, 利用者ごとに並べた件数と前に反応した品物を除いたか (rows は利用者の数) */
   k?: number
   excluded?: boolean
+  /** 群分けの結果の学習の群の安定性 (群の要約は Summary の groups. 群分けでは ClusterRow の並び) */
+  stability?: ClusterStability
   values?: { sum: number; mean: number | null; min: number | null; max: number | null }
 }
 
@@ -432,6 +495,8 @@ export interface Result {
   table_columns?: TableColumn[] | null
   /** 並べるの結果の件数, 使った表, Recall@K と NDCG */
   ranking?: RankingInfo | null
+  /** 群分けの結果の群を作る列と学習のときの群の要約 */
+  grouping?: GroupingInfo | null
 }
 
 /** 結果どうしの比べ (GET /api/results/compare) */

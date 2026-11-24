@@ -29,6 +29,7 @@ export const FORM_LABELS: Record<string, string> = {
   image: '画像',
   table: '表',
   ranking: '順位 (利用者ごとの上位の品物)',
+  cluster: '群 (行ごとに最も近い群)',
 }
 
 /** 列の出力の形 (結論の決め方と意思決定を使える) */

@@ -78,6 +78,7 @@ export const KIND_LABELS: Record<string, string> = {
   noise: '雑音だけ',
   ready: '既製のモデル',
   rank: '並べる (利用者と品物)',
+  group: '群分け',
 }
 
 /** タスクの日本語の名前 */

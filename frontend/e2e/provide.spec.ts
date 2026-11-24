@@ -925,6 +925,82 @@ test('並べるの骨組みの実験の中に作った並べるの一式を, 実
   }
 })
 
+test('まとめるの骨組みの実験の中に作った群分けの一式を, 実験の一覧から登録して行を群に割り当てる', async ({
+  page,
+}) => {
+  const tables = path.resolve(import.meta.dirname, '.work', 'group')
+  await page.goto('/')
+  await page.getByRole('button', { name: '実験の一覧から登録' }).click()
+  const dialog = page.getByRole('dialog', { name: '実験の一覧から登録' })
+  const table = dialog.getByRole('table', { name: '推論の一式を持つ実験' })
+  await expect(table).toContainText('customers/2026-01-07/09-00-00')
+  await dialog
+    .getByRole('button', { name: '総菜の作る量 (customers/2026-01-07/09-00-00) を登録' })
+    .click()
+
+  // 一式の画面: 群を作る列, 群の数, 学習の群の安定性と群の要約. 問題の設定と意思決定の欄は無い
+  await expect(
+    page.getByRole('heading', { name: '総菜の作る量 (customers/2026-01-07/09-00-00)' }),
+  ).toBeVisible({ timeout: 30_000 })
+  const id = new URL(page.url()).pathname.split('/').pop() ?? ''
+  try {
+    await expect(page.getByText('spend, visits, region', { exact: true })).toBeVisible()
+    await expect(page.getByText(/3 個 \(学習で 60 行を分けた/)).toBeVisible()
+    await expect(
+      page.getByRole('table', { name: '学習の群の安定性 (モデル, 比べる相手, 差)' }),
+    ).toContainText('0.970')
+    await expect(page.getByRole('heading', { name: /^問題の設定/ })).toHaveCount(0)
+    await expect(page.getByRole('region', { name: '意思決定' })).toHaveCount(0)
+
+    // 新しい行の表を群に割り当てる
+    await page.getByLabel(/^群に割り当てる行の表/).fill(path.join(tables, 'customers.csv'))
+    await page.getByRole('button', { name: '推論する' }).click()
+
+    // 結果: 件数の文, 群の要約, 群の安定性, 行ごとの群
+    await expect(
+      page.getByText('16 行のうち 15 行を 3 個の群に割り当てた (1 行は割り当てられず)'),
+    ).toBeVisible({ timeout: 30_000 })
+    const summary = page.getByRole('table', {
+      name: '群の要約 (群ごとの件数, 割合, 安定性, 列の特徴と全体)',
+    })
+    await expect(summary.locator('thead th')).toHaveText([
+      '群',
+      '件数',
+      '割合',
+      '学習のときの割合',
+      '安定性',
+      'spend (平均)',
+      'visits (平均)',
+      'region (最も多い値)',
+      '行を見る',
+    ])
+    await expect(summary.locator('tbody tr')).toHaveCount(4)
+    await expect(summary.locator('tbody tr').nth(1)).toContainText('south (100 %)')
+    await expect(summary.locator('tbody tr').nth(3)).toContainText('全体')
+    const stability = page.getByRole('table', { name: '学習の群の安定性 (モデル, 比べる相手, 差)' })
+    await expect(stability.locator('tbody tr').nth(2)).toContainText('+0.070')
+    await expect(page.getByRole('heading', { name: '結論の決め方' })).toHaveCount(0)
+
+    // 群の要約から群 1 の行だけを見る
+    await page.getByRole('button', { name: '群 1 の行を見る' }).click()
+    await expect(page.getByLabel('群で絞る')).toHaveValue('1')
+    const rows = page.getByRole('table', { name: '群に割り当てた行 (行ごとの群と距離)' })
+    await expect(rows.locator('tbody tr')).toHaveCount(5)
+    await expect(rows.locator('tbody tr').first()).toContainText('群 1')
+    await expect(rows.locator('tbody tr').first()).toContainText('south')
+    // 割り当てられなかった行は理由を出す
+    await page.getByLabel('群で絞る').selectOption('')
+    await page.getByLabel('状態で絞る').selectOption('skipped')
+    await expect(rows.locator('tbody tr')).toHaveCount(1)
+    await expect(rows.locator('tbody tr').first()).toContainText('割り当てられず')
+    await expect(rows.locator('tbody tr').first()).toContainText(
+      "列 spend の値 '?' を数にできません",
+    )
+  } finally {
+    await page.request.delete(`/api/bundles/${id}`)
+  }
+})
+
 test('骨組みの学習が実験の中に書き出した方策の一式を, 実験の一覧から登録して行動を決める', async ({
   page,
 }) => {

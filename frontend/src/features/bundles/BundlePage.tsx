@@ -8,6 +8,7 @@ import type { Bundle, Description, LinkedProblem, UncertaintySummary } from '../
 import { PathField } from '../../components/PathPicker'
 import { Button, Card, ErrorBox, PageHeader, Spinner } from '../../components/ui'
 import { SEED_RANGE_PROBLEM, SHORT_SOURCE_LABELS } from '../../lib/bundleForm'
+import { CLUSTER_NO_PROBLEM, CLUSTER_UNSUPPORTED } from '../../lib/clusters'
 import { formatNumber, KIND_LABELS, TASK_LABELS } from '../../lib/format'
 import { fromDecisionForm, toDecisionForm, type DecisionForm } from '../../lib/decision'
 import {
@@ -30,6 +31,7 @@ import {
 } from '../../lib/ranking'
 import { classesText, licenseAlert, preprocessText, READY_UNSUPPORTED } from '../../lib/ready'
 import { fromForm, toForm, withCleared, type RulesForm } from '../../lib/rules'
+import { ClusterStabilityView, ClusterSummaryTable } from '../results/ClusterCards'
 import { CompareResultsCard, MAX_COMPARE } from '../results/CompareResultsCard'
 import { DecisionEditor } from '../results/DecisionEditor'
 import { RulesEditor } from '../results/RulesEditor'
@@ -119,6 +121,58 @@ function RankRows({ rank }: { rank: NonNullable<Description['rank']> }) {
   )
 }
 
+/** 群分けの一式 (版 9) の列の符号化と群の中心, 群を作る列, 群の数 */
+function GroupRows({ group }: { group: NonNullable<Description['group']> }) {
+  return (
+    <>
+      <Row label="データ">
+        列の符号化と群の中心 (データセットなし. 推論は表の行を最も近い群に割り当てる)
+      </Row>
+      <Row label={`群を作る列 (${group.columns.length})`}>
+        <span className="font-mono text-xs">{group.columns.join(', ')}</span>
+        <span className="block text-xs text-ink-2">
+          推論する表はこの列を持ちます. 数の列は学習のときの平均と標準偏差で,
+          種類の列は学習のときの値ごとに符号化します (学習に無い値はどの値でもない扱い)
+        </span>
+      </Row>
+      <Row label="群の数">
+        {group.k} 個 (学習で {group.rows.toLocaleString()} 行を分けた. 符号化した行の幅{' '}
+        {group.features}, 埋め込みの幅 {group.width})
+      </Row>
+      {group.check && (
+        <Row label="割り当て直しの一致">
+          学習の表 {group.check.rows.toLocaleString()} 行を一式で割り当て直し,{' '}
+          {(group.check.agreement * 100).toFixed(1)} % が実験と同じ群
+        </Row>
+      )}
+    </>
+  )
+}
+
+/** 群分けの一式の, 学習のときの群の要約と群の安定性 */
+function GroupLearnedCard({ group }: { group: NonNullable<Description['group']> }) {
+  return (
+    <Card title="学習のときの群">
+      <div className="flex flex-col gap-4">
+        <section aria-label="学習の群の安定性">
+          <h3 className="mb-2 text-xs font-semibold text-ink-2">群の安定性</h3>
+          <ClusterStabilityView stability={group.stability} />
+        </section>
+        <section aria-label="学習のときの群の要約">
+          <h3 className="mb-2 text-xs font-semibold text-ink-2">
+            群の要約 (学習で分けた {group.rows.toLocaleString()} 行)
+          </h3>
+          <ClusterSummaryTable
+            rows={group.summary}
+            columns={group.columns}
+            caption="学習のときの群の要約 (群ごとの件数, 割合, 安定性, 列の特徴と全体)"
+          />
+        </section>
+      </div>
+    </Card>
+  )
+}
+
 /** 既製のモデルの一式の注意 (ライセンスの警告は推論の前に気付けるように上に出す) */
 function ReadyNotices({ ready }: { ready: NonNullable<Description['ready']> }) {
   const alert = licenseAlert(ready.license)
@@ -145,6 +199,8 @@ function DescriptionView({ description }: { description: Description }) {
   const ready = description.ready
   // 並べるの一式は番号の表と索引 (モデルの入力は利用者と品物の番号で, 列の出どころを持たない)
   const rank = description.rank
+  // 群分けの一式は列の符号化と群の中心 (モデルの入力は群を作る列を一式の式で符号化したもの)
+  const group = description.group
   const unit = items ? '件' : '行'
   return (
     <dl className="text-sm">
@@ -154,6 +210,8 @@ function DescriptionView({ description }: { description: Description }) {
         <ReadyRows ready={ready} />
       ) : rank ? (
         <RankRows rank={rank} />
+      ) : group ? (
+        <GroupRows group={group} />
       ) : noise ? (
         <Row label="データ">雑音だけ (データセットなし. 推論は件数と種から作る)</Row>
       ) : (
@@ -174,7 +232,7 @@ function DescriptionView({ description }: { description: Description }) {
         </Row>
       )}
       {description.text_column && <Row label="文の列">{description.text_column}</Row>}
-      {!items && !noise && !ready && !rank && (
+      {!items && !noise && !ready && !rank && !group && (
         <>
           <Row label="読み込み">
             <span className="font-mono text-xs">
@@ -190,7 +248,7 @@ function DescriptionView({ description }: { description: Description }) {
           </Row>
         </>
       )}
-      {!rank && (
+      {!rank && !group && (
         <Row label="モデルの入力">
           <span className="font-mono text-xs">
             {inputs
@@ -267,6 +325,8 @@ function PredictCard({
   const noise = description.kind === 'noise'
   // 既製のモデルの一式は画像だけで, 意思決定を使えない (結論の決め方は使える)
   const readyModel = description.kind === 'ready'
+  // 群分けの一式は群を作る列を持つ表のファイルだけで, 結論は群の要約
+  const group = description.group
   const info = useQuery({ queryKey: ['info'], queryFn: api.info, staleTime: Infinity })
   const maxSamples = info.data?.max_samples ?? 1000
   const [count, setCount] = useState('4')
@@ -414,16 +474,20 @@ function PredictCard({
               label={
                 readyModel
                   ? '推論する画像 (画像のファイルか, 画像を並べたディレクトリ)'
-                  : sourceLabel(description.items?.input_kind, description.kind)
+                  : group
+                    ? `群に割り当てる行の表 (群を作る列 ${group.columns.join(', ')} を持つファイル)`
+                    : sourceLabel(description.items?.input_kind, description.kind)
               }
               value={source}
               onChange={setSource}
               hint={
                 readyModel
                   ? '重みの説明の前処理 (大きさ, 切り出し, 正規化) をかけ, 種類の名前と確信度を出します. 読めない画像は理由を付けて飛ばします'
-                  : description.items
-                    ? '学習のときと同じ 1 件の扱いをかけます (撮影は同じ正規化も). 読めない件は理由を付けて飛ばします'
-                    : '目的の列は有っても無くてもかまいません. 学習のときと同じ読み込みで読みます'
+                  : group
+                    ? '行ごとに学習のときと同じ式で列を符号化し, 最も近い群の中心に割り当てます. 数の列を数にできない行は理由を付けて飛ばします'
+                    : description.items
+                      ? '学習のときと同じ 1 件の扱いをかけます (撮影は同じ正規化も). 読めない件は理由を付けて飛ばします'
+                      : '目的の列は有っても無くてもかまいません. 学習のときと同じ読み込みで読みます'
               }
             />
             {bundle.sample_input && (
@@ -501,7 +565,12 @@ function PredictCard({
             </div>
           </div>
         )}
-        {!column && (
+        {group && (
+          <p className="text-xs text-ink-2">
+            {CLUSTER_UNSUPPORTED}. {CLUSTER_NO_PROBLEM}
+          </p>
+        )}
+        {!column && !group && (
           <p className="text-xs text-ink-2">
             この一式の出力は{FORM_LABELS[outputForm] ?? outputForm}なので,
             結論は推論した件数だけです. 結論の決め方と意思決定は使えません
@@ -739,13 +808,13 @@ export function BundlePage() {
   const client = useQueryClient()
   const bundle = useQuery({ queryKey: ['bundles', id], queryFn: () => api.bundle(id) })
   const results = useQuery({ queryKey: ['results', id], queryFn: () => api.results(id) })
-  // 雑音だけの一式と並べるの一式は, 問題の設定の結論と意思決定を扱わないので問題の設定を読まない
+  // 雑音だけの一式, 並べるの一式, 群分けの一式は, 問題の設定の結論と意思決定を扱わないので問題の設定を読まない
   // (既製のモデルの一式は読み, 結論の決め方だけを既定にする).
   // 種類は一式か一覧の読んだ値から. 分からない間は一式と並べて読む (推論の欄を 1 往復早く出すため.
   // 読まない種類の一式なら, サーバーは問題の設定を読まずに空の状態を返す)
   const listed = client.getQueryData<Bundle[]>(['bundles'])?.find((item) => item.id === id)
   const kind = bundle.data?.description?.kind ?? listed?.description?.kind
-  const noise = kind === 'noise' || kind === 'rank'
+  const noise = kind === 'noise' || kind === 'rank' || kind === 'group'
   const problem = useQuery({
     queryKey: ['bundle-problem', id],
     queryFn: () => api.bundleProblem(id),
@@ -853,6 +922,7 @@ export function BundlePage() {
               <DescriptionView description={data.description} />
               {data.description.uncertainty?.restorable && <RestoreButton bundle={data} />}
             </Card>
+            {data.description.group && <GroupLearnedCard group={data.description.group} />}
             {/* 版 3 からの項目 (版 2 までの一式は前と同じ画面) */}
             {(data.description.format_version ?? 0) >= 3 && (
               <Card title="受け持ちと出力">
