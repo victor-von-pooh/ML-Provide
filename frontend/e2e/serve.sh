@@ -15,7 +15,8 @@ mkdir -p "$WORK"
 cd ../../backend
 
 # 問題の設定の見本 (総菜の作る量) を, 日々の売上の見本の列 (日付, 店, 売上) に合わせて保存する.
-# 今のやり方は前の週の同じ曜日と同じ量 (7 期前). 受け持ちを作るにした問題の設定も並べて保存する
+# 今のやり方は前の週の同じ曜日と同じ量 (7 期前). 守る指標は欠品の率 (足りなかった行の割合) を
+# 1 割以下. 受け持ちを作るにした問題の設定も並べて保存する
 uv run python - "$WORK/problem" <<'PY'
 import sys
 
@@ -29,6 +30,10 @@ for key, value in (
     ("information.known", ["shop"]),
     ("information.unknown", None),
     ("action.current", {"type": "lag", "periods": 7}),
+    ("issue.guard.name", "欠品の率"),
+    ("issue.guard.better", "lower"),
+    ("issue.guard.line", 0.1),
+    ("issue.guard.counted", "shortage_rate"),
 ):
     problem = ml_quest.answer(problem, key, value)
 ml_quest.save_problem(problem, sys.argv[1])
