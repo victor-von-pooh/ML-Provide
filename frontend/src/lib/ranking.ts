@@ -3,9 +3,13 @@ import type { RankColumns } from '../api/types'
 /** 利用者ごとに並べる件数の上限 (API の MAX_RANK_K と同じ) */
 export const MAX_RANK_K = 1000
 
-/** 並べるの一式で使えない機能 (出力が列の予測でなく, 利用者ごとの品物の順位のため) */
+/** 並べるの一式で使えない機能 (出力が利用者ごとの品物の一覧のため) */
 export const RANK_UNSUPPORTED =
-  'この一式の出力は利用者ごとの品物の順位なので, 結論は並べた利用者の人数だけです. 結論の決め方と意思決定 (量, 選ぶ, 振り分け) は列の予測の一式の型なので使えません'
+  'この一式は利用者ごとの品物の一覧を出すので, 結論は並べた利用者の人数だけです. 結論の決め方と意思決定は, 数や種類を予測する一式で使うため, ここでは使えません'
+
+/** 並べるの一式の画面に問題の設定の欄が無い理由 */
+export const RANK_NO_PROBLEM =
+  '問題の設定の欄はありません. 並べる件数と反応の表の列は, 一式を作るときに問題の設定から写してあります'
 
 /** 並べた品物の表の見出しの日本語の名前 (CSV の見出しは英字のまま) */
 export const RANK_HEADINGS: Record<string, string> = {
@@ -52,7 +56,7 @@ export function rankKProblem(text: string): string | null {
   if (!value) return null
   const number = Number(value)
   if (!/^\d+$/.test(value) || number < 1 || number > MAX_RANK_K)
-    return `並べる件数は 1 から ${MAX_RANK_K} の整数で書いてください`
+    return `並べる件数は 1 から ${MAX_RANK_K.toLocaleString()} の整数で書いてください`
   return null
 }
 

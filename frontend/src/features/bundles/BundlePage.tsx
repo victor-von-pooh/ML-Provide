@@ -21,6 +21,7 @@ import {
 } from '../../lib/outputs'
 import {
   MAX_RANK_K,
+  RANK_NO_PROBLEM,
   RANK_UNSUPPORTED,
   rankColumnsText,
   rankKProblem,
@@ -653,7 +654,7 @@ function RankPredictCard({
             value={source}
             onChange={setSource}
             pickFiles
-            hint="表の行の順に利用者を並べます. 値は文字のまま読みます (007 は 7 になりません)"
+            hint="表の上の行の利用者から順に並べ, 結果の表もその順になります. 値は文字のまま読みます (007 は 7 になりません)"
           />
         )}
         <div className="max-w-xs">
@@ -707,7 +708,9 @@ function RankPredictCard({
           pickFiles
           hint="渡すと, 上位 K 件に入った正解から Recall@K と NDCG を数えます (前に反応した品物を除くときは, その品物を正解から除きます)"
         />
-        <p className="text-xs text-ink-2">{RANK_UNSUPPORTED}</p>
+        <p className="text-xs text-ink-2">
+          {RANK_UNSUPPORTED}. {RANK_NO_PROBLEM}
+        </p>
         {problems.map((problem) => (
           <p key={problem} role="alert" className="text-xs text-critical-text">
             {problem}

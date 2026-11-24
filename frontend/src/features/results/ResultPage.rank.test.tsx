@@ -127,7 +127,8 @@ describe('並べるの結果の画面', () => {
     expect(screen.getByText('2 件')).toBeInTheDocument()
 
     // 評価と使った表
-    expect(screen.getByText('Recall@2')).toBeInTheDocument()
+    expect(screen.getByText('Recall@2 (上位 2 件に入った正解の割合)')).toBeInTheDocument()
+    expect(screen.getByText('NDCG (上位 2 件の正解の位置で見た並びの良さ)')).toBeInTheDocument()
     expect(screen.getByText('0.750')).toBeInTheDocument()
     expect(screen.getByText('0.613')).toBeInTheDocument()
     expect(screen.getByText('/data/seen.csv')).toBeInTheDocument()
@@ -151,6 +152,6 @@ describe('並べるの結果の画面', () => {
     expect(screen.queryByLabelText('判断で絞る')).not.toBeInTheDocument()
     // 結論の決め方と意思決定の欄は出さない
     expect(screen.queryByText('結論の決め方')).not.toBeInTheDocument()
-    expect(screen.getByText(/結論の決め方と意思決定 \(量, 選ぶ, 振り分け\)/)).toBeInTheDocument()
+    expect(screen.getByText(/利用者ごとの品物の一覧を出すので/)).toBeInTheDocument()
   })
 })

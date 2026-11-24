@@ -104,7 +104,8 @@ describe('並べるの一式の画面', () => {
     expect(screen.queryByText('読み込み')).not.toBeInTheDocument()
     // 件数の既定は一式の rank.k
     expect(screen.getByLabelText(/^並べる件数 K/)).toHaveValue(3)
-    expect(screen.getByText(/意思決定 \(量, 選ぶ, 振り分け\) は列の予測の一式の型/)).toBeVisible()
+    expect(screen.getByText(/数や種類を予測する一式で使うため, ここでは使えません/)).toBeVisible()
+    expect(screen.getByText(/問題の設定の欄はありません/)).toBeVisible()
     expect(screen.queryByRole('region', { name: '意思決定' })).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: '結論の決め方' })).not.toBeInTheDocument()
     // 問題の設定は読まない
@@ -123,7 +124,7 @@ describe('並べるの一式の画面', () => {
 
     // 件数の誤りと, 除くのに表が無い誤り
     fireEvent.change(screen.getByLabelText(/^並べる件数 K/), { target: { value: '0' } })
-    expect(screen.getByRole('alert')).toHaveTextContent('並べる件数は 1 から 1000 の整数')
+    expect(screen.getByRole('alert')).toHaveTextContent('並べる件数は 1 から 1,000 の整数')
     fireEvent.change(screen.getByLabelText(/^並べる件数 K/), { target: { value: '2' } })
     fireEvent.click(screen.getByLabelText('前に反応した品物を除く'))
     expect(screen.getByRole('alert')).toHaveTextContent('前に反応した品物の表を選んでください')

@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from ml_modelcontrol import build_model, load_example
 from test_bundle_v3 import head_spec, make_v3, register, write_unlabeled
 
+import ml_provide.api as api_module
 from ml_provide.app import create_app
 
 # テストで使うトークン
@@ -306,6 +307,11 @@ def test_rank_refusals(tmp_path: Path, client: TestClient) -> None:
     cases: list[tuple[dict[str, Any], str]] = [
         ({"users": ["u0"], "k": 0}, "並べる件数は 1 から"),
         ({"users": ["u0"], "k": 1001}, "並べる件数は 1 から"),
+        ({"users": ["u0"], "k": 2.5}, "並べる件数は 1 から"),
+        ({"users": ["u0"], "k": "3"}, "並べる件数は 1 から"),
+        ({"users": ["u0"], "k": True}, "並べる件数は 1 から"),
+        ({"users": ["u0"] * 10001}, "利用者は 1 回に 10,000 人まで"),
+        ({"source": str(tmp_path)}, "ディレクトリでなくファイルを指定してください"),
         ({"users": ["", " "]}, "利用者がありません"),
         ({}, "利用者を書くか"),
         ({"texts": ["u0"]}, "文, 件数, 種は使いません"),
@@ -315,7 +321,8 @@ def test_rank_refusals(tmp_path: Path, client: TestClient) -> None:
         ({"source": str(tmp_path / "none.csv")}, "がありません"),
         ({"users": ["u0"], "seen": str(tmp_path / "none.csv")},
          "前に反応した品物の表のファイル"),
-        ({"users": ["u0"], "truth": str(tmp_path)}, "正解の反応の表のファイル"),
+        ({"users": ["u0"], "truth": str(tmp_path)},
+         "正解の反応の表には, ディレクトリでなくファイル"),
         ({"users": ["u0"], "rules": {"min_confidence": 0.5}}, "結論の決め方"),
         ({"users": ["u0"], "options": {"sep": ";"}}, "読み込みの設定"),
     ]
@@ -343,3 +350,72 @@ def test_rank_refusals(tmp_path: Path, client: TestClient) -> None:
                                json=body)
         assert response.status_code == 400, response.text
         assert "並べるの一式だけ" in response.json()["detail"]
+
+
+def test_rank_formats_and_limits(
+    tmp_path: Path, client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    TSV と Parquet の表を読み, 正解の反応だけ (前の反応なし) で数え, 前の
+    反応を除くと残らない利用者を理由付きで飛ばし, 行の上限で断ることを
+    確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    client: TestClient
+        クライアント
+    monkeypatch: pytest.MonkeyPatch
+        行の上限を小さくする
+
+    Returns
+    ----------
+    None
+    """
+    # TSV の利用者 (0 で始まる値も文字のまま) と Parquet の正解の反応
+    path = make_rank(tmp_path)
+    bundle = register(client, path)
+    users = tmp_path / "members.tsv"
+    pd.DataFrame({"member": ["007", "u1"]}).to_csv(users, sep="\t",
+                                                    index=False)
+    truth = tmp_path / "later.parquet"
+    later = pd.DataFrame({"member": ["007", "u1"], "item_id": ["i1", "i2"],
+                          "qty": [1, 1]})
+    later.to_parquet(truth)
+    result = predict(client, bundle, source=str(users), truth=str(truth))
+    assert result["summary"]["predicted"] == 2
+    assert result["ranking"]["seen"] is None
+    assert result["ranking"]["excluded"] is False
+    frame = ml_inference.predict(path, ["007", "u1"])
+    expected = ml_inference.rank_metrics(path, frame, later, k=3)
+    assert result["ranking"]["metrics"] == expected
+    assert result["ranking"]["metrics"]["users"] == 2
+    rows = client.get(f"/api/results/{result['id']}/rows").json()["rows"]
+    assert [row["user"] for row in rows] == ["007"] * 3 + ["u1"] * 3
+
+    # 全ての品物に反応した利用者は, 除くと残らないので理由付きで飛ばす
+    seen = tmp_path / "seen.parquet"
+    pd.DataFrame({"member": ["u0"] * len(ITEMS), "item_id": ITEMS,
+                  "qty": [1] * len(ITEMS)}).to_parquet(seen)
+    result = predict(client, bundle, users=["u0", "u1"], seen=str(seen))
+    assert result["summary"]["skipped"] == 1
+    rows = client.get(f"/api/results/{result['id']}/rows").json()["rows"]
+    assert rows[0]["user"] == "u0" and rows[0]["status"] == "skipped"
+    assert rows[0]["reason"] == (
+        "前に反応した品物を除くと, 並べる品物が残りません"
+    )
+    assert [row["user"] for row in rows[1:]] == ["u1"] * 3
+
+    # 書く表の行 (利用者の数 × 件数) と, 前の反応と正解の反応の表の行の上限
+    url = f"/api/bundles/{bundle['id']}/predict"
+    monkeypatch.setattr(api_module, "MAX_RANK_ROWS", 5)
+    response = client.post(url, json={"users": ["u0", "u1"], "k": 3})
+    assert response.status_code == 400
+    assert "5 行を超えます" in response.json()["detail"]
+    monkeypatch.setattr(api_module, "MAX_REACTION_ROWS", 1)
+    for key, what in (("seen", "前に反応した品物の表"), ("truth", "正解の反応の表")):
+        response = client.post(url, json={"users": ["u0"], "k": 1,
+                                          key: str(truth)})
+        assert response.status_code == 400
+        assert f"{what}は 1 行までです" in response.json()["detail"]

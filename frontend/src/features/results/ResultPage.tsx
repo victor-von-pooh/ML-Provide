@@ -453,8 +453,14 @@ function RankingCard({ result }: { result: Result }) {
       {metrics && (
         <>
           <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3">
-            <StatTile label={`Recall@${metrics.k}`} value={metricText(metrics.recall_at_k)} />
-            <StatTile label={`NDCG (上位 ${metrics.k} 件)`} value={metricText(metrics.ndcg)} />
+            <StatTile
+              label={`Recall@${metrics.k} (上位 ${metrics.k} 件に入った正解の割合)`}
+              value={metricText(metrics.recall_at_k)}
+            />
+            <StatTile
+              label={`NDCG (上位 ${metrics.k} 件の正解の位置で見た並びの良さ)`}
+              value={metricText(metrics.ndcg)}
+            />
             <StatTile label="数えた利用者" value={metrics.users.toLocaleString()} />
           </div>
           <p className="mt-2 text-xs text-ink-3">

@@ -894,8 +894,8 @@ test('並べるの骨組みの実験の中に作った並べるの一式を, 実
       page.getByText('利用者 3 人のうち 2 人に, 上位 2 件の品物を並べた (1 人は並べられず)'),
     ).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText('前に反応した品物は除いて並べた')).toBeVisible()
-    await expect(page.getByText('Recall@2')).toBeVisible()
-    await expect(page.getByText('NDCG (上位 2 件)')).toBeVisible()
+    await expect(page.getByText('Recall@2 (上位 2 件に入った正解の割合)')).toBeVisible()
+    await expect(page.getByText('NDCG (上位 2 件の正解の位置で見た並びの良さ)')).toBeVisible()
     await expect(page.getByRole('heading', { name: '結論の決め方' })).toHaveCount(0)
     const rows = page.getByRole('table', { name: '並べた品物 (利用者ごとの上位の品物と点数)' })
     await expect(rows.locator('thead th')).toHaveText([

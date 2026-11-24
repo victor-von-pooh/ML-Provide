@@ -88,6 +88,10 @@ MAX_RANK_K = 1000
 # (結果の表を 1 つの CSV に書き, 画面で読み直すため)
 MAX_RANK_ROWS = 1_000_000
 
+# 並べるの一式で読む前の反応と正解の反応の表の行の上限 (書く表の行の上限と
+# 同じ. 利用者ごとの品物の集合を記憶に持つため)
+MAX_REACTION_ROWS = MAX_RANK_ROWS
+
 # 並べるの一式で読む表のファイルの拡張子と区切り
 RANK_TABLES = {".csv": ",", ".tsv": "\t", ".parquet": None}
 
@@ -155,7 +159,9 @@ class PredictRequest(BaseModel):
     # 並べるの一式の利用者 (書いた値), 件数, 前に反応した品物の表と正解の
     # 反応の表のファイル
     users: Optional[list[str]] = None
-    k: Optional[StrictInt] = None
+    # 件数は整数だけ (型の誤りも 422 でなく理由付きの 400 で断るので, 受け
+    # 取りでは型を決めない)
+    k: Any = None
     seen: Optional[str] = None
     truth: Optional[str] = None
 
@@ -907,7 +913,9 @@ def noise_source(
     return source
 
 
-def rank_table(text: str, what: str) -> tuple[Path, pd.DataFrame]:
+def rank_table(
+    text: str, what: str, most: Optional[int] = None
+) -> tuple[Path, pd.DataFrame]:
     """
     並べるの一式に渡す表 (利用者, 前の反応, 正解の反応) のファイルを読む
     関数
@@ -918,6 +926,8 @@ def rank_table(text: str, what: str) -> tuple[Path, pd.DataFrame]:
         ファイルの場所 (~ から書ける)
     what: str
         誤りの文に使う表の呼び名
+    most: Optional[int] = None
+        行の上限 (省くと決めない)
 
     Returns
     ----------
@@ -928,11 +938,16 @@ def rank_table(text: str, what: str) -> tuple[Path, pd.DataFrame]:
     Raises
     ----------
     HTTPException
-        無いファイルと, 読めない形式は 400
+        無いファイル, ディレクトリ, 読めない形式, 行が上限を超える表は 400
     """
     # 利用者と品物の値は文字のまま (番号の表と文字にして引くので, 007 を
     # 7 にしないように)
     path = Path(text).expanduser().resolve()
+    if path.is_dir():
+        raise HTTPException(
+            400, f"{what}には, ディレクトリでなくファイルを指定してください "
+            f"({path} はディレクトリです)"
+        )
     if not path.is_file():
         raise HTTPException(400, f"{what}のファイル {path} がありません")
     suffix = path.suffix.lower()
@@ -953,6 +968,10 @@ def rank_table(text: str, what: str) -> tuple[Path, pd.DataFrame]:
         raise HTTPException(
             400, f"{what}のファイル {path.name} を読めません: {error}"
         ) from error
+    if most is not None and len(frame) > most:
+        raise HTTPException(
+            400, f"{what}は {most:,} 行までです (今は {len(frame):,} 行)"
+        )
     table = (path, frame)
 
     return table
@@ -1034,7 +1053,9 @@ def rank_request(
 
     # 件数 (省くと一式の rank.k) と, 書く表の行の上限
     k = int(bundle.info["rank"]["k"]) if body.k is None else body.k
-    if not 1 <= k <= MAX_RANK_K:
+    if isinstance(k, bool) or not isinstance(k, int) or not (
+        1 <= k <= MAX_RANK_K
+    ):
         raise HTTPException(
             400, f"並べる件数は 1 から {MAX_RANK_K} の整数にしてください"
         )
@@ -1044,8 +1065,12 @@ def rank_request(
             400, f"利用者 {count:,} 人に {k} 件ずつでは, 表が "
             f"{MAX_RANK_ROWS:,} 行を超えます. 利用者か件数を減らしてください"
         )
-    seen = rank_table(body.seen, "前に反応した品物の表") if body.seen else None
-    truth = rank_table(body.truth, "正解の反応の表") if body.truth else None
+    seen = rank_table(
+        body.seen, "前に反応した品物の表", MAX_REACTION_ROWS
+    ) if body.seen else None
+    truth = rank_table(
+        body.truth, "正解の反応の表", MAX_REACTION_ROWS
+    ) if body.truth else None
     request = {
         "source": source, "path": path, "k": k, "seen": seen,
         "truth": truth,

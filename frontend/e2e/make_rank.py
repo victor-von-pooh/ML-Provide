@@ -2,10 +2,11 @@
 画面の通しのテスト用に, 並べるの実験と, その中の並べるの一式 (版 8) と,
 並べる利用者, 前の反応, 後の反応の表を作る
 
-ML-Quest の並べるの骨組みの学習のスクリプトが書く実験のように, 骨組みの
-プロジェクトの実験 (outputs/<名前>/<日付>/<時刻>) に, 重み (final_model.pt),
-定義 (model_spec.yaml), 利用者と品物の番号の表 (rank_index.json), run.json を
-置き, ML-Inference の make_rank_bundle で実験の中に一式 (inference) を作る.
+ML-Quest の並べるの骨組みの学習のスクリプトがするように, 骨組みの
+プロジェクトの実験 (outputs/<名前>/<日付>/<時刻>) に, ML-Found が書く重み
+(final_model.pt), 写した定義 (model_spec.yaml), 実験の状態 (run.json) と,
+学習のスクリプトが書く利用者と品物の番号の表 (rank_index.json) を置き,
+ML-Inference の make_rank_bundle で実験の中に一式 (inference) を作る.
 モデルは ML-ModelControl の同梱の 2 塔を番号の表の大きさにしたもの
 """
 
@@ -50,7 +51,7 @@ def main(project: Path, tables: Path) -> None:
     spec["nodes"]["user_fc1"]["params"]["in_features"] = len(USERS)
     spec["nodes"]["item_fc1"]["params"]["in_features"] = len(ITEMS)
 
-    # ML-Found の実験のように重み, 定義, 番号の表, 記録
+    # ML-Found が書く重み, 定義, 実験の状態と, 学習のスクリプトが書く番号の表
     run = project / "outputs" / "shop" / "2026-01-06" / "09-00-00"
     run.mkdir(parents=True, exist_ok=True)
     model = build_model(spec, seed=0, load_weights=False)

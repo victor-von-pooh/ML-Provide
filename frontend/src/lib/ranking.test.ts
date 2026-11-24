@@ -25,12 +25,12 @@ describe('並べるの結果と欄', () => {
     expect(rankUsers('')).toEqual([])
   })
 
-  it('並べる件数は空か 1 から 1000 の整数', () => {
+  it('並べる件数は空か 1 から 1,000 の整数', () => {
     expect(rankKProblem('')).toBeNull()
     expect(rankKProblem('5')).toBeNull()
     expect(rankKProblem('1000')).toBeNull()
     for (const text of ['0', '1001', '2.5', '-1', 'a'])
-      expect(rankKProblem(text)).toBe('並べる件数は 1 から 1000 の整数で書いてください')
+      expect(rankKProblem(text)).toBe('並べる件数は 1 から 1,000 の整数で書いてください')
   })
 
   it('反応の表の列と反応の決まりの文', () => {
