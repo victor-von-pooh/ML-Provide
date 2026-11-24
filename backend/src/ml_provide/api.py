@@ -81,6 +81,26 @@ NOISE_SHAPE_HINT = (
 # 雑音だけの一式を作るときに ML-Inference が確かめで作る件数
 CHECK_SAMPLES = 2
 
+# 並べるの一式で, 利用者ごとに並べる件数の上限
+MAX_RANK_K = 1000
+
+# 並べるの一式で, 一度に書く表の行 (利用者の数 × 並べる件数) の上限
+# (結果の表を 1 つの CSV に書き, 画面で読み直すため)
+MAX_RANK_ROWS = 1_000_000
+
+# 並べるの一式で読む前の反応と正解の反応の表の行の上限 (書く表の行の上限と
+# 同じ. 利用者ごとの品物の集合を記憶に持つため)
+MAX_REACTION_ROWS = MAX_RANK_ROWS
+
+# 並べるの一式で読む表のファイルの拡張子と区切り
+RANK_TABLES = {".csv": ",", ".tsv": "\t", ".parquet": None}
+
+# 並べるの一式だけに渡せる欄を, ほかの一式に渡したときの文
+RANK_ONLY = (
+    "利用者の並び, 並べる件数, 前に反応した品物の表, 正解の反応の表は, "
+    "並べるの一式だけに渡せます"
+)
+
 # 予測と判断の列 (外れ方を分ける列にしない. 画面の結果の表の右に寄せる列
 # と同じ)
 OWN_COLUMNS = frozenset({
@@ -136,6 +156,14 @@ class PredictRequest(BaseModel):
     rules: Optional[dict[str, Any]] = None
     forecast: bool = False
     decision: Optional[dict[str, Any]] = None
+    # 並べるの一式の利用者 (書いた値), 件数, 前に反応した品物の表と正解の
+    # 反応の表のファイル
+    users: Optional[list[str]] = None
+    # 件数は整数だけ (型の誤りも 422 でなく理由付きの 400 で断るので, 受け
+    # 取りでは型を決めない)
+    k: Any = None
+    seen: Optional[str] = None
+    truth: Optional[str] = None
 
 
 class ConcludeRequest(BaseModel):
@@ -885,6 +913,218 @@ def noise_source(
     return source
 
 
+def rank_table(
+    text: str, what: str, most: Optional[int] = None
+) -> tuple[Path, pd.DataFrame]:
+    """
+    並べるの一式に渡す表 (利用者, 前の反応, 正解の反応) のファイルを読む
+    関数
+
+    Parameters
+    ----------
+    text: str
+        ファイルの場所 (~ から書ける)
+    what: str
+        誤りの文に使う表の呼び名
+    most: Optional[int] = None
+        行の上限 (省くと決めない)
+
+    Returns
+    ----------
+    table: tuple[Path, pd.DataFrame]
+        読んだ場所と表 (CSV と TSV は全ての列を文字で読み, 空の欄だけを
+        欠損にする)
+
+    Raises
+    ----------
+    HTTPException
+        無いファイル, ディレクトリ, 読めない形式, 行が上限を超える表は 400
+    """
+    # 利用者と品物の値は文字のまま (番号の表と文字にして引くので, 007 を
+    # 7 にしないように)
+    path = Path(text).expanduser().resolve()
+    if path.is_dir():
+        raise HTTPException(
+            400, f"{what}には, ディレクトリでなくファイルを指定してください "
+            f"({path} はディレクトリです)"
+        )
+    if not path.is_file():
+        raise HTTPException(400, f"{what}のファイル {path} がありません")
+    suffix = path.suffix.lower()
+    if suffix not in RANK_TABLES:
+        raise HTTPException(
+            400, f"{what}は CSV, TSV, Parquet のファイルにしてください "
+            f"(今は {path.name})"
+        )
+    try:
+        if suffix == ".parquet":
+            frame = pd.read_parquet(path)
+        else:
+            frame = pd.read_csv(
+                path, sep=RANK_TABLES[suffix], encoding="utf-8-sig",
+                dtype=str, keep_default_na=False, na_values=[""]
+            )
+    except Exception as error:
+        raise HTTPException(
+            400, f"{what}のファイル {path.name} を読めません: {error}"
+        ) from error
+    if most is not None and len(frame) > most:
+        raise HTTPException(
+            400, f"{what}は {most:,} 行までです (今は {len(frame):,} 行)"
+        )
+    table = (path, frame)
+
+    return table
+
+
+def rank_request(
+    bundle: ml_inference.Bundle, body: PredictRequest
+) -> dict[str, Any]:
+    """
+    並べるの一式に渡す利用者, 件数, 前に反応した品物と正解の反応を確かめる
+    関数
+
+    Parameters
+    ----------
+    bundle: ml_inference.Bundle
+        一式
+    body: PredictRequest
+        書いた利用者か利用者の列を持つ表のファイル, 件数 (省くと一式の
+        rank.k), 前に反応した品物の表と正解の反応の表のファイル (任意)
+
+    Returns
+    ----------
+    request: dict[str, Any]
+        source (ML-Inference に渡す利用者の並びか表), described (入力の
+        文. 書いた利用者は None), path (表のファイル), k, seen と truth
+        (読んだ表と場所. 渡さなければ None)
+
+    Raises
+    ----------
+    HTTPException
+        並べるの一式でないのに並べるの欄を渡した場合, 利用者が無い場合,
+        件数が範囲の外の場合, 表が多すぎる場合は 400
+    """
+    # 並べるの欄は並べるの一式だけ (他の一式の入力と混ぜない)
+    given = (body.users is not None or body.k is not None
+             or body.seen is not None or body.truth is not None)
+    if not bundle.from_rank:
+        if given:
+            raise HTTPException(400, RANK_ONLY)
+        return {}
+    if body.texts is not None or body.count is not None or (
+        body.seed is not None
+    ):
+        raise HTTPException(
+            400, "並べるの一式には, 利用者を書くか, 利用者の列を持つ表の"
+            "ファイルを渡してください (文, 件数, 種は使いません)"
+        )
+    if body.options:
+        raise HTTPException(
+            400, "並べるの一式では読み込みの設定を使えません"
+        )
+
+    # 書いた利用者 (空の行は除く) か, 利用者の列を持つ表
+    column = str(bundle.info["rank"]["columns"]["user"])
+    path: Optional[Path] = None
+    if body.users is not None and body.source:
+        raise HTTPException(
+            400, "利用者は, 書くか表のファイルかのどちらかで渡してください"
+        )
+    if body.users is not None:
+        source: Any = [user.strip() for user in body.users if user.strip()]
+        if not source:
+            raise HTTPException(400, "利用者がありません")
+        count = len(source)
+    elif body.source:
+        path, source = rank_table(body.source, "利用者の表")
+        if column not in source.columns:
+            raise HTTPException(
+                400, f"利用者の表に利用者の列 {column} がありません (列: "
+                f"{', '.join(map(str, source.columns))})"
+            )
+        count = len(source)
+    else:
+        raise HTTPException(
+            400, "利用者を書くか, 利用者の表のファイルを指定してください"
+        )
+    if count > MAX_TEXTS:
+        raise HTTPException(400, f"利用者は 1 回に {MAX_TEXTS:,} 人までです")
+
+    # 件数 (省くと一式の rank.k) と, 書く表の行の上限
+    k = int(bundle.info["rank"]["k"]) if body.k is None else body.k
+    if isinstance(k, bool) or not isinstance(k, int) or not (
+        1 <= k <= MAX_RANK_K
+    ):
+        raise HTTPException(
+            400, f"並べる件数は 1 から {MAX_RANK_K} の整数にしてください"
+        )
+    rows = count * min(k, int(bundle.info["rank"]["items"]))
+    if rows > MAX_RANK_ROWS:
+        raise HTTPException(
+            400, f"利用者 {count:,} 人に {k} 件ずつでは, 表が "
+            f"{MAX_RANK_ROWS:,} 行を超えます. 利用者か件数を減らしてください"
+        )
+    seen = rank_table(
+        body.seen, "前に反応した品物の表", MAX_REACTION_ROWS
+    ) if body.seen else None
+    truth = rank_table(
+        body.truth, "正解の反応の表", MAX_REACTION_ROWS
+    ) if body.truth else None
+    request = {
+        "source": source, "path": path, "k": k, "seen": seen,
+        "truth": truth,
+        "described": None if path is None else f"{path} (利用者 {count:,} 人)",
+    }
+
+    return request
+
+
+def ranking_meta(
+    bundle: ml_inference.Bundle, result: dict[str, Any],
+    ranked: dict[str, Any]
+) -> dict[str, Any]:
+    """
+    並べるの結果に残す, 件数, 除いたか, 使った表と Recall@K と NDCG を
+    まとめる関数
+
+    Parameters
+    ----------
+    bundle: ml_inference.Bundle
+        並べるの一式
+    result: dict[str, Any]
+        ML-Inference の infer の結果 (frame は attrs に k を持つ)
+    ranked: dict[str, Any]
+        rank_request の返り値
+
+    Returns
+    ----------
+    ranking: dict[str, Any]
+        k, excluded, columns (反応の表の列の名前), seen と truth (読んだ
+        ファイルの場所), metrics (正解の反応の表を渡した場合の users, k,
+        recall_at_k, ndcg. 渡さなければ None)
+    """
+    # 正解の反応があれば, 前に反応した品物を正解から除いて数える
+    seen, truth = ranked["seen"], ranked["truth"]
+    metrics = None
+    if truth is not None:
+        metrics = ml_inference.rank_metrics(
+            bundle, result["frame"], truth[1],
+            seen=None if seen is None else seen[1], k=ranked["k"]
+        )
+    summary = result.get("summary") or {}
+    ranking = {
+        "k": ranked["k"],
+        "excluded": bool(summary.get("excluded")),
+        "columns": dict(bundle.info["rank"]["columns"]),
+        "seen": None if seen is None else str(seen[0]),
+        "truth": None if truth is None else str(truth[0]),
+        "metrics": metrics,
+    }
+
+    return ranking
+
+
 @router.post("/bundles/{bundle_id}/predict", status_code=201)
 def predict(
     request: Request, bundle_id: str, body: PredictRequest
@@ -925,9 +1165,13 @@ def predict(
         if given or decision or body.forecast:
             raise HTTPException(400, column_only(bundle.form))
         rules, decision = None, None
+    ranked = rank_request(bundle, body)
     noise = body.count is not None or body.seed is not None
-    if bundle.from_noise or noise:
-        source: Any = noise_source(bundle, body)
+    if ranked:
+        source: Any = ranked["source"]
+        described = ranked["described"]
+    elif bundle.from_noise or noise:
+        source = noise_source(bundle, body)
         described = None
     elif body.texts is not None:
         source = text_frame(bundle, body.texts)
@@ -943,10 +1187,16 @@ def predict(
     # 推論と結論 (1 つずつ)
     with PREDICT_LOCK:
         try:
+            # (並べるの一式だけに件数と前に反応した品物の表を渡す)
+            extra: dict[str, Any] = {} if not ranked else {
+                "k": ranked["k"],
+                "seen": None if ranked["seen"] is None else ranked["seen"][1],
+            }
             result = ml_inference.infer(
                 bundle, source, rules=rules, options=body.options,
-                forecast=body.forecast, decision=decision
+                forecast=body.forecast, decision=decision, **extra
             )
+            ranking = ranking_meta(bundle, result, ranked) if ranked else None
         except Exception as error:
             raise user_error(error) from error
         warned = list(bundle.cache.get("pretrained_warnings") or [])
@@ -962,7 +1212,10 @@ def predict(
             .notna().any()
         ),
         options=body.options,
-        source_path=str(source) if isinstance(source, Path) else None,
+        source_path=(
+            str(source) if isinstance(source, Path)
+            else str(ranked["path"]) if ranked.get("path") else None
+        ),
         role=bundle.role, output_form=bundle.form,
         column_output=bundle.column_output,
         target_info=ml_inference.target_of(bundle),
@@ -970,18 +1223,20 @@ def predict(
             ml_inference.target_of(bundle)
         ),
         pretrained_warnings=warned,
-        table_columns=table_columns(bundle)
+        table_columns=table_columns(bundle),
+        ranking=ranking
     )
     # 書いた表を読み直して結論を出し直す (出し直しと同じ型の値でまとめ,
     # 日時のような列のまとめの名前が, 後の出し直しで変わらないように)
     # (書き出しの途中で失敗した結果は, 壊れたまま残さずに削除)
     result_id, place = get_store(request).new_result_dir()
     meta = {k: v for k, v in result.items() if k != "frame"}
-    # (表の出力の結果は infer の件数だけの結論のまま. 読み直すと数に見える
-    # 種類の値が数になるため)
+    # (表の出力と並べるの結果は infer の結論のまま. 読み直すと数に見える
+    # 種類の値が数になり, 並べるの利用者ごとの数え方は件数だけの結論と違う
+    # ため)
     try:
         ml_inference.write_result(result, place)
-        if meta.get("output_form") != "table":
+        if meta.get("output_form") not in ("table", "ranking"):
             with RESULT_LOCK:
                 conclude_into(place, meta, meta.get("rules") or {})
     except Exception as error:
@@ -1375,8 +1630,12 @@ def read_frame(place: Path, meta: dict[str, Any]) -> pd.DataFrame:
             texts[str(column["name"])] = "Int64"
     # 表の出力は空の欄だけを欠損にする (種類の値の NA, null, None などを
     # 文字のまま読むため)
+    # 並べるの結果の利用者と品物は文字 (番号の表と同じく文字にして引く),
+    # 順位は欠損を持てる整数 (並べられない利用者の行は欠損)
+    if meta.get("output_form") == "ranking":
+        texts.update(user=str, item=str, rank="Int64")
     blanks: dict[str, Any] = {}
-    if meta.get("output_form") == "table":
+    if meta.get("output_form") in ("table", "ranking"):
         blanks = {"keep_default_na": False, "na_values": [""]}
     frame = pd.read_csv(
         place / "predictions.csv", encoding="utf-8-sig", dtype=texts,
@@ -1446,6 +1705,7 @@ def result_view(
         "pretrained_warnings": meta.get("pretrained_warnings") or [],
         "artifacts": meta.get("artifacts"),
         "table_columns": meta.get("table_columns"),
+        "ranking": meta.get("ranking"),
     }
 
     return view

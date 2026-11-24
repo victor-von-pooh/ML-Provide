@@ -105,6 +105,11 @@ export const api = {
       rules?: Rules
       forecast?: boolean
       decision?: Decision | Record<string, never>
+      /** 並べるの一式の利用者 (書いた値), 件数, 前に反応した品物の表と正解の反応の表 */
+      users?: string[]
+      k?: number
+      seen?: string
+      truth?: string
     },
   ) => request<Result>(`/api/bundles/${id}/predict`, json('POST', body)),
   results: (bundle?: string) =>

@@ -19,6 +19,15 @@ import {
   PREPARE_LABELS,
   sourceLabel,
 } from '../../lib/outputs'
+import {
+  MAX_RANK_K,
+  RANK_NO_PROBLEM,
+  RANK_UNSUPPORTED,
+  rankColumnsText,
+  rankKProblem,
+  rankUsers,
+  reactionRuleText,
+} from '../../lib/ranking'
 import { classesText, licenseAlert, preprocessText, READY_UNSUPPORTED } from '../../lib/ready'
 import { fromForm, toForm, withCleared, type RulesForm } from '../../lib/rules'
 import { CompareResultsCard, MAX_COMPARE } from '../results/CompareResultsCard'
@@ -88,6 +97,28 @@ function ReadyRows({ ready }: { ready: NonNullable<Description['ready']> }) {
   )
 }
 
+/** 並べるの一式 (版 8) の番号の表と索引, 件数の既定, 反応の表の列 */
+function RankRows({ rank }: { rank: NonNullable<Description['rank']> }) {
+  return (
+    <>
+      <Row label="データ">
+        利用者と品物の番号の表と, 品物の埋め込みの索引 (データセットなし. 推論は利用者から並べる)
+      </Row>
+      <Row label="利用者と品物">
+        学習用の反応にいた利用者 {rank.users.toLocaleString()} 人と品物{' '}
+        {rank.items.toLocaleString()} 件 (埋め込みの幅 {rank.width})
+      </Row>
+      <Row label="並べる件数の既定">{rank.k} 件 (問題の設定の件数)</Row>
+      <Row label="反応の表の列">
+        <span className="font-mono text-xs">{rankColumnsText(rank.columns)}</span>
+        <span className="block text-xs text-ink-2">
+          前に反応した品物の表と正解の反応の表の列です. {reactionRuleText(rank.columns)}
+        </span>
+      </Row>
+    </>
+  )
+}
+
 /** 既製のモデルの一式の注意 (ライセンスの警告は推論の前に気付けるように上に出す) */
 function ReadyNotices({ ready }: { ready: NonNullable<Description['ready']> }) {
   const alert = licenseAlert(ready.license)
@@ -112,6 +143,8 @@ function DescriptionView({ description }: { description: Description }) {
   const noise = description.kind === 'noise'
   // 既製のモデルの一式は読み込みと前処理の代わりに出どころと重みの前処理
   const ready = description.ready
+  // 並べるの一式は番号の表と索引 (モデルの入力は利用者と品物の番号で, 列の出どころを持たない)
+  const rank = description.rank
   const unit = items ? '件' : '行'
   return (
     <dl className="text-sm">
@@ -119,6 +152,8 @@ function DescriptionView({ description }: { description: Description }) {
         <ItemsRows items={items} />
       ) : ready ? (
         <ReadyRows ready={ready} />
+      ) : rank ? (
+        <RankRows rank={rank} />
       ) : noise ? (
         <Row label="データ">雑音だけ (データセットなし. 推論は件数と種から作る)</Row>
       ) : (
@@ -139,7 +174,7 @@ function DescriptionView({ description }: { description: Description }) {
         </Row>
       )}
       {description.text_column && <Row label="文の列">{description.text_column}</Row>}
-      {!items && !noise && !ready && (
+      {!items && !noise && !ready && !rank && (
         <>
           <Row label="読み込み">
             <span className="font-mono text-xs">
@@ -155,18 +190,20 @@ function DescriptionView({ description }: { description: Description }) {
           </Row>
         </>
       )}
-      <Row label="モデルの入力">
-        <span className="font-mono text-xs">
-          {inputs
-            .map(
-              ([name, plan]) =>
-                `${name} ← ${SHORT_SOURCE_LABELS[plan.source] ?? plan.source}${
-                  plan.prepend.length > 0 ? ` (先頭に ${plan.prepend.join(', ')})` : ''
-                }`,
-            )
-            .join(', ')}
-        </span>
-      </Row>
+      {!rank && (
+        <Row label="モデルの入力">
+          <span className="font-mono text-xs">
+            {inputs
+              .map(
+                ([name, plan]) =>
+                  `${name} ← ${SHORT_SOURCE_LABELS[plan.source] ?? plan.source}${
+                    plan.prepend.length > 0 ? ` (先頭に ${plan.prepend.join(', ')})` : ''
+                  }`,
+              )
+              .join(', ')}
+          </span>
+        </Row>
+      )}
       {run && (
         <Row label="学習の結果">
           {run.status ?? '状態不明'}
@@ -534,6 +571,167 @@ function PredictCard({
   )
 }
 
+/**
+ * 並べるの一式で, 利用者 (書くか表のファイル), 件数 K, 前に反応した品物を除くか,
+ * 正解の反応の表 (任意) を選んで並べる. 結論の決め方と意思決定は使えない
+ */
+function RankPredictCard({
+  bundle,
+  rank,
+}: {
+  bundle: Bundle
+  rank: NonNullable<Description['rank']>
+}) {
+  const navigate = useNavigate()
+  const client = useQueryClient()
+  const [mode, setMode] = useState<'users' | 'file'>('users')
+  const [users, setUsers] = useState('')
+  const [source, setSource] = useState('')
+  const [k, setK] = useState(String(rank.k))
+  const [exclude, setExclude] = useState(false)
+  const [seen, setSeen] = useState('')
+  const [truth, setTruth] = useState('')
+  const written = rankUsers(users)
+  const problems: string[] = []
+  const kProblem = rankKProblem(k)
+  if (kProblem) problems.push(kProblem)
+  if (exclude && !seen.trim())
+    problems.push('前に反応した品物を除くときは, 前に反応した品物の表を選んでください')
+  const columns = rankColumnsText(rank.columns)
+  const predict = useMutation({
+    // 送ったときの欄の印 (欄を変えたら前の誤りを出さないため)
+    mutationFn: (_key: string) =>
+      api.predict(bundle.id, {
+        ...(mode === 'users' ? { users: written } : { source: source.trim() }),
+        ...(k.trim() ? { k: Number(k) } : {}),
+        ...(exclude ? { seen: seen.trim() } : {}),
+        ...(truth.trim() ? { truth: truth.trim() } : {}),
+      }),
+    onSuccess: (result) => {
+      client.invalidateQueries({ queryKey: ['results'] })
+      navigate(`/results/${result.id}`)
+    },
+  })
+  const formKey = JSON.stringify([mode, users, source, k, exclude, seen, truth])
+  const ready =
+    (mode === 'users' ? written.length > 0 : source.trim() !== '') && problems.length === 0
+  return (
+    <Card title="利用者ごとに並べる">
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (ready) predict.mutate(formKey)
+        }}
+      >
+        <div role="radiogroup" aria-label="並べる利用者" className="flex gap-4 text-sm">
+          <label className="flex items-center gap-1">
+            <input type="radio" checked={mode === 'users'} onChange={() => setMode('users')} />
+            利用者を書く
+          </label>
+          <label className="flex items-center gap-1">
+            <input type="radio" checked={mode === 'file'} onChange={() => setMode('file')} />
+            利用者の表のファイル
+          </label>
+        </div>
+        {mode === 'users' ? (
+          <div>
+            <label htmlFor="rank-users" className="mb-1 block text-xs font-medium text-ink-2">
+              並べる利用者 (1 行に 1 人. 学習用の反応にいた利用者の値)
+            </label>
+            <textarea
+              id="rank-users"
+              value={users}
+              onChange={(event) => setUsers(event.target.value)}
+              rows={5}
+              className="w-full rounded-lg border border-line bg-surface p-2 font-mono text-sm"
+            />
+          </div>
+        ) : (
+          <PathField
+            id="rank-source"
+            label={`利用者の表 (利用者の列 ${rank.columns.user} を持つ CSV, TSV, Parquet)`}
+            value={source}
+            onChange={setSource}
+            pickFiles
+            hint="表の上の行の利用者から順に並べ, 結果の表もその順になります. 値は文字のまま読みます (007 は 7 になりません)"
+          />
+        )}
+        <div className="max-w-xs">
+          <label htmlFor="rank-k" className="mb-1 block text-xs font-medium text-ink-2">
+            並べる件数 K (既定は一式の {rank.k} 件. {MAX_RANK_K} 件まで)
+          </label>
+          <input
+            id="rank-k"
+            type="number"
+            min={1}
+            max={MAX_RANK_K}
+            value={k}
+            onChange={(event) => setK(event.target.value)}
+            className="h-8 w-full rounded-lg border border-line bg-surface px-2 text-sm"
+          />
+        </div>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-start gap-2 text-sm">
+            <input
+              id="rank-exclude"
+              type="checkbox"
+              className="mt-1"
+              checked={exclude}
+              aria-describedby="rank-exclude-note"
+              onChange={(event) => setExclude(event.target.checked)}
+            />
+            <div>
+              <label htmlFor="rank-exclude">前に反応した品物を除く</label>
+              <p id="rank-exclude-note" className="text-xs text-ink-3">
+                利用者ごとに, 前に反応した品物の表にある品物を除いて並べます.
+                除くと品物が残らない利用者は, 理由を付けて並べません
+              </p>
+            </div>
+          </div>
+          {exclude && (
+            <PathField
+              id="rank-seen"
+              label={`前に反応した品物の表 (列 ${columns})`}
+              value={seen}
+              onChange={setSeen}
+              pickFiles
+              hint={reactionRuleText(rank.columns)}
+            />
+          )}
+        </div>
+        <PathField
+          id="rank-truth"
+          label={`正解の反応の表 (任意. 並べた後の反応. 列 ${columns})`}
+          value={truth}
+          onChange={setTruth}
+          pickFiles
+          hint="渡すと, 上位 K 件に入った正解から Recall@K と NDCG を数えます (前に反応した品物を除くときは, その品物を正解から除きます)"
+        />
+        <p className="text-xs text-ink-2">
+          {RANK_UNSUPPORTED}. {RANK_NO_PROBLEM}
+        </p>
+        {problems.map((problem) => (
+          <p key={problem} role="alert" className="text-xs text-critical-text">
+            {problem}
+          </p>
+        ))}
+        {predict.error && predict.variables === formKey && <ErrorBox error={predict.error} />}
+        <div className="flex justify-end">
+          <Button
+            type="submit"
+            variant="primary"
+            icon={Play}
+            disabled={!ready || predict.isPending}
+          >
+            {predict.isPending ? '並べています…' : '並べる'}
+          </Button>
+        </div>
+      </form>
+    </Card>
+  )
+}
+
 /** 一式の説明, 推論, 過去の結果 */
 export function BundlePage() {
   const { id = '' } = useParams()
@@ -541,13 +739,13 @@ export function BundlePage() {
   const client = useQueryClient()
   const bundle = useQuery({ queryKey: ['bundles', id], queryFn: () => api.bundle(id) })
   const results = useQuery({ queryKey: ['results', id], queryFn: () => api.results(id) })
-  // 雑音だけの一式はデータも正解も無く, 問題の設定の結論を扱わないので問題の設定を読まない
+  // 雑音だけの一式と並べるの一式は, 問題の設定の結論と意思決定を扱わないので問題の設定を読まない
   // (既製のモデルの一式は読み, 結論の決め方だけを既定にする).
   // 種類は一式か一覧の読んだ値から. 分からない間は一式と並べて読む (推論の欄を 1 往復早く出すため.
   // 読まない種類の一式なら, サーバーは問題の設定を読まずに空の状態を返す)
   const listed = client.getQueryData<Bundle[]>(['bundles'])?.find((item) => item.id === id)
   const kind = bundle.data?.description?.kind ?? listed?.description?.kind
-  const noise = kind === 'noise'
+  const noise = kind === 'noise' || kind === 'rank'
   const problem = useQuery({
     queryKey: ['bundle-problem', id],
     queryFn: () => api.bundleProblem(id),
@@ -640,12 +838,16 @@ export function BundlePage() {
               />
             )}
             {/* 問題の設定を読み終えてから, その値を既定にして出す */}
-            {(noise || !problem.isPending) && (
-              <PredictCard
-                bundle={data}
-                description={data.description}
-                linked={noise ? null : (problem.data?.linked ?? null)}
-              />
+            {data.description.rank ? (
+              <RankPredictCard bundle={data} rank={data.description.rank} />
+            ) : (
+              (noise || !problem.isPending) && (
+                <PredictCard
+                  bundle={data}
+                  description={data.description}
+                  linked={noise ? null : (problem.data?.linked ?? null)}
+                />
+              )
             )}
             <Card title="一式の説明">
               <DescriptionView description={data.description} />

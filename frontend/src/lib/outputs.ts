@@ -28,6 +28,7 @@ export const FORM_LABELS: Record<string, string> = {
   text: '文',
   image: '画像',
   table: '表',
+  ranking: '順位 (利用者ごとの上位の品物)',
 }
 
 /** 列の出力の形 (結論の決め方と意思決定を使える) */
