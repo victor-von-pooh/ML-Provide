@@ -882,7 +882,7 @@ wheels = [
 [[package]]
 name = "ml-eda"
 version = "0.1.0"
-source = { git = "https://github.com/victor-von-pooh/ML-EDA.git#5392d50fbedbb9215f763d662352032c5297be55" }
+source = { git = "https://github.com/victor-von-pooh/ML-EDA.git#f3e46bc6926ba56464628f1c19943b9beed590c7" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },

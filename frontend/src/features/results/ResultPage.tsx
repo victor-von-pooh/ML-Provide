@@ -16,6 +16,14 @@ import {
   tableRowColumns,
 } from '../../lib/outputs'
 import {
+  CLUSTER_HEADINGS,
+  CLUSTER_STATUS_LABELS,
+  CLUSTER_UNSUPPORTED,
+  clusterName,
+  clusterRowColumns,
+  clusterRows,
+} from '../../lib/clusters'
+import {
   metricText,
   RANK_HEADINGS,
   RANK_STATUS_LABELS,
@@ -29,6 +37,7 @@ import { rowReasonable } from '../../lib/rowReason'
 import { fromForm, toForm, type RulesForm } from '../../lib/rules'
 import { OutputNotices } from '../bundles/OutputView'
 import { ArtifactCard } from './ArtifactCard'
+import { ClusterStabilityView, ClusterSummaryTable } from './ClusterCards'
 import { DecisionCard } from './DecisionCard'
 import { ExplainCard } from './ExplainCard'
 import { RemeasureCard } from './RemeasureCard'
@@ -170,23 +179,38 @@ function RowsTable({
   result,
   onView,
   onReason,
+  cluster = '',
+  onCluster,
 }: {
   result: Result
   onView?: (row: number) => void
   onReason?: (row: number) => void
+  /** 群分けの結果で絞る群の番号 (空は全ての群. 群の要約の「行を見る」と同じ値) */
+  cluster?: string
+  onCluster?: (group: string) => void
 }) {
   const column = result.column_output !== false
   const [page, setPage] = useState(0)
   const [status, setStatus] = useState('')
   const [decision, setDecision] = useState('')
+  // 群分けの結果は行ごとの群と距離 (見出しと状態は日本語. 群で絞れる)
+  const grouped = result.output_form === 'cluster'
+  const clusterCount = result.summary?.k ?? result.grouping?.k ?? 0
+  // 群の要約から絞る群を変えたら, ページを初めに戻す
+  const [seenCluster, setSeenCluster] = useState(cluster)
+  if (seenCluster !== cluster) {
+    setSeenCluster(cluster)
+    setPage(0)
+  }
   const rows = useQuery({
-    queryKey: ['rows', result.id, page, status, decision, result.rules],
+    queryKey: ['rows', result.id, page, status, decision, cluster, result.rules],
     queryFn: () =>
       api.rows(result.id, {
         offset: page * PAGE,
         limit: PAGE,
         status: status || undefined,
         decision: decision || undefined,
+        group: grouped && cluster !== '' ? Number(cluster) : undefined,
       }),
     placeholderData: keepPreviousData,
   })
@@ -200,26 +224,37 @@ function RowsTable({
   const table = result.output_form === 'table' && !!result.table_columns
   // 並べるの結果は利用者と順位ごとの品物と点数 (見出しと状態は日本語)
   const ranking = result.output_form === 'ranking'
-  const headings = ranking ? RANK_HEADINGS : table ? TABLE_HEADINGS : null
+  const headings = ranking
+    ? RANK_HEADINGS
+    : grouped
+      ? CLUSTER_HEADINGS
+      : table
+        ? TABLE_HEADINGS
+        : null
+  const statusLabels = ranking ? RANK_STATUS_LABELS : grouped ? CLUSTER_STATUS_LABELS : null
   const columns = !rows.data
     ? []
     : ranking
       ? rankRowColumns(rows.data.columns)
-      : table
-        ? tableRowColumns(rows.data.columns, result.table_columns ?? [])
-        : [
-            ...rows.data.columns.filter(
-              (name) =>
-                (OWN.has(name) && (column || name !== 'decision')) ||
-                (name.startsWith('p:') && !manyProbabilities),
-            ),
-            ...rows.data.columns.filter((name) => !OWN.has(name) && !name.startsWith('p:')),
-          ]
+      : grouped
+        ? clusterRowColumns(rows.data.columns)
+        : table
+          ? tableRowColumns(rows.data.columns, result.table_columns ?? [])
+          : [
+              ...rows.data.columns.filter(
+                (name) =>
+                  (OWN.has(name) && (column || name !== 'decision')) ||
+                  (name.startsWith('p:') && !manyProbabilities),
+              ),
+              ...rows.data.columns.filter((name) => !OWN.has(name) && !name.startsWith('p:')),
+            ]
   const total = rows.data?.total ?? 0
   const pages = Math.max(1, Math.ceil(total / PAGE))
   return (
     <Card
-      title={ranking ? '並べた品物' : table ? '作った表' : '予測の表'}
+      title={
+        ranking ? '並べた品物' : grouped ? '群に割り当てた行' : table ? '作った表' : '予測の表'
+      }
       padded={false}
       actions={
         <>
@@ -237,16 +272,44 @@ function RowsTable({
           >
             <option value="">全ての行</option>
             <option value="ok">
-              {ranking ? '並べた利用者の行' : column ? '予測した行' : '推論した行'}
+              {ranking
+                ? '並べた利用者の行'
+                : grouped
+                  ? '割り当てた行'
+                  : column
+                    ? '予測した行'
+                    : '推論した行'}
             </option>
             <option value="skipped">
               {ranking
                 ? '並べられなかった利用者'
-                : column
-                  ? '予測しなかった行'
-                  : '推論しなかった行'}
+                : grouped
+                  ? '割り当てられなかった行'
+                  : column
+                    ? '予測しなかった行'
+                    : '推論しなかった行'}
             </option>
           </select>
+          {grouped && onCluster && (
+            <>
+              <label className="sr-only" htmlFor="rows-cluster">
+                群で絞る
+              </label>
+              <select
+                id="rows-cluster"
+                value={cluster}
+                onChange={(event) => onCluster(event.target.value)}
+                className="h-8 rounded-lg border border-line bg-surface px-2 text-sm"
+              >
+                <option value="">全ての群</option>
+                {Array.from({ length: clusterCount }, (_, group) => (
+                  <option key={group} value={String(group)}>
+                    {clusterName(group)}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
           {column && (
             <>
               <label className="sr-only" htmlFor="rows-decision">
@@ -292,6 +355,13 @@ function RowsTable({
               並べられなかった利用者は 1 行で, 理由を出します. 表の全ての行は CSV で持ち出せます
             </p>
           )}
+          {grouped && (
+            <p className="border-b border-line px-4 py-2 text-xs text-ink-3">
+              1 行ごとに, 最も近い群の中心の番号 (群) と, その中心までの埋め込みの空間の距離
+              (小さいほど群の中心に近い) を出します. 割り当てられなかった行は理由を出します.
+              表の全ての行は CSV で持ち出せます
+            </p>
+          )}
           {manyProbabilities && (
             <p className="border-b border-line px-4 py-2 text-xs text-ink-3">
               種類が {probabilities.length.toLocaleString()} あるので, 種類ごとの確率の列 (p:種類)
@@ -303,9 +373,11 @@ function RowsTable({
               <caption className="sr-only">
                 {ranking
                   ? '並べた品物 (利用者ごとの上位の品物と点数)'
-                  : table
-                    ? '作った表 (件ごとの列の値)'
-                    : '予測と判断の表'}
+                  : grouped
+                    ? '群に割り当てた行 (行ごとの群と距離)'
+                    : table
+                      ? '作った表 (件ごとの列の値)'
+                      : '予測と判断の表'}
               </caption>
               <thead className="sticky top-0 bg-surface text-ink-3">
                 <tr className="border-b border-line">
@@ -381,9 +453,16 @@ function RowsTable({
                         className="max-w-72 truncate px-3 py-1.5"
                         title={String(row[name] ?? '')}
                       >
-                        {ranking && name === 'status'
-                          ? (RANK_STATUS_LABELS[String(row[name])] ?? String(row[name] ?? ''))
-                          : formatValue(row[name], name === 'confidence' || name.startsWith('p:'))}
+                        {statusLabels && name === 'status'
+                          ? (statusLabels[String(row[name])] ?? String(row[name] ?? ''))
+                          : grouped && name === 'group' && typeof row[name] === 'number'
+                            ? clusterName(row[name])
+                            : formatValue(
+                                row[name],
+                                name === 'confidence' ||
+                                  name.startsWith('p:') ||
+                                  name === 'distance',
+                              )}
                       </td>
                     ))}
                   </tr>
@@ -476,6 +555,44 @@ function RankingCard({ result }: { result: Result }) {
   )
 }
 
+/** 群分けの結果の群の要約 (新しいデータの群ごとの件数と特徴) と学習の群の安定性 */
+function ClusterCards({ result, onPick }: { result: Result; onPick: (group: number) => void }) {
+  const rows = clusterRows(result)
+  const stability = result.summary?.stability
+  const columns = result.grouping?.columns ?? []
+  return (
+    <>
+      <Card title="群の要約" padded={false}>
+        {rows.length > 0 ? (
+          <>
+            <p className="border-b border-line px-4 py-2 text-xs text-ink-3">
+              割り当てた行の群ごとの件数と割合, 群を作る列ごとの特徴 (数の列は平均,
+              種類の列は最も多い値と群の中の割合) です. 学習のときの割合と比べると,
+              新しいデータで増えた群と減った群が分かります. 安定性は学習のときに作り直した群との
+              Jaccard 係数の平均 (1 に近いほど作り直しても同じ行が集まる群) です. 行の無い群も 0
+              件で並べます
+            </p>
+            <ClusterSummaryTable
+              rows={rows}
+              columns={columns}
+              learned={result.grouping?.learned}
+              onPick={onPick}
+              caption="群の要約 (群ごとの件数, 割合, 安定性, 列の特徴と全体)"
+            />
+          </>
+        ) : (
+          <p className="p-4 text-sm text-ink-2">群に割り当てた行が無いので, 群の要約はありません</p>
+        )}
+      </Card>
+      {stability && (
+        <Card title="群の安定性 (学習のとき)">
+          <ClusterStabilityView stability={stability} />
+        </Card>
+      )}
+    </>
+  )
+}
+
 /** 決め方を変えて結論を出し直す */
 function ConcludeCard({ result }: { result: Result }) {
   const client = useQueryClient()
@@ -538,11 +655,14 @@ export function ResultPage() {
   const [artifactRow, setArtifactRow] = useState<number | null>(null)
   // 理由を求める行 (押すまでは無し)
   const [reasonRow, setReasonRow] = useState<number | null>(null)
+  // 群分けの結果の表で絞る群 (群の要約の「行を見る」と表の欄で選ぶ. 空は全ての群)
+  const [cluster, setCluster] = useState('')
   const [artifactOf, setArtifactOf] = useState(id)
   if (artifactOf !== id) {
     setArtifactOf(id)
     setArtifactRow(null)
     setReasonRow(null)
+    setCluster('')
   }
   const navigate = useNavigate()
   const client = useQueryClient()
@@ -583,6 +703,8 @@ export function ResultPage() {
   const readyModel = data.kind === 'ready'
   // 並べるの結果は利用者ごとの上位の品物 (数えるのは利用者の人数)
   const ranking = data.output_form === 'ranking'
+  // 群分けの結果は行ごとの群 (結論は群の要約と学習の群の安定性)
+  const grouped = data.output_form === 'cluster'
   const form = data.artifacts?.form ?? data.output_form ?? ''
   // 外れ方を種類ごとに分けられる列 (回帰と予測の一式の, 予測と判断と目的の列を除いた列)
   const target = bundle.data?.description?.target
@@ -652,6 +774,16 @@ export function ResultPage() {
         {readyModel && <p className="text-xs text-ink-2">{READY_UNSUPPORTED}</p>}
         {ranking && <p className="text-xs text-ink-2">{RANK_UNSUPPORTED}</p>}
         {ranking && <RankingCard result={data} />}
+        {grouped && <p className="text-xs text-ink-2">{CLUSTER_UNSUPPORTED}</p>}
+        {grouped && (
+          <ClusterCards
+            result={data}
+            onPick={(group) => {
+              setCluster(String(group))
+              document.getElementById('result-rows')?.scrollIntoView({ block: 'start' })
+            }}
+          />
+        )}
         {column && !readyModel && (
           <DecisionCard
             key={`decision:${JSON.stringify(data.decision?.decision ?? null)}`}
@@ -672,17 +804,27 @@ export function ResultPage() {
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <StatTile label={ranking ? '利用者' : '行'} value={summary.rows.toLocaleString()} />
             <StatTile
-              label={ranking ? '並べた利用者' : column ? '予測した' : '推論した'}
+              label={
+                ranking ? '並べた利用者' : grouped ? '割り当てた' : column ? '予測した' : '推論した'
+              }
               value={summary.predicted.toLocaleString()}
             />
             <StatTile
               label={
-                ranking ? '並べられなかった利用者' : column ? '予測しなかった' : '推論しなかった'
+                ranking
+                  ? '並べられなかった利用者'
+                  : grouped
+                    ? '割り当てられなかった'
+                    : column
+                      ? '予測しなかった'
+                      : '推論しなかった'
               }
               value={summary.skipped.toLocaleString()}
             />
             {ranking ? (
               <StatTile label="並べた件数" value={`${summary.k ?? data.ranking?.k ?? '–'} 件`} />
+            ) : grouped ? (
+              <StatTile label="群の数" value={`${summary.k ?? data.grouping?.k ?? '–'} 個`} />
             ) : !column ? (
               <StatTile label="出力の形" value={FORM_LABELS[form] ?? form} />
             ) : values ? (
@@ -720,12 +862,16 @@ export function ResultPage() {
         )}
         {reasonable && <RowReasonCard result={data} row={reasonRow} onRow={setReasonRow} />}
         {/* 出し直した後は, 絞り込みとページを初めに戻す */}
-        <RowsTable
-          key={`rows:${JSON.stringify(data.rules ?? {})}:${JSON.stringify(data.decision?.decision ?? null)}`}
-          result={data}
-          onView={data.artifacts ? setArtifactRow : undefined}
-          onReason={reasonable ? setReasonRow : undefined}
-        />
+        <div id="result-rows" className="scroll-mt-4">
+          <RowsTable
+            key={`rows:${JSON.stringify(data.rules ?? {})}:${JSON.stringify(data.decision?.decision ?? null)}`}
+            result={data}
+            onView={data.artifacts ? setArtifactRow : undefined}
+            onReason={reasonable ? setReasonRow : undefined}
+            cluster={cluster}
+            onCluster={grouped ? setCluster : undefined}
+          />
+        </div>
       </div>
     </>
   )

@@ -118,6 +118,11 @@ uv run python ../frontend/e2e/make_table.py "$WORK/project"
 # 並べる利用者, 前の反応, 後の反応の表を書く
 uv run python ../frontend/e2e/make_rank.py "$WORK/project" "$WORK/rank"
 
+# 骨組みのプロジェクトの実験の中に, まとめるの骨組みの学習のように符号化器の重み, 定義,
+# 列の符号化と群の中心, 群の割り当て, 群の安定性と群の要約と, 群分けの一式 (版 9.
+# ML-Inference の make_group_bundle) を作り, 群に割り当てる新しい行の表を書く
+uv run python ../frontend/e2e/make_group.py "$WORK/project" "$WORK/group"
+
 # 既製のモデルの一式で推論する画像 (赤, 緑, 青と, 読めないファイル)
 uv run python - "$WORK/ready-images" <<'PY'
 import sys
