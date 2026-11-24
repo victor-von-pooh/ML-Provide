@@ -284,7 +284,7 @@ def test_guard_from_problem(
     # 知らせる (名前は出さない)
     monkeypatch.setattr(
         "ml_provide.api.linked_guard",
-        lambda entry: {"name": "選ぶ数", "counted": "selected"},
+        lambda entry: ({"name": "選ぶ数", "counted": "selected"}, None),
     )
     refused = client.post(replay_url)
     assert refused.status_code == 400
@@ -294,18 +294,86 @@ def test_guard_from_problem(
     # ML-Inference の守る指標の誤りは利用者への誤り (400)
     monkeypatch.setattr(
         "ml_provide.api.linked_guard",
-        lambda entry: {"name": "欠品の率", "better": "up"},
+        lambda entry: ({"name": "欠品の率", "better": "up"}, None),
     )
     refused = client.post(replay_url)
     assert refused.status_code == 400
     assert "守る指標の誤り" in refused.json()["detail"]
 
-    # 読めなくなった問題の設定は理由付きで断る
+    # 守る指標があって推論に渡せない問題の設定 (機械学習を使わない) は,
+    # 理由を添えて断る
     monkeypatch.undo()
-    (project / "problem.yaml").write_text("- 壊れた", encoding="utf-8")
+    ml_quest.save_problem(
+        ml_quest.answer(problem, "ml.use", False), project
+    )
     refused = client.post(replay_url)
     assert refused.status_code == 400
-    assert "守る指標を読めない" in refused.json()["detail"]
+    assert "守る指標「欠品の率」" in refused.json()["detail"]
+
+
+def test_backtest_without_guard_of_broken_problem(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """
+    つないだ後に崩れた問題の設定でも, 守る指標が無いか有無を見られなければ
+    たどり直せることを確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    tmp_path: Path
+        一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 守る指標の無い問題の設定をつないで推論する
+    added = client.post("/api/samples").json()
+    daily = next(b for b in added if "日々の売上" in b["name"])
+    project, bundle = project_bundle(client, tmp_path, daily["path"])
+    url = f"/api/bundles/{bundle['id']}/problem"
+    linked = client.put(url, json={"path": str(project / "problem.yaml")})
+    assert linked.status_code == 200, linked.text
+    made = client.post(f"/api/bundles/{bundle['id']}/predict", json={
+        "source": daily["sample_past"],
+        "decision": {"type": "quantity", "under_cost": 200, "over_cost": 150},
+    })
+    assert made.status_code == 201, made.text
+    replay_url = f"/api/results/{made.json()['id']}/backtest"
+    problem = ml_quest.load_problem(project)
+
+    # 機械学習を使わない (推論に渡せない) が, 守る指標が無いので通る
+    ml_quest.save_problem(
+        ml_quest.answer(problem, "ml.use", False), project
+    )
+    replay = client.post(replay_url)
+    assert replay.status_code == 200, replay.text
+    backtest = replay.json()["backtest"]
+    assert backtest["guard"] is None
+    assert not any("守る指標" in s for s in backtest["sentences"])
+
+    # 別の問題の設定に置き換わった場合は, 数えずに知らせる
+    other = {**problem, "created_at": "2026-01-01T00:00:00+09:00"}
+    ml_quest.save_problem(other, project)
+    replay = client.post(replay_url)
+    assert replay.status_code == 200, replay.text
+    assert any("置き換わっているので, 守る指標は数えていません" in s
+               for s in replay.json()["backtest"]["sentences"])
+
+    # 読めない, 消えた場合も, 数えずに知らせる
+    (project / "problem.yaml").write_text("- 壊れた", encoding="utf-8")
+    replay = client.post(replay_url)
+    assert replay.status_code == 200, replay.text
+    assert any("読めないので, 守る指標は数えていません" in s
+               for s in replay.json()["backtest"]["sentences"])
+    (project / "problem.yaml").unlink()
+    replay = client.post(replay_url)
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["backtest"]["guard"] is None
+    assert any("読めないので, 守る指標は数えていません" in s
+               for s in replay.json()["backtest"]["sentences"])
 
 
 def test_current_from_problem(client: TestClient, tmp_path: Path) -> None:

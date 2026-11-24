@@ -2234,8 +2234,9 @@ def backtest_result(request: Request, result_id: str) -> dict[str, Any]:
     ----------
     HTTPException
         意思決定の無い結果, 入力のファイルが無い場合, 目的の列が無い
-        場合, つないだ問題の設定を読めない場合, 守る指標を数えられない
-        場合は 400
+        場合, 守る指標を答えた問題の設定を推論に渡せない場合, 守る指標を
+        数えられない場合は 400 (守る指標の有無を見られない問題の設定は,
+        数えずに知らせの文を添える)
     """
     # 入力のファイルを読み直して, 方針と素朴なやり方を比べる. 一式に
     # 問題の設定をつないでいれば, その守る指標もこの方針で数える
@@ -2253,7 +2254,7 @@ def backtest_result(request: Request, result_id: str) -> dict[str, Any]:
         )
     bundle = result_bundle(request, meta)
     entry = get_store(request).find(str(meta.get("bundle_id"))) or {}
-    guard = linked_guard(entry)
+    guard, guard_note = linked_guard(entry)
     check_guard_kind(guard, decided["decision"])
     with PREDICT_LOCK:
         try:
@@ -2264,6 +2265,8 @@ def backtest_result(request: Request, result_id: str) -> dict[str, Any]:
         except (OSError, *USER_ERRORS) as error:
             raise user_error(error) from error
     replay.pop("decision", None)
+    if guard_note:
+        replay["sentences"] = [*replay.get("sentences", []), guard_note]
     # たどり直している間に決め直していたら, 古い方針の結果は書かない
     with RESULT_LOCK:
         meta = read_meta(place)

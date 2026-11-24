@@ -99,7 +99,9 @@ def read_problem(path: Path) -> dict[str, Any]:
     return problem
 
 
-def linked_guard(entry: dict[str, Any]) -> Optional[dict[str, Any]]:
+def linked_guard(
+    entry: dict[str, Any]
+) -> tuple[Optional[dict[str, Any]], Optional[str]]:
     """
     一式につないだ問題の設定から, たどり直しで数える守る指標を読む関数
 
@@ -110,43 +112,58 @@ def linked_guard(entry: dict[str, Any]) -> Optional[dict[str, Any]]:
 
     Returns
     ----------
-    guard: Optional[dict[str, Any]]
+    found: tuple[Optional[dict[str, Any]], Optional[str]]
         ML-Quest の受け渡しの推論の守る指標 (name, unit, better, line,
-        measure, counted). 問題の設定をつないでいないか, 守る指標を
-        答えていなければ None
+        measure, counted. つないでいないか, 守る指標を答えていないか,
+        有無を見られなければ None) と, 有無を見られなかったときの知らせ
+        の文 (無ければ None)
 
     Raises
     ----------
     HTTPException
-        つないだ問題の設定が読めない場合, 別の問題の設定に置き換わった
-        場合, 推論に渡せない場合は 400
+        守る指標を答えた問題の設定が推論に渡せない場合は 400
     """
-    # たどり直しのたびに読み直す (推論の既定と同じく, 問題の設定の今の値)
+    # たどり直しのたびに読み直す (推論の既定と同じく, 問題の設定の今の値).
+    # 守る指標の有無を見られなければ, 守る指標の無い場合と同じに通す
+    # (守る指標の無いたどり直しを, 問題の設定の崩れで止めないため)
     text = entry.get("problem")
     if not isinstance(text, str):
-        return None
+        return None, None
     try:
         path = problem_file(text)
         problem = read_problem(path)
-        created = entry.get("problem_created")
-        if created and str(problem.get("created_at")) != created:
-            raise HTTPException(
-                422, f"{path} がつないだときと別の問題の設定に置き換わって"
-                "います"
-            )
-        try:
-            stages = ml_quest.handoff(problem)
-        except SHAPE_ERRORS as error:
-            raise HTTPException(
-                422, f"問題の設定を推論に渡せません: {error}"
-            ) from error
     except HTTPException as error:
+        return None, (
+            "つないだ問題の設定を読めないので, 守る指標は数えていません "
+            f"({error.detail})"
+        )
+    created = entry.get("problem_created")
+    if created and str(problem.get("created_at")) != created:
+        return None, (
+            "つないだ問題の設定が別の問題の設定に置き換わっているので, "
+            "守る指標は数えていません"
+        )
+    try:
+        name = ml_quest.active_value(problem, "issue.guard.name")
+    except SHAPE_ERRORS:
+        return None, (
+            "つないだ問題の設定の形が崩れているので, 守る指標は数えて"
+            "いません"
+        )
+    if not isinstance(name, str) or not name.strip():
+        return None, None
+
+    # 守る指標があれば, 推論に渡せない問題の設定は理由を添えて断る
+    try:
+        stages = ml_quest.handoff(problem)
+    except SHAPE_ERRORS as error:
         raise HTTPException(
-            400, "つないだ問題の設定から守る指標を読めないので, たどり直せ"
-            f"ません ({error.detail}). 問題の設定を直すか, 一式の画面で"
-            "つなぎを外してください"
+            400, f"つないだ問題の設定の守る指標「{name.strip()}」を数える"
+            f"には, 問題の設定を推論に渡せる形に直してください ({error}). "
+            "守る指標を数えずにたどり直すなら, 一式の画面でつなぎを外して"
+            "ください"
         ) from error
     found = (stages.get("inference") or {}).get("guard")
     guard = found if isinstance(found, dict) else None
 
-    return guard
+    return guard, None
