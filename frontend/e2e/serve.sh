@@ -113,6 +113,11 @@ uv run python ../frontend/e2e/make_noise.py "$WORK/noise"
 # 重み, 列の符号化と, 表の出力の雑音だけの一式 (版 7. ML-Inference の make_bundle) を作る
 uv run python ../frontend/e2e/make_table.py "$WORK/project"
 
+# 骨組みのプロジェクトの実験の中に, 並べるの骨組みの学習のように 2 塔のモデルの重み, 定義,
+# 利用者と品物の番号の表と, 並べるの一式 (版 8. ML-Inference の make_rank_bundle) を作り,
+# 並べる利用者, 前の反応, 後の反応の表を書く
+uv run python ../frontend/e2e/make_rank.py "$WORK/project" "$WORK/rank"
+
 # 既製のモデルの一式で推論する画像 (赤, 緑, 青と, 読めないファイル)
 uv run python - "$WORK/ready-images" <<'PY'
 import sys

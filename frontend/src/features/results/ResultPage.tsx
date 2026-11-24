@@ -15,6 +15,14 @@ import {
   tableColumnText,
   tableRowColumns,
 } from '../../lib/outputs'
+import {
+  metricText,
+  RANK_HEADINGS,
+  RANK_STATUS_LABELS,
+  RANK_UNSUPPORTED,
+  rankColumnsText,
+  rankRowColumns,
+} from '../../lib/ranking'
 import { READY_UNSUPPORTED } from '../../lib/ready'
 import { groupColumns } from '../../lib/remeasure'
 import { rowReasonable } from '../../lib/rowReason'
@@ -190,23 +198,28 @@ function RowsTable({
   const manyProbabilities = probabilities.length > MAX_PROBABILITY_COLUMNS
   // 表の出力の結果は作った表 (件の番号と種の後に列の符号化の順の列)
   const table = result.output_form === 'table' && !!result.table_columns
+  // 並べるの結果は利用者と順位ごとの品物と点数 (見出しと状態は日本語)
+  const ranking = result.output_form === 'ranking'
+  const headings = ranking ? RANK_HEADINGS : table ? TABLE_HEADINGS : null
   const columns = !rows.data
     ? []
-    : table
-      ? tableRowColumns(rows.data.columns, result.table_columns ?? [])
-      : [
-          ...rows.data.columns.filter(
-            (name) =>
-              (OWN.has(name) && (column || name !== 'decision')) ||
-              (name.startsWith('p:') && !manyProbabilities),
-          ),
-          ...rows.data.columns.filter((name) => !OWN.has(name) && !name.startsWith('p:')),
-        ]
+    : ranking
+      ? rankRowColumns(rows.data.columns)
+      : table
+        ? tableRowColumns(rows.data.columns, result.table_columns ?? [])
+        : [
+            ...rows.data.columns.filter(
+              (name) =>
+                (OWN.has(name) && (column || name !== 'decision')) ||
+                (name.startsWith('p:') && !manyProbabilities),
+            ),
+            ...rows.data.columns.filter((name) => !OWN.has(name) && !name.startsWith('p:')),
+          ]
   const total = rows.data?.total ?? 0
   const pages = Math.max(1, Math.ceil(total / PAGE))
   return (
     <Card
-      title={table ? '作った表' : '予測の表'}
+      title={ranking ? '並べた品物' : table ? '作った表' : '予測の表'}
       padded={false}
       actions={
         <>
@@ -223,8 +236,16 @@ function RowsTable({
             className="h-8 rounded-lg border border-line bg-surface px-2 text-sm"
           >
             <option value="">全ての行</option>
-            <option value="ok">{column ? '予測した行' : '推論した行'}</option>
-            <option value="skipped">{column ? '予測しなかった行' : '推論しなかった行'}</option>
+            <option value="ok">
+              {ranking ? '並べた利用者の行' : column ? '予測した行' : '推論した行'}
+            </option>
+            <option value="skipped">
+              {ranking
+                ? '並べられなかった利用者'
+                : column
+                  ? '予測しなかった行'
+                  : '推論しなかった行'}
+            </option>
           </select>
           {column && (
             <>
@@ -265,6 +286,12 @@ function RowsTable({
               ). 推論しなかった行の値は空です. 表の全ての行は CSV で持ち出せます
             </p>
           )}
+          {ranking && (
+            <p className="border-b border-line px-4 py-2 text-xs text-ink-3">
+              利用者ごとに, 点数の高い順の品物が 1 行ずつ並びます (同じ点数なら番号の表で先の品物).
+              並べられなかった利用者は 1 行で, 理由を出します. 表の全ての行は CSV で持ち出せます
+            </p>
+          )}
           {manyProbabilities && (
             <p className="border-b border-line px-4 py-2 text-xs text-ink-3">
               種類が {probabilities.length.toLocaleString()} あるので, 種類ごとの確率の列 (p:種類)
@@ -274,7 +301,11 @@ function RowsTable({
           <div className="max-h-[32rem] overflow-auto">
             <table className="w-full text-xs">
               <caption className="sr-only">
-                {table ? '作った表 (件ごとの列の値)' : '予測と判断の表'}
+                {ranking
+                  ? '並べた品物 (利用者ごとの上位の品物と点数)'
+                  : table
+                    ? '作った表 (件ごとの列の値)'
+                    : '予測と判断の表'}
               </caption>
               <thead className="sticky top-0 bg-surface text-ink-3">
                 <tr className="border-b border-line">
@@ -294,7 +325,7 @@ function RowsTable({
                       scope="col"
                       className="px-3 py-2 text-left font-normal whitespace-nowrap"
                     >
-                      {table ? (TABLE_HEADINGS[name] ?? name) : name === 'index' ? '#' : name}
+                      {headings ? (headings[name] ?? name) : name === 'index' ? '#' : name}
                     </th>
                   ))}
                 </tr>
@@ -350,7 +381,9 @@ function RowsTable({
                         className="max-w-72 truncate px-3 py-1.5"
                         title={String(row[name] ?? '')}
                       >
-                        {formatValue(row[name], name === 'confidence' || name.startsWith('p:'))}
+                        {ranking && name === 'status'
+                          ? (RANK_STATUS_LABELS[String(row[name])] ?? String(row[name] ?? ''))
+                          : formatValue(row[name], name === 'confidence' || name.startsWith('p:'))}
                       </td>
                     ))}
                   </tr>
@@ -372,6 +405,65 @@ function RowsTable({
               </Button>
             </span>
           </div>
+        </>
+      )}
+    </Card>
+  )
+}
+
+/** 並べるの結果の件数, 使った表と, 正解の反応の表から数えた Recall@K と NDCG */
+function RankingCard({ result }: { result: Result }) {
+  const ranking = result.ranking
+  if (!ranking) return null
+  const metrics = ranking.metrics
+  return (
+    <Card title="並べ方と評価">
+      <dl className="text-sm">
+        <div className="grid grid-cols-[11rem_1fr] gap-2 py-1">
+          <dt className="text-ink-3">並べた件数</dt>
+          <dd>利用者ごとに上位 {ranking.k} 件</dd>
+        </div>
+        <div className="grid grid-cols-[11rem_1fr] gap-2 py-1">
+          <dt className="text-ink-3">前に反応した品物</dt>
+          <dd className="min-w-0 break-words">
+            {ranking.seen ? (
+              <>
+                除いた (<span className="font-mono text-xs">{ranking.seen}</span>)
+              </>
+            ) : (
+              '除いていない'
+            )}
+          </dd>
+        </div>
+        <div className="grid grid-cols-[11rem_1fr] gap-2 py-1">
+          <dt className="text-ink-3">正解の反応の表</dt>
+          <dd className="min-w-0 break-words">
+            {ranking.truth ? (
+              <span className="font-mono text-xs">{ranking.truth}</span>
+            ) : (
+              'なし (推論の画面で正解の反応の表を選ぶと, Recall@K と NDCG を数えます)'
+            )}
+          </dd>
+        </div>
+        <div className="grid grid-cols-[11rem_1fr] gap-2 py-1">
+          <dt className="text-ink-3">反応の表の列</dt>
+          <dd className="font-mono text-xs">{rankColumnsText(ranking.columns)}</dd>
+        </div>
+      </dl>
+      {metrics && (
+        <>
+          <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3">
+            <StatTile label={`Recall@${metrics.k}`} value={metricText(metrics.recall_at_k)} />
+            <StatTile label={`NDCG (上位 ${metrics.k} 件)`} value={metricText(metrics.ndcg)} />
+            <StatTile label="数えた利用者" value={metrics.users.toLocaleString()} />
+          </div>
+          <p className="mt-2 text-xs text-ink-3">
+            正解のある利用者ごとに, 上位 {metrics.k} 件に入った正解の割合 (Recall@K) と,
+            正解の位置で重みを付けた並びの良さ (NDCG. 正解を上から並べたときを 1) を数え,
+            利用者で平均した値です
+            {ranking.seen ? '. 前に反応した品物は正解から除いています' : ''}
+            {metrics.users === 0 ? '. 正解のある利用者がいないので 0 です' : ''}
+          </p>
         </>
       )}
     </Card>
@@ -483,6 +575,8 @@ export function ResultPage() {
   const column = data.column_output !== false
   // 既製のモデルの一式の結果は, 意思決定, たどり直し, 外れ方の確かめを使えない
   const readyModel = data.kind === 'ready'
+  // 並べるの結果は利用者ごとの上位の品物 (数えるのは利用者の人数)
+  const ranking = data.output_form === 'ranking'
   const form = data.artifacts?.form ?? data.output_form ?? ''
   // 外れ方を種類ごとに分けられる列 (回帰と予測の一式の, 予測と判断と目的の列を除いた列)
   const target = bundle.data?.description?.target
@@ -550,6 +644,8 @@ export function ResultPage() {
         </Card>
         {/* 決め直した後は, 使った決め方で編集を作り直す */}
         {readyModel && <p className="text-xs text-ink-2">{READY_UNSUPPORTED}</p>}
+        {ranking && <p className="text-xs text-ink-2">{RANK_UNSUPPORTED}</p>}
+        {ranking && <RankingCard result={data} />}
         {column && !readyModel && (
           <DecisionCard
             key={`decision:${JSON.stringify(data.decision?.decision ?? null)}`}
@@ -568,16 +664,20 @@ export function ResultPage() {
         )}
         {summary && (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <StatTile label="行" value={summary.rows.toLocaleString()} />
+            <StatTile label={ranking ? '利用者' : '行'} value={summary.rows.toLocaleString()} />
             <StatTile
-              label={column ? '予測した' : '推論した'}
+              label={ranking ? '並べた利用者' : column ? '予測した' : '推論した'}
               value={summary.predicted.toLocaleString()}
             />
             <StatTile
-              label={column ? '予測しなかった' : '推論しなかった'}
+              label={
+                ranking ? '並べられなかった利用者' : column ? '予測しなかった' : '推論しなかった'
+              }
               value={summary.skipped.toLocaleString()}
             />
-            {!column ? (
+            {ranking ? (
+              <StatTile label="並べた件数" value={`${summary.k ?? data.ranking?.k ?? '–'} 件`} />
+            ) : !column ? (
               <StatTile label="出力の形" value={FORM_LABELS[form] ?? form} />
             ) : values ? (
               <StatTile

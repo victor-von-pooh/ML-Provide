@@ -96,6 +96,45 @@ export interface Description {
   items?: ItemsInfo | null
   /** 既製のモデルの一式 (版 6) の出どころ, 前処理, ライセンスと重みの置き場 */
   ready?: ReadyInfo | null
+  /** 並べるの一式 (版 8) の番号の表と索引の大きさ, 件数の既定, 反応の表の列 */
+  rank?: RankInfo | null
+}
+
+/** 反応の表 (前に反応した品物と正解の反応) の列の名前 */
+export interface RankColumns {
+  user: string
+  item: string
+  reaction?: string | null
+}
+
+/** 並べるの一式の rank の欄 */
+export interface RankInfo {
+  users: number
+  items: number
+  width: number
+  scale: number
+  /** 並べる件数の既定 (問題の設定の rank.k) */
+  k: number
+  columns: RankColumns
+}
+
+/** 並べるの結果の Recall@K と NDCG (正解の反応の表を渡した場合) */
+export interface RankMetrics {
+  /** 数えた利用者 (正解のある利用者) の数 */
+  users: number
+  k: number
+  recall_at_k: number
+  ndcg: number
+}
+
+/** 並べるの結果に残した, 件数, 除いたか, 使った表と評価 */
+export interface RankingInfo {
+  k: number
+  excluded: boolean
+  columns: RankColumns
+  seen: string | null
+  truth: string | null
+  metrics: RankMetrics | null
 }
 
 /** 既製のモデルの重みのライセンス (画面は alert が真なら message と source で警告する) */
@@ -336,6 +375,9 @@ export interface Counts {
   skipped: number
   /** 判断ごとの件数 (列の出力でない一式の件数だけの結論には無い) */
   decisions?: DecisionCount[]
+  /** 並べるの結果の, 利用者ごとに並べた件数と前に反応した品物を除いたか (rows は利用者の数) */
+  k?: number
+  excluded?: boolean
   values?: { sum: number; mean: number | null; min: number | null; max: number | null }
 }
 
@@ -388,6 +430,8 @@ export interface Result {
   } | null
   /** 表の出力の結果の列 (列の符号化の順. 他の結果は無いか null) */
   table_columns?: TableColumn[] | null
+  /** 並べるの結果の件数, 使った表, Recall@K と NDCG */
+  ranking?: RankingInfo | null
 }
 
 /** 結果どうしの比べ (GET /api/results/compare) */

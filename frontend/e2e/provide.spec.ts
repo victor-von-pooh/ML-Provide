@@ -855,6 +855,76 @@ test('表の生成の骨組みが実験の中に作った表の出力の一式�
   }
 })
 
+test('並べるの骨組みの実験の中に作った並べるの一式を, 実験の一覧から登録して利用者ごとに並べる', async ({
+  page,
+}) => {
+  const tables = path.resolve(import.meta.dirname, '.work', 'rank')
+  await page.goto('/')
+  await page.getByRole('button', { name: '実験の一覧から登録' }).click()
+  const dialog = page.getByRole('dialog', { name: '実験の一覧から登録' })
+  const table = dialog.getByRole('table', { name: '推論の一式を持つ実験' })
+  await expect(table).toContainText('shop/2026-01-06/09-00-00')
+  await dialog
+    .getByRole('button', { name: '総菜の作る量 (shop/2026-01-06/09-00-00) を登録' })
+    .click()
+
+  // 一式の画面: 番号の表の大きさ, 件数の既定, 反応の表の列. 問題の設定と意思決定の欄は無い
+  await expect(
+    page.getByRole('heading', { name: '総菜の作る量 (shop/2026-01-06/09-00-00)' }),
+  ).toBeVisible({ timeout: 30_000 })
+  const id = new URL(page.url()).pathname.split('/').pop() ?? ''
+  try {
+    await expect(page.getByText(/利用者 4 人と品物 6 件/)).toBeVisible()
+    await expect(page.getByText('3 件 (問題の設定の件数)')).toBeVisible()
+    await expect(page.getByLabel(/^並べる件数 K/)).toHaveValue('3')
+    await expect(page.getByRole('heading', { name: /^問題の設定/ })).toHaveCount(0)
+    await expect(page.getByRole('region', { name: '意思決定' })).toHaveCount(0)
+
+    // 利用者の表のファイルを 2 件ずつ, 前に反応した品物を除き, 後の反応で数える
+    await page.getByLabel('利用者の表のファイル').check()
+    await page.getByLabel(/^利用者の表 \(利用者の列 member/).fill(path.join(tables, 'members.csv'))
+    await page.getByLabel(/^並べる件数 K/).fill('2')
+    await page.getByLabel('前に反応した品物を除く').check()
+    await page.getByLabel(/^前に反応した品物の表/).fill(path.join(tables, 'seen.csv'))
+    await page.getByLabel(/^正解の反応の表/).fill(path.join(tables, 'later.csv'))
+    await page.getByRole('button', { name: '並べる', exact: true }).click()
+
+    // 結果: 利用者の人数の結論, 評価, 利用者ごとの上位 2 件と並べられなかった理由
+    await expect(
+      page.getByText('利用者 3 人のうち 2 人に, 上位 2 件の品物を並べた (1 人は並べられず)'),
+    ).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText('前に反応した品物は除いて並べた')).toBeVisible()
+    await expect(page.getByText('Recall@2')).toBeVisible()
+    await expect(page.getByText('NDCG (上位 2 件)')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '結論の決め方' })).toHaveCount(0)
+    const rows = page.getByRole('table', { name: '並べた品物 (利用者ごとの上位の品物と点数)' })
+    await expect(rows.locator('thead th')).toHaveText([
+      '#',
+      '利用者',
+      '順位',
+      '品物',
+      '点数',
+      '状態',
+      '理由',
+    ])
+    await expect(rows.locator('tbody tr')).toHaveCount(5)
+    await expect(rows.locator('tbody tr').nth(2)).toContainText('007')
+    await expect(rows.locator('tbody tr').nth(4)).toContainText('番号の表に無い利用者です')
+    // 前に反応した品物 (u0 の i0 と i1) は並ばない
+    const first = await rows.locator('tbody tr').nth(0).locator('td').nth(3).textContent()
+    expect(['i2', 'i3', 'i4', 'i5']).toContain(first)
+
+    // CSV は利用者と順位ごとの行のまま
+    const href = await page.getByRole('link', { name: 'CSV' }).getAttribute('href')
+    const csv = await (await page.request.get(href ?? '')).text()
+    expect(csv.replace(/^﻿/, '').split(/\r?\n/)[0]).toBe(
+      'user,status,reason,rank,item,score,decision',
+    )
+  } finally {
+    await page.request.delete(`/api/bundles/${id}`)
+  }
+})
+
 test('骨組みの学習が実験の中に書き出した方策の一式を, 実験の一覧から登録して行動を決める', async ({
   page,
 }) => {
