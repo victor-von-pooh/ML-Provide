@@ -446,7 +446,25 @@ export interface DecisionResult {
 export interface Backtest {
   rows: number
   policies: Record<string, number>
+  /** 問題の設定の守る指標をこの方針で数えた結果 (つないでいなければ null) */
+  guard?: BacktestGuard | null
   sentences: string[]
+}
+
+/** たどり直しで数えた守る指標 (ML-Inference の backtest の guard) */
+export interface BacktestGuard {
+  name: string
+  unit: string | null
+  /** 数えた量の名前 (指していなければ null. 画面には説明を出す) */
+  counted: string | null
+  description: string | null
+  /** この方針で数えた値 (割合は 0 から 1. 数えなければ null) */
+  value: number | null
+  line: number | null
+  better: 'lower' | 'higher' | null
+  /** 守る線を守れたか (線が無いか数えなければ null) */
+  kept: boolean | null
+  note: string | null
 }
 
 /** 列ごとの効き (並べ替えの重要度) */

@@ -24,6 +24,7 @@ from ml_provide.cache import (
     remember_warnings,
 )
 from ml_provide.previews import PREVIEW_LIMIT, array_preview, dtype_problem
+from ml_provide.problem_files import linked_guard
 from ml_provide.procedures import missing_procedure, registered
 from ml_provide.ready import FetchError, make_ready, preview_ready
 from ml_provide.reasons import read_input, row_reason
@@ -2168,6 +2169,50 @@ def decide_again(
     return view
 
 
+def check_guard_kind(
+    guard: Optional[dict[str, Any]], decision: dict[str, Any]
+) -> None:
+    """
+    問題の設定の守る指標が数える量を, 結果の意思決定の型で数えられるかを
+    確かめる関数
+
+    結果の画面で意思決定の型を変えると, 問題の設定の型の量を数えられない
+
+    Parameters
+    ----------
+    guard: Optional[dict[str, Any]]
+        問題の設定の守る指標 (無ければ None)
+    decision: dict[str, Any]
+        結果の意思決定の決め方
+
+    Returns
+    ----------
+    None
+
+    Raises
+    ----------
+    HTTPException
+        数える量が結果の意思決定の型の一覧に無い場合は 400
+    """
+    # 量の名前ではなく説明で知らせる (名前は画面に出さない)
+    counted = (guard or {}).get("counted")
+    counts = ml_inference.GUARD_COUNTS
+    if not isinstance(counted, str) or counted in counts.get(
+        str(decision.get("type")), {}
+    ):
+        return
+    described = next(
+        (items[counted]["description"] for items in counts.values()
+         if counted in items), counted
+    )
+    raise HTTPException(
+        400, f"問題の設定の守る指標「{(guard or {}).get('name')}」が数える量"
+        f" ({described}) は, この結果の意思決定の型では数えられません. "
+        "意思決定の型を問題の設定に合わせて決め直すか, 問題の設定の守る"
+        "指標を選び直してください"
+    )
+
+
 @router.post("/results/{result_id}/backtest")
 def backtest_result(request: Request, result_id: str) -> dict[str, Any]:
     """
@@ -2189,9 +2234,12 @@ def backtest_result(request: Request, result_id: str) -> dict[str, Any]:
     ----------
     HTTPException
         意思決定の無い結果, 入力のファイルが無い場合, 目的の列が無い
-        場合は 400
+        場合, 守る指標を答えた問題の設定を推論に渡せない場合, 守る指標を
+        数えられない場合は 400 (守る指標の有無を見られない問題の設定は,
+        数えずに知らせの文を添える)
     """
-    # 入力のファイルを読み直して, 方針と素朴なやり方を比べる
+    # 入力のファイルを読み直して, 方針と素朴なやり方を比べる. 一式に
+    # 問題の設定をつないでいれば, その守る指標もこの方針で数える
     place = find_result(request, result_id)
     meta = read_meta(place)
     require_column(meta)
@@ -2205,15 +2253,20 @@ def backtest_result(request: Request, result_id: str) -> dict[str, Any]:
             "要ります (書いた文と何段も先の予測の結果は除く)"
         )
     bundle = result_bundle(request, meta)
+    entry = get_store(request).find(str(meta.get("bundle_id"))) or {}
+    guard, guard_note = linked_guard(entry)
+    check_guard_kind(guard, decided["decision"])
     with PREDICT_LOCK:
         try:
             replay = ml_inference.backtest(
                 bundle, Path(source), decided["decision"],
-                options=meta.get("options")
+                options=meta.get("options"), guard=guard
             )
         except (OSError, *USER_ERRORS) as error:
             raise user_error(error) from error
     replay.pop("decision", None)
+    if guard_note:
+        replay["sentences"] = [*replay.get("sentences", []), guard_note]
     # たどり直している間に決め直していたら, 古い方針の結果は書かない
     with RESULT_LOCK:
         meta = read_meta(place)

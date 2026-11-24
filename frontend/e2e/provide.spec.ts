@@ -278,7 +278,7 @@ test('日々の売上の見本の過去のデータで, 7 段先までの外れ�
   await expect(page.getByText(/何段も先の外れ方は 7 段目まで段ごと/)).toBeVisible()
 })
 
-test('日々の売上の見本に問題の設定をつなぐと, 損得, 根拠, 今のやり方が既定になる', async ({
+test('日々の売上の見本に問題の設定をつなぐと, 損得, 根拠, 今のやり方が既定になり, 守る指標を数える', async ({
   page,
 }) => {
   await page.goto('/')
@@ -309,6 +309,15 @@ test('日々の売上の見本に問題の設定をつなぐと, 損得, 根拠,
   const replay = page.getByRole('region', { name: 'たどり直し' })
   await expect(replay).toContainText('今のやり方', { timeout: 30_000 })
   await expect(replay).toContainText('7 期前の値と同じ量')
+  // 問題の設定の守る指標 (欠品の率を 1 割以下) を, この方針の行動で数えて % で並べる
+  const guard = replay.getByRole('group', { name: '守る指標' })
+  await expect(guard).toContainText('守る指標「欠品の率」 (足りなかった行の割合)')
+  await expect(guard).toContainText('10 % 以下')
+  await expect(guard).toContainText(/守れた|守れなかった/)
+  await expect(guard).not.toContainText('shortage_rate')
+  await expect(replay).toContainText(
+    /守る指標「欠品の率」\(足りなかった行の割合\) は, この方針で [\d.]+ %/,
+  )
 
   // 外すと一式の既定値に戻る
   await page

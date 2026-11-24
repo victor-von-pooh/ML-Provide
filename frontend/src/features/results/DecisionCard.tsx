@@ -3,10 +3,11 @@ import { History, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 
 import { api } from '../../api/client'
-import type { Result } from '../../api/types'
+import type { BacktestGuard, Result } from '../../api/types'
 import { Button, Card, ErrorBox } from '../../components/ui'
 import { fromDecisionForm, toDecisionForm, type DecisionForm } from '../../lib/decision'
 import { formatValue } from '../../lib/format'
+import { guardAmount, guardLine, guardVerdict } from '../../lib/guard'
 import { DecisionEditor } from './DecisionEditor'
 
 /** 意思決定 (何をどれだけするか, 前提, たどり直し) と決め直し */
@@ -95,6 +96,7 @@ export function DecisionCard({ result, bundleAlive }: { result: Result; bundleAl
               ))}
             </tbody>
           </table>
+          {result.backtest.guard && <GuardBox guard={result.backtest.guard} />}
           <ul className="flex flex-col gap-0.5 text-xs text-ink-2">
             {result.backtest.sentences.slice(1).map((sentence) => (
               <li key={sentence}>{sentence}</li>
@@ -121,5 +123,27 @@ export function DecisionCard({ result, bundleAlive }: { result: Result; bundleAl
         </div>
       )}
     </Card>
+  )
+}
+
+/** たどり直しで数えた, 問題の設定の守る指標 (この方針の値, 守る線, 守れたか) */
+function GuardBox({ guard }: { guard: BacktestGuard }) {
+  const tone =
+    guard.kept === true ? 'text-good-text' : guard.kept === false ? 'text-critical-text' : ''
+  return (
+    <div aria-label="守る指標" role="group" className="mb-2 text-sm">
+      <p className="mb-1 text-xs font-semibold text-ink-2">
+        守る指標「{guard.name}」{guard.description && ` (${guard.description})`}
+      </p>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5">
+        <dt>この方針での値</dt>
+        <dd className="tabular">{guardAmount(guard, guard.value)}</dd>
+        <dt>守る線</dt>
+        <dd className="tabular">{guardLine(guard)}</dd>
+        <dt>守れたか</dt>
+        <dd className={tone}>{guardVerdict(guard)}</dd>
+      </dl>
+      {guard.note && <p className="mt-1 text-xs text-ink-2">{guard.note}</p>}
+    </div>
   )
 }
