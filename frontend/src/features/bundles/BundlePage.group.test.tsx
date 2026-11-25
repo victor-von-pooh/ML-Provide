@@ -208,6 +208,13 @@ describe('群分けの一式の画面', () => {
     show()
     expect(await screen.findByText(/画像 \(既製のモデル/)).toBeInTheDocument()
     expect(screen.getByText('resnet18')).toBeInTheDocument()
+    // 群の行は版 10 の文 (列は群の要約の列で, 符号化しない)
+    expect(screen.getByText('群の要約の列 (2)')).toBeInTheDocument()
+    expect(screen.getByText(/この列は符号化しません/)).toBeInTheDocument()
+    expect(screen.queryByText(/推論する表はこの列を持ちます/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/列の符号化と群の中心/)).not.toBeInTheDocument()
+    expect(screen.getByText(/埋め込みの幅 512/)).toBeInTheDocument()
+    expect(screen.queryByText(/符号化した行の幅/)).not.toBeInTheDocument()
     expect(
       screen.getByRole('table', { name: '学習の群の安定性 (モデル, 比べる相手, 差)' }),
     ).toBeInTheDocument()

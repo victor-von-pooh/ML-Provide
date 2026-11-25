@@ -4,10 +4,11 @@ from typing import Any
 import ml_inference
 import numpy as np
 import pandas as pd
+import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from ml_provide.api import read_frame
+from ml_provide.api import NewerResult, read_frame, read_meta
 from ml_provide.app import create_app
 
 # テストで使うトークン
@@ -555,3 +556,55 @@ def test_mixed_values(tmp_path: Path) -> None:
     assert values(read["code"]) == MIXED
     assert values(read["name"]) == ["001", "b", "c", "d", "e", "f"]
     assert values(read["group"]) == [0, 1, 0, 1, 0, None]
+
+
+def test_newer_result(tmp_path: Path) -> None:
+    """
+    版 4 の結果は読み, それより新しい版と整数でない版の結果は, 読み違えずに
+    理由付きで断ることを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 版 4 (混ざる列のある結果) は今の版で読める
+    frame = pd.DataFrame({
+        "code": pd.Series(MIXED, dtype=object),
+        "status": ["ok"] * 6, "reason": [None] * 6,
+        "prediction": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+    })
+    home = tmp_path / "home"
+    place = home / "results" / "newer-1"
+    meta = write(place, frame, task="regression")
+    assert read_meta(place)["format_version"] == 4
+    newer = ml_inference.RESULT_FORMAT_VERSION + 1
+
+    # 新しい版と整数でない版は read_meta で止まる
+    for version in (newer, "4", 4.0):
+        (place / "result.yaml").write_text(
+            yaml.safe_dump({**meta, "format_version": version}),
+            encoding="utf-8"
+        )
+        with pytest.raises(NewerResult, match="読めません"):
+            read_meta(place)
+
+    # 画面の API は 400 で理由を返し, 結果の一覧では飛ばす
+    (place / "result.yaml").write_text(
+        yaml.safe_dump({**meta, "format_version": newer}),
+        encoding="utf-8"
+    )
+    app = create_app(
+        data_dir=home, token=TOKEN, allowed_hosts=["testserver"],
+        procedures=[]
+    )
+    client = TestClient(app, headers={"x-provide-token": TOKEN})
+    for path in ("/api/results/newer-1", "/api/results/newer-1/rows"):
+        response = client.get(path)
+        assert response.status_code == 400, path
+        assert f"format_version {newer}" in response.json()["detail"]
+    assert client.get("/api/results").json() == []

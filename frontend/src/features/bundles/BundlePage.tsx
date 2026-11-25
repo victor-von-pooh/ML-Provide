@@ -121,18 +121,24 @@ function RankRows({ rank }: { rank: NonNullable<Description['rank']> }) {
   )
 }
 
-/** 群分けの一式 (版 9) の列の符号化と群の中心, 群を作る列, 群の数 */
+/** 群分けの一式 (版 9 と 10) の列の符号化と群の中心, 群を作る列 (版 10 は群の要約の列), 群の数 */
 function GroupRows({ group }: { group: NonNullable<Description['group']> }) {
+  // 既製の埋め込みの群分けの一式 (版 10) は列を符号化しないので, 列は群の要約の列だけ
+  const ready = group.features === null
   return (
     <>
-      <Row label="データ">
-        列の符号化と群の中心 (データセットなし. 推論は表の行を最も近い群に割り当てる)
-      </Row>
-      <Row label={`群を作る列 (${group.columns.length})`}>
+      {/* 版 10 のデータの行は既製のモデルの行 (ReadyRows) */}
+      {!ready && (
+        <Row label="データ">
+          列の符号化と群の中心 (データセットなし. 推論は表の行を最も近い群に割り当てる)
+        </Row>
+      )}
+      <Row label={`${ready ? '群の要約の列' : '群を作る列'} (${group.columns.length})`}>
         <span className="font-mono text-xs">{group.columns.join(', ')}</span>
         <span className="block text-xs text-ink-2">
-          推論する表はこの列を持ちます. 数の列は学習のときの平均と標準偏差で,
-          種類の列は学習のときの値ごとに符号化します (学習に無い値はどの値でもない扱い)
+          {ready
+            ? '群の要約で群ごとの特徴を見る写真の列です. 群は既製のモデルの埋め込みで分け, この列は符号化しません'
+            : '推論する表はこの列を持ちます. 数の列は学習のときの平均と標準偏差で, 種類の列は学習のときの値ごとに符号化します (学習に無い値はどの値でもない扱い)'}
         </span>
       </Row>
       <Row label="群の数">
@@ -208,7 +214,11 @@ function DescriptionView({ description }: { description: Description }) {
       {items ? (
         <ItemsRows items={items} />
       ) : ready ? (
-        <ReadyRows ready={ready} />
+        <>
+          <ReadyRows ready={ready} />
+          {/* 既製の埋め込みの群分けの一式 (版 10) は群の行も */}
+          {group && <GroupRows group={group} />}
+        </>
       ) : rank ? (
         <RankRows rank={rank} />
       ) : group ? (

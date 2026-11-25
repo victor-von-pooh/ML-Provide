@@ -892,7 +892,7 @@ def test_ready_vector_and_group_bundles(
         assert response.status_code == 201, response.text
         ids[name] = response.json()["id"]
 
-    # 一覧は誤りなく説明を出す (出力の形, 版, 出どころ)
+    # 一覧の誤りの無い説明 (出力の形, 版, 出どころ)
     views = {view["id"]: view for view in client.get("/api/bundles").json()}
     embedder = views[ids["embedder"]]
     group = views[ids["group"]]
@@ -916,7 +916,7 @@ def test_ready_vector_and_group_bundles(
     preview = client.get(f"/api/results/{result['id']}/artifacts/0").json()
     assert preview["form"] == "vector" and preview["shape"] == [3]
 
-    # 群分けの一式の推論は群の要約と群の安定性を持ち, 行ごとの群を読める
+    # 群分けの一式の推論の, 群の要約と群の安定性と行ごとの群
     response = client.post(
         f"/api/bundles/{ids['group']}/predict", json={"source": str(images)}
     )
@@ -931,7 +931,7 @@ def test_ready_vector_and_group_bundles(
     assert grouped["a_red.png"] != grouped["b_green.png"]
     assert grouped["b_green.png"] == grouped["c_blue.png"]
 
-    # 読めない新しい版は, 登録を理由付きで断り, 一覧では理由を出す
+    # 読めない新しい版の, 理由付きの登録の断りと一覧の理由
     file = tmp_path / "group" / "inference.yaml"
     info = yaml.safe_load(file.read_text(encoding="utf-8"))
     file.write_text(
