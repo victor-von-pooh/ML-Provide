@@ -1,4 +1,4 @@
-import type { ClusterRow, ClusterStability, Result } from '../api/types'
+import type { ClusterRepresentatives, ClusterRow, ClusterStability, Result } from '../api/types'
 
 /** 群分けの一式で使えない機能 (出力が行ごとの群のため) */
 export const CLUSTER_UNSUPPORTED =
@@ -129,4 +129,31 @@ export function diffText(value: number | null | undefined): string {
 export function stabilityMethodText(stability: ClusterStability): string {
   const method = STABILITY_METHODS[stability.method] ?? stability.method
   return `${method}, ${stability.repeats} 回`
+}
+
+/** 群の代表の行の既定の件数 (ML-Inference の結論の件数と同じ) */
+export const DEFAULT_REPRESENTATIVES = 3
+
+/** 群の代表の行の件数の選択肢 (API の上限は 20) */
+export const REPRESENTATIVE_COUNTS = [1, 3, 5, 10, 20]
+
+/**
+ * 群分けの結論の群の代表の行 (summary.representatives. 既定の 3 件).
+ * 結論に無い結果 (代表の行を持つ前に作った結果) は undefined
+ */
+export function clusterRepresentatives(result: Result): ClusterRepresentatives[] | undefined {
+  if (result.output_form !== 'cluster') return undefined
+  return result.summary?.representatives
+}
+
+/**
+ * 代表の行の, 群を作る列の値の見せ方. 数の列 (群の要約が平均の列) の値は, 文字でも数に
+ * 読めれば数として見せる (数にできない値を含む列は, 予測の表で文字の列になるため)
+ */
+export function representativeValue(value: unknown, numeric: boolean): unknown {
+  if (numeric && typeof value === 'string' && value.trim() !== '') {
+    const number = Number(value)
+    if (Number.isFinite(number)) return number
+  }
+  return value
 }

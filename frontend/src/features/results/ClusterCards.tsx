@@ -1,9 +1,12 @@
-import type { ClusterRow, ClusterStability } from '../../api/types'
+import { Fragment } from 'react'
+
+import type { ClusterRepresentatives, ClusterRow, ClusterStability } from '../../api/types'
 import {
   ALL_ROWS,
   clusterName,
   diffText,
   featureHeading,
+  representativeValue,
   scoreText,
   stabilityLines,
   stabilityMethodText,
@@ -131,6 +134,125 @@ export function ClusterSummaryTable({
               </tr>
             )
           })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/**
+ * 群の代表の行の表. 群ごとに中心に近い順の行 (順位, 行の位置, 距離, 群を作る列の値).
+ * 行の無い群も 1 行で並べる. onPick を渡すと, 行に「行を見る」を出す
+ */
+export function ClusterRepresentativesTable({
+  groups,
+  columns,
+  summary,
+  onPick,
+  caption,
+}: {
+  groups: ClusterRepresentatives[]
+  columns: string[]
+  /** 群の要約の行 (数の列を見分ける. 平均の列) */
+  summary: ClusterRow[]
+  onPick?: (row: number, group: number) => void
+  caption: string
+}) {
+  // 数の列 (群の要約の見出しが平均の列)
+  const numeric = new Set(
+    columns.filter((name) => featureHeading(name, summary) === `${name} (平均)`),
+  )
+  // 群の列の後ろの列の数 (行の無い群の 1 行を横に伸ばす)
+  const span = 3 + columns.length + (onPick ? 1 : 0)
+  return (
+    <div className="max-h-[32rem] overflow-auto">
+      <table className="w-full text-sm">
+        <caption className="sr-only">{caption}</caption>
+        <thead className="sticky top-0 bg-surface text-xs text-ink-3">
+          <tr className="border-b border-line">
+            <th scope="col" className="px-4 py-2 text-left font-normal">
+              群
+            </th>
+            <th scope="col" className="px-3 py-2 text-right font-normal">
+              順位
+            </th>
+            <th scope="col" className="px-3 py-2 text-right font-normal">
+              #
+            </th>
+            <th scope="col" className="px-3 py-2 text-right font-normal">
+              距離
+            </th>
+            {columns.map((name) => (
+              <th
+                key={name}
+                scope="col"
+                className="px-3 py-2 text-left font-normal whitespace-nowrap"
+              >
+                {name}
+              </th>
+            ))}
+            {onPick && (
+              <th scope="col" className="px-3 py-2 font-normal">
+                <span className="sr-only">行を見る</span>
+              </th>
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {groups.map((item) => (
+            <Fragment key={item.group}>
+              {item.rows.length === 0 ? (
+                <tr className="border-b border-line">
+                  <th scope="row" className="px-4 py-1.5 text-left font-medium whitespace-nowrap">
+                    {clusterName(item.group)}
+                  </th>
+                  <td colSpan={span} className="px-3 py-1.5 text-ink-3">
+                    割り当てた行はありません
+                  </td>
+                </tr>
+              ) : (
+                item.rows.map((line, order) => (
+                  <tr key={line.row} className="border-b border-line">
+                    {order === 0 && (
+                      <th
+                        scope="row"
+                        rowSpan={item.rows.length}
+                        className="px-4 py-1.5 text-left align-top font-medium whitespace-nowrap"
+                      >
+                        {clusterName(item.group)}
+                      </th>
+                    )}
+                    <td className="tabular px-3 py-1.5 text-right">{order + 1}</td>
+                    <td className="tabular px-3 py-1.5 text-right">{line.row}</td>
+                    <td className="tabular px-3 py-1.5 text-right">
+                      {formatValue(line.distance, true)}
+                    </td>
+                    {columns.map((name) => (
+                      <td
+                        key={name}
+                        className="max-w-64 truncate px-3 py-1.5"
+                        title={String(line.values[name] ?? '')}
+                      >
+                        {formatValue(representativeValue(line.values[name], numeric.has(name)))}
+                      </td>
+                    ))}
+                    {onPick && (
+                      <td className="px-3 py-1.5 text-right">
+                        <button
+                          type="button"
+                          className="text-xs whitespace-nowrap text-accent-text underline"
+                          aria-label={`行を見る (${clusterName(item.group)} の代表の行 #${line.row})`}
+                          onClick={() => onPick(line.row, item.group)}
+                        >
+                          行を見る
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))
+              )}
+            </Fragment>
+          ))}
         </tbody>
       </table>
     </div>

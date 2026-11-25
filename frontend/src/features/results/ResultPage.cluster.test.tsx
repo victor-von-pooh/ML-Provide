@@ -40,6 +40,17 @@ const result = {
     skipped: 1,
     k: 3,
     groups,
+    representatives: [
+      {
+        group: 0,
+        rows: [
+          { row: 0, distance: 0.0123, values: { spend: 1000, region: 'north' } },
+          { row: 1, distance: 0.02, values: { spend: 1020, region: 'north' } },
+        ],
+      },
+      { group: 1, rows: [{ row: 2, distance: 0.03, values: { spend: 1990, region: 'south' } }] },
+      { group: 2, rows: [] },
+    ],
     stability: {
       k: 3,
       method: 'seed',
@@ -137,11 +148,24 @@ const rows: Rows = {
 
 const rowsCall = vi.fn((_id: string, _params: Record<string, unknown>) => Promise.resolve(rows))
 
+// 件数を変えて求めた代表の行 (群 0 は 1 件だけ)
+const representativesCall = vi.fn((_id: string, count: number) =>
+  Promise.resolve({
+    count,
+    groups: [
+      { group: 0, rows: [{ row: 0, distance: 0.0123, values: { spend: 1000, region: 'north' } }] },
+      { group: 1, rows: [{ row: 2, distance: 0.03, values: { spend: 1990, region: 'south' } }] },
+      { group: 2, rows: [] },
+    ],
+  }),
+)
+
 vi.mock('../../api/client', () => ({
   api: {
     result: () => Promise.resolve(result),
     bundle: () => Promise.reject(new Error('無い')),
     rows: (id: string, params: Record<string, unknown>) => rowsCall(id, params),
+    representatives: (id: string, count: number) => representativesCall(id, count),
     downloadUrl: (id: string) => `/api/results/${id}/download`,
   },
 }))
@@ -150,18 +174,100 @@ vi.mock('../../api/client', () => ({
 const scrolled = vi.fn()
 Element.prototype.scrollIntoView = scrolled
 
+function renderPage() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={['/results/r1']}>
+        <Routes>
+          <Route path="/results/:id" element={<ResultPage />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+}
+
 describe('群分けの結果の画面', () => {
-  it('群の要約, 学習の群の安定性, 行ごとの群を出し, 群で行を絞る', async () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(
-      <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={['/results/r1']}>
-          <Routes>
-            <Route path="/results/:id" element={<ResultPage />} />
-          </Routes>
-        </MemoryRouter>
-      </QueryClientProvider>,
+  it('群の代表の行を群の要約と並べ, 件数を変え, 行を見るで 1 行に絞る', async () => {
+    renderPage()
+    const table = await screen.findByRole('table', {
+      name: '群の代表の行 (群ごとに中心に近い順の行, 距離, 群を作る列の値)',
+    })
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((cell) => cell.textContent),
+    ).toEqual(['群', '順位', '#', '距離', 'spend', 'region', '行を見る'])
+    const lines = within(table).getAllByRole('row').slice(1)
+    // 群 0 の 2 行, 群 1 の 1 行, 行の無い群 2 の 1 行
+    expect(lines).toHaveLength(4)
+    expect(lines[0]).toHaveTextContent('群 0')
+    expect(lines[0]).toHaveTextContent('0.012')
+    expect(lines[0]).toHaveTextContent('north')
+    expect(lines[1]).toHaveTextContent('1,020')
+    expect(lines[3]).toHaveTextContent('群 2')
+    expect(lines[3]).toHaveTextContent('割り当てた行はありません')
+    // 既定の 3 件は結論のまま (API で求めない)
+    expect(screen.getByLabelText('代表の行の件数')).toHaveValue('3')
+    expect(representativesCall).not.toHaveBeenCalled()
+
+    // 件数を変えると API で求める
+    fireEvent.change(screen.getByLabelText('代表の行の件数'), { target: { value: '1' } })
+    // 求め終わるまでは結論の 3 件を出さず, 読み込み中を出す
+    expect(screen.getByText('代表の行を求めています')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('table', {
+        name: '群の代表の行 (群ごとに中心に近い順の行, 距離, 群を作る列の値)',
+      }),
+    ).not.toBeInTheDocument()
+    await waitFor(() => expect(representativesCall).toHaveBeenLastCalledWith('r1', 1))
+    await waitFor(() =>
+      expect(
+        within(
+          screen.getByRole('table', {
+            name: '群の代表の行 (群ごとに中心に近い順の行, 距離, 群を作る列の値)',
+          }),
+        )
+          .getAllByRole('row')
+          .slice(1),
+      ).toHaveLength(3),
     )
+
+    // 行を見るで, 割り当てた行の表をその行だけにし, 群で絞る欄もその群にする
+    fireEvent.click(screen.getByRole('button', { name: '行を見る (群 1 の代表の行 #2)' }))
+    await waitFor(() =>
+      expect(rowsCall).toHaveBeenLastCalledWith(
+        'r1',
+        expect.objectContaining({ group: 1, row: 2, offset: 0 }),
+      ),
+    )
+    expect(screen.getByLabelText('群で絞る')).toHaveValue('1')
+    expect(screen.getByText(/群の代表の行 #2 だけを見ています/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '1 行の絞りを外す' }))
+    await waitFor(() =>
+      expect(rowsCall).toHaveBeenLastCalledWith(
+        'r1',
+        expect.objectContaining({ group: 1, row: undefined }),
+      ),
+    )
+    expect(screen.queryByText(/だけを見ています/)).not.toBeInTheDocument()
+
+    // 群で絞る欄を変えても 1 行の絞りは外れる
+    fireEvent.click(screen.getByRole('button', { name: '行を見る (群 0 の代表の行 #0)' }))
+    await waitFor(() =>
+      expect(rowsCall).toHaveBeenLastCalledWith('r1', expect.objectContaining({ row: 0 })),
+    )
+    fireEvent.change(screen.getByLabelText('群で絞る'), { target: { value: '' } })
+    await waitFor(() =>
+      expect(rowsCall).toHaveBeenLastCalledWith(
+        'r1',
+        expect.objectContaining({ group: undefined, row: undefined }),
+      ),
+    )
+  })
+
+  it('群の要約, 学習の群の安定性, 行ごとの群を出し, 群で行を絞る', async () => {
+    renderPage()
     expect(
       await screen.findByText('4 行のうち 3 行を 3 個の群に割り当てた (1 行は割り当てられず)'),
     ).toBeInTheDocument()

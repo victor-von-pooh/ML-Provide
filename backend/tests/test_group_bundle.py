@@ -233,3 +233,171 @@ def test_group_refusals(
                           params={"group": 0})
     assert response.status_code == 400
     assert response.json()["detail"] == "群で絞れるのは群分けの結果だけです"
+
+
+def test_group_representatives(
+    client: TestClient, group_files: tuple[Path, Path]
+) -> None:
+    """
+    群分けの結論に群の代表の行があり, 件数を変えて求められ, 代表の行の
+    位置で 1 行に絞れることと, 求められない場合に断ることを確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    group_files: tuple[Path, Path]
+        一式と新しい行の表
+
+    Returns
+    ----------
+    None
+    """
+    # 結論の代表の行は ML-Inference の group_representatives の既定の 3 件
+    path, table = group_files
+    bundle = register(client, path)
+    result = client.post(
+        f"/api/bundles/{bundle['id']}/predict", json={"source": str(table)}
+    ).json()
+    representatives = result["summary"]["representatives"]
+    frame = ml_inference.predict(str(path), table)
+    assert representatives == ml_inference.group_representatives(
+        str(path), frame
+    )
+    assert [item["group"] for item in representatives] == [0, 1, 2]
+    assert [len(item["rows"]) for item in representatives] == [3, 3, 3]
+    first = representatives[0]["rows"][0]
+    assert set(first) == {"row", "distance", "values"}
+    assert list(first["values"]) == ["spend", "visits", "region"]
+
+    # 件数を変えると, 置き場の表と登録した一式で求め直す (群の行が少なければ
+    # その数だけ)
+    url = f"/api/results/{result['id']}/representatives"
+    response = client.get(url, params={"count": 10})
+    assert response.status_code == 200, response.text
+    again = response.json()
+    assert again["count"] == 10
+    assert [len(item["rows"]) for item in again["groups"]] == [5, 5, 5]
+    assert [item["rows"][:3] for item in again["groups"]] == [
+        item["rows"] for item in representatives
+    ]
+    for item in again["groups"]:
+        distances = [line["distance"] for line in item["rows"]]
+        assert distances == sorted(distances)
+
+    # 代表の行の位置で, 割り当てた行の表を 1 行に絞る
+    one = client.get(
+        f"/api/results/{result['id']}/rows", params={"row": first["row"]}
+    ).json()
+    assert one["total"] == 1
+    assert one["rows"][0]["index"] == first["row"]
+    assert one["rows"][0]["group"] == 0
+
+    # 上限の 20 件 (群の行が少なければその数だけ)
+    most = client.get(url, params={"count": 20}).json()
+    assert most["count"] == 20
+    assert most["groups"] == ml_inference.group_representatives(
+        str(path), frame, 20
+    )
+
+    # 行の位置の絞りは, 状態と群の絞りと重ねる (合わなければ 0 行)
+    rows_url = f"/api/results/{result['id']}/rows"
+    for params, total in (
+        ({"row": first["row"], "group": 0}, 1),
+        ({"row": first["row"], "group": 1}, 0),
+        ({"row": first["row"], "status": "ok"}, 1),
+        ({"row": first["row"], "status": "skipped"}, 0),
+        ({"row": 15, "status": "skipped"}, 1),
+        ({"row": 16}, 0),
+        ({"row": 1000}, 0),
+    ):
+        part = client.get(rows_url, params=params).json()
+        assert part["total"] == total, params
+        assert len(part["rows"]) == total, params
+    assert client.get(rows_url, params={"row": -1}).status_code == 422
+
+    # 件数の範囲の外と, 群分けでない結果と, 一式を消した結果は断る
+    for count in (0, 21):
+        assert client.get(url, params={"count": count}).status_code == 422
+    sample = client.post("/api/samples").json()[0]
+    other = client.post(
+        f"/api/bundles/{sample['id']}/predict",
+        json={"source": sample["sample_input"]}
+    ).json()
+    response = client.get(
+        f"/api/results/{other['id']}/representatives", params={"count": 5}
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "代表の行は群分けの結果だけで求めます"
+    assert client.delete(f"/api/bundles/{bundle['id']}").status_code == 204
+    response = client.get(url, params={"count": 5})
+    assert response.status_code == 400
+    assert "一式が登録されていない" in response.json()["detail"]
+    # 結論の 3 件は残る
+    kept = client.get(f"/api/results/{result['id']}").json()
+    assert kept["summary"]["representatives"] == representatives
+
+
+def test_group_text_values(
+    tmp_path: Path, client: TestClient, group_files: tuple[Path, Path]
+) -> None:
+    """
+    群分けの結果を読み直しても, 種類の値の "NA" と数に見える文字 "001" が
+    文字のまま出て, 件数を変えた代表の行が推論した表と同じになることを
+    確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    client: TestClient
+        クライアント
+    group_files: tuple[Path, Path]
+        一式と新しい行の表
+
+    Returns
+    ----------
+    None
+    """
+    # 文字のまま持つ表 (parquet) の, 数に見える番号と種類の値 NA
+    path, table = group_files
+    frame = pd.read_csv(table, dtype=str, keep_default_na=False)
+    frame["customer"] = [f"{n:03d}" for n in range(len(frame))]
+    frame["visits"] = pd.to_numeric(frame["visits"])
+    frame.loc[1, "region"] = "NA"
+    source = tmp_path / "customers.parquet"
+    frame.to_parquet(source)
+
+    bundle = register(client, path)
+    result = client.post(
+        f"/api/bundles/{bundle['id']}/predict", json={"source": str(source)}
+    ).json()
+    predicted = ml_inference.predict(str(path), source)
+    assert result["summary"]["representatives"] == (
+        ml_inference.group_representatives(str(path), predicted)
+    )
+    assert "customer" in result["grouping"]["texts"]
+    assert "visits" not in result["grouping"]["texts"]
+
+    # 割り当てた行の表は文字のまま
+    rows = client.get(
+        f"/api/results/{result['id']}/rows", params={"limit": 3}
+    ).json()["rows"]
+    assert [row["customer"] for row in rows] == ["000", "001", "002"]
+    assert rows[1]["region"] == "NA"
+    assert isinstance(rows[0]["visits"], int)
+
+    # 件数を変えた代表の行は, 推論した表から求めた代表の行と同じ
+    again = client.get(
+        f"/api/results/{result['id']}/representatives",
+        params={"count": 5}
+    ).json()
+    assert again["groups"] == ml_inference.group_representatives(
+        str(path), predicted, 5
+    )
+    values = {line["row"]: line["values"]
+              for item in again["groups"] for line in item["rows"]}
+    assert values[1]["region"] == "NA"
+    assert again["groups"][0]["rows"][:3] == (
+        result["summary"]["representatives"][0]["rows"]
+    )

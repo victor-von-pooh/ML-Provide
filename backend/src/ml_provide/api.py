@@ -96,6 +96,10 @@ MAX_REACTION_ROWS = MAX_RANK_ROWS
 # 並べるの一式で読む表のファイルの拡張子と区切り
 RANK_TABLES = {".csv": ",", ".tsv": "\t", ".parquet": None}
 
+# 群分けの結果で, 群ごとの代表の行を一度に求める件数の上限 (群の数 × 件数の
+# 行を 1 度に返すため)
+MAX_REPRESENTATIVES = 20
+
 # 推論の後に表を読み直して結論を出し直さない出力の形 (表の出力, 並べる,
 # 群分け. infer の結論のまま残す)
 KEPT_CONCLUSIONS = frozenset({"table", "ranking", "cluster"})
@@ -1230,7 +1234,7 @@ def predict(
         pretrained_warnings=warned,
         table_columns=table_columns(bundle),
         ranking=ranking,
-        grouping=grouping_meta(bundle)
+        grouping=grouping_meta(bundle, result["frame"])
     )
     # 書いた表を読み直して結論を出し直す (出し直しと同じ型の値でまとめ,
     # 日時のような列のまとめの名前が, 後の出し直しで変わらないように)
@@ -1253,7 +1257,9 @@ def predict(
     return view
 
 
-def grouping_meta(bundle: Any) -> Optional[dict[str, Any]]:
+def grouping_meta(
+    bundle: Any, frame: pd.DataFrame
+) -> Optional[dict[str, Any]]:
     """
     群分けの結果に残す, 群を作る列と学習のときの群の要約を返す関数
 
@@ -1261,12 +1267,15 @@ def grouping_meta(bundle: Any) -> Optional[dict[str, Any]]:
     ----------
     bundle: Any
         読んだ一式 (ML-Inference の Bundle)
+    frame: pd.DataFrame
+        推論した予測の表
 
     Returns
     ----------
     grouping: Optional[dict[str, Any]]
         k, columns (群を作る列), learned (学習のときの群の要約の行. 最後は
-        全体). 群分けの一式でなければ None
+        全体), texts (値が全て文字の元の列. 読み直すときに文字で読む).
+        群分けの一式でなければ None
     """
     # 一式を消しても, 学習のときの群の大きさと比べられるように写す
     if not bundle.from_group:
@@ -1276,9 +1285,37 @@ def grouping_meta(bundle: Any) -> Optional[dict[str, Any]]:
         "k": int(group["k"]),
         "columns": [str(name) for name in group["columns"]],
         "learned": copy.deepcopy(list(group.get("summary") or [])),
+        "texts": text_columns(frame),
     }
 
     return grouping
+
+
+def text_columns(frame: pd.DataFrame) -> list[str]:
+    """
+    予測の表の, 値が全て文字の元の列の名前を返す関数
+
+    Parameters
+    ----------
+    frame: pd.DataFrame
+        推論した予測の表
+
+    Returns
+    ----------
+    names: list[str]
+        欠けを除いた値が全て文字の列 (予測と判断の列は除く)
+    """
+    # 書き出した CSV を読み直すと, 数に見える文字 ("001") が数になるため
+    # (数と文字の混ざる列は, 数を文字にしないように除く)
+    names = []
+    for name in frame.columns:
+        if name in OWN_COLUMNS or name in ("group", "distance"):
+            continue
+        values = frame[name].dropna()
+        if len(values) and all(isinstance(v, str) for v in values):
+            names.append(str(name))
+
+    return names
 
 
 def table_columns(bundle: Any) -> Optional[list[dict[str, Any]]]:
@@ -1662,17 +1699,21 @@ def read_frame(place: Path, meta: dict[str, Any]) -> pd.DataFrame:
             texts[str(column["name"])] = str
         elif column.get("integer"):
             texts[str(column["name"])] = "Int64"
-    # 表の出力は空の欄だけを欠損にする (種類の値の NA, null, None などを
-    # 文字のまま読むため)
+    # 表の出力, 並べる, 群分けは空の欄だけを欠損にする (種類の値の NA,
+    # null, None などを文字のまま読むため)
     # 並べるの結果の利用者と品物は文字 (番号の表と同じく文字にして引く),
     # 順位は欠損を持てる整数 (並べられない利用者の行は欠損)
     if meta.get("output_form") == "ranking":
         texts.update(user=str, item=str, rank="Int64")
-    # 群分けの結果の群の番号は欠損を持てる整数 (割り当てない行は欠損)
+    # 群分けの結果の群の番号は欠損を持てる整数 (割り当てない行は欠損).
+    # 推論したときに値が全て文字だった元の列は文字のまま (代表の行と
+    # 割り当てた行の表の値を, 結論の代表の行と同じにするため)
     if meta.get("output_form") == "cluster":
         texts["group"] = "Int64"
+        for name in (meta.get("grouping") or {}).get("texts") or []:
+            texts[str(name)] = str
     blanks: dict[str, Any] = {}
-    if meta.get("output_form") in ("table", "ranking"):
+    if meta.get("output_form") in ("table", "ranking", "cluster"):
         blanks = {"keep_default_na": False, "na_values": [""]}
     frame = pd.read_csv(
         place / "predictions.csv", encoding="utf-8-sig", dtype=texts,
@@ -2040,7 +2081,8 @@ def get_rows(
     request: Request, result_id: str,
     offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=MAX_ROWS),
     status: Optional[str] = None, decision: Optional[str] = None,
-    group: Optional[int] = Query(None, ge=0)
+    group: Optional[int] = Query(None, ge=0),
+    row: Optional[int] = Query(None, ge=0)
 ) -> dict[str, Any]:
     """
     予測の表の一部を返す関数
@@ -2061,6 +2103,8 @@ def get_rows(
         判断で絞る
     group: Optional[int] = Query(None, ge=0)
         群の番号で絞る (群分けの結果だけ)
+    row: Optional[int] = Query(None, ge=0)
+        行の位置 (index) で 1 行だけに絞る
 
     Returns
     ----------
@@ -2091,6 +2135,8 @@ def get_rows(
         frame = frame[frame["decision"] == decision]
     if group is not None:
         frame = frame[frame["group"] == group]
+    if row is not None:
+        frame = frame[frame["index"] == row]
     part = frame.iloc[offset:offset + limit]
     records = json.loads(part.to_json(orient="records", force_ascii=False))
     rows = {
@@ -2101,6 +2147,59 @@ def get_rows(
     }
 
     return rows
+
+
+@router.get("/results/{result_id}/representatives")
+def get_representatives(
+    request: Request, result_id: str,
+    count: int = Query(ge=1, le=MAX_REPRESENTATIVES)
+) -> dict[str, Any]:
+    """
+    群分けの結果の, 群ごとの代表の行を件数を変えて求める関数 (結果には
+    残さない)
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    result_id: str
+        結果の id
+    count: int = Query(ge=1, le=MAX_REPRESENTATIVES)
+        群ごとの代表の行の件数の上限
+
+    Returns
+    ----------
+    representatives: dict[str, Any]
+        count と groups (ML-Inference の group_representatives の並び)
+
+    Raises
+    ----------
+    HTTPException
+        群分けでない結果の場合と, 一式が登録されていないか読めない場合は
+        400
+    """
+    # 群を作る列は一式から読むので, 登録した一式で求める
+    place = find_result(request, result_id)
+    meta = read_meta(place)
+    if meta.get("output_form") != "cluster":
+        raise HTTPException(400, "代表の行は群分けの結果だけで求めます")
+    entry = get_store(request).find(str(meta.get("bundle_id")))
+    if entry is None:
+        raise HTTPException(
+            400, "一式が登録されていないので, 代表の行の件数を変えられません"
+        )
+    try:
+        bundle = open_bundle(str(entry["path"]))
+    except (OSError, *USER_ERRORS) as error:
+        raise bundle_error(str(entry["path"]), error) from error
+    frame = read_frame(place, meta)
+    try:
+        groups = ml_inference.group_representatives(bundle, frame, count)
+    except USER_ERRORS as error:
+        raise user_error(error) from error
+    representatives = {"count": count, "groups": groups}
+
+    return representatives
 
 
 # 配列の見本を同時に作る数 (大きな配列でメモリを使い切らないための上限)

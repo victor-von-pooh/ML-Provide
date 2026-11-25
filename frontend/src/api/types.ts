@@ -154,11 +154,35 @@ export interface GroupInfo {
   check: { rows: number; agreement: number } | null
 }
 
+/** 群の代表の行の 1 行 (ML-Inference の group_representatives の rows の 1 つ) */
+export interface ClusterRepresentativeRow {
+  /** 予測の表の行の位置 (0 から. 割り当てた行の表の # と同じ) */
+  row: number
+  /** 群の中心までの埋め込みの空間の距離 */
+  distance: number
+  /** 群を作る列の名前から元の値 (欠けは null) */
+  values: Record<string, number | string | boolean | null>
+}
+
+/** 群ごとの代表の行 (群の中心に近い順. 行の無い群は rows が空) */
+export interface ClusterRepresentatives {
+  group: number
+  rows: ClusterRepresentativeRow[]
+}
+
+/** 件数を変えて求めた群の代表の行 (GET /api/results/{id}/representatives) */
+export interface Representatives {
+  count: number
+  groups: ClusterRepresentatives[]
+}
+
 /** 群分けの結果に残した, 群を作る列と学習のときの群の要約 */
 export interface GroupingInfo {
   k: number
   columns: string[]
   learned: ClusterRow[]
+  /** 推論した表で値が全て文字だった元の列 (読み直すときに文字で読む) */
+  texts?: string[]
 }
 
 /** 反応の表 (前に反応した品物と正解の反応) の列の名前 */
@@ -441,6 +465,8 @@ export interface Counts {
   excluded?: boolean
   /** 群分けの結果の学習の群の安定性 (群の要約は Summary の groups. 群分けでは ClusterRow の並び) */
   stability?: ClusterStability
+  /** 群分けの結果の群ごとの代表の行 (既定の 3 件) */
+  representatives?: ClusterRepresentatives[]
   values?: { sum: number; mean: number | null; min: number | null; max: number | null }
 }
 
