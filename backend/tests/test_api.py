@@ -1040,9 +1040,32 @@ def test_comparison_reasons() -> None:
     found = comparison([cluster, {**cluster, "bundle_id": "b"}])
     assert found["basis"] == ["source"]
     assert ["違う群分けの一式" in r for r in found["reasons"]] == [True]
-    moved = {**cluster["grouping"], "k": 2}
-    found = comparison([cluster, {**cluster, "grouping": moved}])
+    # 群の数, 学習のときの群の要約, 群を作る列のどれか 1 つが違っても
+    # 違う一式とする
+    for change in ({"k": 2},
+                   {"learned": [{"group": 0, "rows": 4, "share": 1.0}]},
+                   {"columns": ["y"]}):
+        moved = {**cluster["grouping"], **change}
+        found = comparison([cluster, {**cluster, "grouping": moved}])
+        assert found["basis"] == ["bundle", "source"], change
+        assert ["違う群分けの一式" in r for r in found["reasons"]] == [
+            True
+        ], change
+    # 3 つのうち 1 つだけ一式が違う組 (A, A, B) も比べない
+    found = comparison([
+        cluster, {**cluster, "source_path": "/later.csv"},
+        {**cluster, "bundle_id": "b", "source_path": "/later.csv"},
+    ])
+    assert found["basis"] == []
     assert ["違う群分けの一式" in r for r in found["reasons"]] == [True]
+    # 群の情報を持たない古い結果は, 同じ一式でも古い結果の理由だけ
+    old_cluster = {k: v for k, v in cluster.items() if k != "grouping"}
+    for pair in ([old_cluster, old_cluster], [cluster, old_cluster]):
+        found = comparison(pair)
+        assert found["grouping"] and found["basis"] == ["bundle", "source"]
+        assert ["群の情報を持たない古い" in r for r in found["reasons"]] == [
+            True
+        ]
     # 群分けと他の結果の混ざった組は, 形の違う理由 (列の出力でない理由は
     # 出さない)
     found = comparison([cluster, table])

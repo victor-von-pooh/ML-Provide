@@ -1981,6 +1981,25 @@ def is_cluster(meta: dict[str, Any]) -> bool:
     return cluster
 
 
+def has_grouping(meta: dict[str, Any]) -> bool:
+    """
+    群分けの結果が群の情報 (群の数) を残しているかを返す関数
+
+    Parameters
+    ----------
+    meta: dict[str, Any]
+        result.yaml の中身
+
+    Returns
+    ----------
+    kept: bool
+        grouping に群の数があるか
+    """
+    kept = (meta.get("grouping") or {}).get("k") is not None
+
+    return kept
+
+
 def same_grouping(metas: list[dict[str, Any]]) -> bool:
     """
     群分けの結果の群の数, 群を作る列, 学習のときの群の要約が全て同じかを
@@ -1994,7 +2013,8 @@ def same_grouping(metas: list[dict[str, Any]]) -> bool:
     Returns
     ----------
     same: bool
-        全ての結果の grouping (k, columns, learned) が同じで, 空でないか
+        全ての結果の grouping (k, columns, learned) が同じか (群の情報を
+        持たない結果は has_grouping で先に除く)
     """
     # 推論した表で文字だった列 (texts) は入力で変わるので見ない
     keys = [
@@ -2005,7 +2025,7 @@ def same_grouping(metas: list[dict[str, Any]]) -> bool:
         )
         for m in metas
     ]
-    same = keys[0][0] is not None and all(key == keys[0] for key in keys)
+    same = all(key == keys[0] for key in keys)
 
     return same
 
@@ -2055,9 +2075,16 @@ def comparison(metas: list[dict[str, Any]]) -> dict[str, Any]:
             "タスクの違う結果は比べられません (判断の内訳と得の意味が違うため)"
         )
     if grouping:
-        # 群の番号の意味は一式ごとに違うので, 同じ入力でも違う一式は
-        # 比べない (同じ場所に登録し直した一式は残した群で見分ける)
-        if "bundle" not in basis or not same_grouping(metas):
+        # 群の情報 (grouping) を残す前の結果は, 群の数, 群を作る列,
+        # 学習のときの群の要約を持たないので比べない. 群の番号の意味は
+        # 一式ごとに違うので, 同じ入力でも違う一式は比べない (同じ場所に
+        # 登録し直した一式は残した群で見分ける)
+        if not all(has_grouping(m) for m in metas):
+            reasons.append(
+                "群の情報を持たない古い群分けの結果は比べられません "
+                "(推論し直すと比べられます)"
+            )
+        elif "bundle" not in basis or not same_grouping(metas):
             reasons.append(
                 "違う群分けの一式の結果は比べられません (群の番号と群を作る"
                 "列の意味が一式ごとに違うため). 同じ群分けの一式の結果を"

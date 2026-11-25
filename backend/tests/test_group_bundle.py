@@ -473,3 +473,11 @@ def test_group_compare(
     assert not mixed["comparable"] and not mixed["grouping"]
     assert any("群分けの結果と他の結果" in r for r in mixed["reasons"])
     assert not any("列の出力でない" in r for r in mixed["reasons"])
+
+    # 一式を消しても, 結果に残した群の情報で比べられる
+    assert client.delete(f"/api/bundles/{bundle['id']}").status_code == 204
+    kept = client.get(
+        f"/api/results/compare?ids={first['id']},{second['id']}"
+    ).json()
+    assert kept["comparable"] and kept["grouping"]
+    assert kept["results"][0]["grouping"]["learned"] == learned
