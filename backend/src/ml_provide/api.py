@@ -1244,11 +1244,15 @@ def predict(
     # (表の出力, 並べる, 群分けの結果は infer の結論のまま. 表の出力の件数は
     # 数え直しても同じで, 並べるの利用者ごとの数え方と群分けの群の要約と
     # 群の安定性は件数だけの結論に無いため)
+    # (出し直しは書いた result.yaml を読んで渡す. 予測の表を読む列の型
+    # column_types は write_result が書くときに決めるため)
     try:
         ml_inference.write_result(result, place)
         if meta.get("output_form") not in KEPT_CONCLUSIONS:
             with RESULT_LOCK:
-                conclude_into(place, meta, meta.get("rules") or {})
+                conclude_into(
+                    place, read_meta(place), meta.get("rules") or {}
+                )
     except Exception as error:
         shutil.rmtree(place, ignore_errors=True)
         raise user_error(error) from error
@@ -1627,38 +1631,6 @@ def read_meta(place: Path) -> dict[str, Any]:
     return meta
 
 
-def old_text_predictions(place: Path, frame: pd.DataFrame) -> pd.Series:
-    """
-    tokens の列の無い古い文の結果の予測を, 文字のまま読み直す関数
-
-    ML-Inference の read_result は tokens の列で文の出力かを見分けるので,
-    列の無い古い結果は型を推し量って読む (番号 1 つの予測が 5.0 になる)
-
-    Parameters
-    ----------
-    place: Path
-        結果のディレクトリ
-    frame: pd.DataFrame
-        read_result で読んだ予測の表 (status の列で予測した行を見分ける)
-
-    Returns
-    ----------
-    predictions: pd.Series
-        文字のままの予測 (空の欄は欠損. 予測した行の空の文は空の文字)
-    """
-    # read_result と同じ欠損の決まり (空だけを欠損にし, NA などは文字)
-    raw = pd.read_csv(
-        place / "predictions.csv", encoding="utf-8-sig", usecols=["prediction"],
-        dtype={"prediction": str}, keep_default_na=False, na_values=[""]
-    )
-    predictions = raw["prediction"].astype(object)
-    if "status" in frame.columns:
-        done = frame["status"] == ml_inference.OK
-        predictions[done & predictions.isna()] = ""
-
-    return predictions
-
-
 def read_frame(place: Path, meta: dict[str, Any]) -> pd.DataFrame:
     """
     結果の予測の表を読む関数
@@ -1668,7 +1640,7 @@ def read_frame(place: Path, meta: dict[str, Any]) -> pd.DataFrame:
     place: Path
         結果のディレクトリ
     meta: dict[str, Any]
-        result.yaml の中身 (タスク, 出力の形, 残した列の型で読み直す列を
+        result.yaml の中身 (タスク, 出力の形, 残した列の型で, 型を渡す列を
         決める)
 
     Returns
@@ -1677,61 +1649,56 @@ def read_frame(place: Path, meta: dict[str, Any]) -> pd.DataFrame:
         予測と判断の表 (状態, 理由と判断の空は空の文字. 文の出力の予測
         した行の空の文と番号も空の文字)
     """
-    # 表は ML-Inference の read_result の決まり (空の欄だけを欠損にし,
-    # column_types の列はその型) で読む. 読み直すと値の変わる列の決まりを
-    # 2 か所に持たないため
-    result = ml_inference.read_result(place)
-    frame: pd.DataFrame = result["frame"]
-    if (meta.get("output_form") == "text" and "tokens" not in frame.columns
-            and "prediction" in frame.columns):
-        frame["prediction"] = old_text_predictions(place, frame)
-
-    # 画面の都合で CSV の文字から読み直す列 (column_types に依らない).
-    # 状態, 理由, 判断は文字, 分類の予測は文字 (数字のクラスも. 決め方の
-    # クラスの名前と合わせるため. 文の出力の予測は read_result のまま),
-    # 並べるの利用者と品物は文字 (番号の表と同じく文字にして引くため), 表の
-    # 出力の種類の列は文字 (数の種類の値で欠けた行があると column_types が
-    # integer になり, 行の有無で型が変わらないように)
-    again: dict[str, Any] = {"status": str, "reason": str, "decision": str}
+    # column_types より強く当てる型. 画面の都合: 状態, 理由, 判断は文字
+    # (空を空の文字で出すため), 表の出力の種類の列は文字 (欠けた行の有無に
+    # 依らず種類の値を文字で出すため), 群分けの文字の元の列は文字 (推論した
+    # ときの値のまま出すため). 引く都合: 並べるの利用者と品物は文字 (番号の
+    # 表と同じく文字にして引くため). 結論の都合: 分類の予測は文字 (数字の
+    # クラスも, 決め方のクラスの名前と合わせるため. 文の出力は下)
     text = meta.get("output_form") == "text"
+    override: dict[str, str] = {
+        "status": "text", "reason": "text", "decision": "text"
+    }
     if meta.get("task") == "classification" and not text:
-        again["prediction"] = str
+        override["prediction"] = "text"
     if meta.get("output_form") == "ranking":
-        again.update(user=str, item=str)
+        override.update(user="text", item="text")
     columns = meta.get("table_columns") or []
     for column in columns:
         if column.get("type") == "category":
-            again[str(column["name"])] = str
+            override[str(column["name"])] = "text"
+    if meta.get("output_form") == "cluster":
+        for name in (meta.get("grouping") or {}).get("texts") or []:
+            override[str(name)] = "text"
 
-    # column_types の無い列は, このアプリが結果に残した型で読み直す. 版 1
-    # と 2 の結果は column_types を持たないため (版 3 の結果では同じ型)
-    kept = result.get("column_types")
-    if not isinstance(kept, dict):
-        kept = {}
-    hints: dict[str, Any] = {}
+    # 版 1 と 2 の補い: column_types に無い列だけに, このアプリが結果に
+    # 残した型を当てる (版 1 と 2 の結果は列の型を持たないため)
+    fallback: dict[str, str] = {}
     for column in columns:
         if column.get("type") != "category" and column.get("integer"):
-            hints[str(column["name"])] = "Int64"
+            fallback[str(column["name"])] = "integer"
     if meta.get("output_form") == "ranking":
-        hints["rank"] = "Int64"
+        fallback["rank"] = "integer"
     if meta.get("output_form") == "cluster":
-        hints["group"] = "Int64"
-        for name in (meta.get("grouping") or {}).get("texts") or []:
-            hints[str(name)] = str
-    for name, kind in hints.items():
-        if name not in kept:
-            again.setdefault(name, kind)
+        fallback["group"] = "integer"
 
-    # 読み直す列は表にある列だけ (空の欄だけを欠損にする決まりは同じ)
-    names = [name for name in again if name in frame.columns]
-    if names:
-        raw = pd.read_csv(
-            place / "predictions.csv", encoding="utf-8-sig", usecols=names,
-            dtype={name: again[name] for name in names},
-            keep_default_na=False, na_values=[""]
-        )
-        for name in names:
-            frame[name] = raw[name]
+    # 版の補い: 文の出力の予測は文字 (古い文の結果は tokens の列を持たない
+    # ので, 出力の形で補う. 全ての行が番号 1 つでも数にしないように)
+    if text:
+        override["prediction"] = "text"
+
+    # 表は read_result で 1 回だけ読む (読み方の決まりを 2 か所に持たない
+    # ため)
+    frame: pd.DataFrame = ml_inference.read_result(
+        place, override_types=override, fallback_types=fallback
+    )["frame"]
+
+    # 版の補い: 古い文の結果の予測した行の空の文は, 欠損と分けて空の文字に
+    if (text and "tokens" not in frame.columns
+            and "prediction" in frame.columns and "status" in frame.columns):
+        frame["prediction"] = frame["prediction"].astype(object)
+        done = frame["status"] == ml_inference.OK
+        frame.loc[done & frame["prediction"].isna(), "prediction"] = ""
     for name in ("status", "reason", "decision"):
         if name in frame.columns:
             frame[name] = frame[name].astype(object).fillna("").astype(str)
