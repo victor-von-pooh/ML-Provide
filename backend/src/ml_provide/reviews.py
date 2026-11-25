@@ -1,7 +1,7 @@
 import json
 import math
 from pathlib import Path
-from typing import Any, Literal, Union
+from typing import Any, Literal, Optional, Union
 
 import ml_inference
 import pandas as pd
@@ -67,7 +67,7 @@ def plain_value(value: Any) -> Any:
     plain: Any
         Python の値 (欠損と数でない小数は None)
     """
-    # NumPy と pandas の値は Python の値に
+    # NumPy と pandas の値から Python の値への変換
     plain = value.item() if hasattr(value, "item") else value
     if plain is None or plain is pd.NA or (
         isinstance(plain, float) and not math.isfinite(plain)
@@ -92,12 +92,47 @@ def acted_rows(frame: pd.DataFrame) -> pd.Series:
         行ごとの真偽 (action の列の無い, 振り分けていない結果は全て偽)
     """
     # 読み直した action は真偽か欠損 (予測しなかった行)
-    # (Python と NumPy の真偽と, 文字で読んだ真偽を同じに)
+    # (Python と NumPy の真偽と, 文字で読んだ真偽の同じ扱い)
     acted: pd.Series = pd.Series(False, index=frame.index)
     if "action" in frame.columns:
         acted = frame["action"].astype(str) == "True"
 
     return acted
+
+
+def duplicate_problem(
+    frame: pd.DataFrame, column: Optional[str]
+) -> Optional[str]:
+    """
+    行の id の列に同じ値の行があれば, 人の確認を使えない理由を返す関数
+
+    Parameters
+    ----------
+    frame: pd.DataFrame
+        異常の度合いの結果の予測の表
+    column: Optional[str]
+        行の id の列 (無ければ None)
+
+    Returns
+    ----------
+    problem: Optional[str]
+        理由の文 (同じ値の行が無いか, id の列が無ければ None)
+    """
+    # 記録は id の文字で行を指すので, 重なる id は行を取り違える元
+    if not column or column not in frame.columns:
+        return None
+    keys = frame[column].dropna().astype(str)
+    repeated = sorted(set(keys[keys.duplicated()]))
+    if not repeated:
+        return None
+    shown = ", ".join(repeated[:5]) + (" など" if len(repeated) > 5 else "")
+    problem = (
+        f"行の id の列 {column} に同じ値の行があります ({shown}). 記録が"
+        "どの行を指すか決まらないので, 人の確認を使えません. id が重ならない"
+        "表で推論し直してください"
+    )
+
+    return problem
 
 
 def latest_reviews(place: Path) -> dict[str, dict[str, str]]:
@@ -138,9 +173,11 @@ def get_queue(request: Request, result_id: str) -> dict[str, Any]:
     ----------
     queue: dict[str, Any]
         id (行の id の列. 無ければ None), capacity (人の確認に回す件数の
-        上限. 振り分けていなければ None), rows (行の位置 row, 記録に使う
-        行の id の key, 行の id の値 id, score, rank, column, column_share,
-        今の判断 judgment, reviewer, reviewed_at)
+        上限. 振り分けていなければ None), problem (人の確認を使えない理由.
+        行の id の重なり. 使えれば None. 理由があれば rows は空), rows
+        (行の位置 row, 記録に使う行の id の key (id の値の欠けた行は None),
+        行の id の値 id, score, rank, column, column_share, 今の判断
+        judgment, reviewer, reviewed_at)
 
     Raises
     ----------
@@ -152,6 +189,12 @@ def get_queue(request: Request, result_id: str) -> dict[str, Any]:
     require_anomaly(meta)
     column = (meta.get("summary") or {}).get("id")
     frame = read_frame(place, meta)
+    decided = (meta.get("decision") or {}).get("decision") or {}
+    capacity = decided.get("capacity")
+    problem = duplicate_problem(frame, column)
+    if problem:
+        return {"id": column, "capacity": capacity, "problem": problem,
+                "rows": []}
     try:
         latest = latest_reviews(place)
     except USER_ERRORS as error:
@@ -166,11 +209,12 @@ def get_queue(request: Request, result_id: str) -> dict[str, Any]:
     for position, record in zip(
         chosen.index, chosen.to_dict("records"), strict=True
     ):
+        # (id の列の無い結果は行の位置. id の値の欠けた行は記録の無い行)
         value = plain_value(record.get(column)) if column else None
-        key: Union[int, str] = (
-            str(value) if column and value is not None else int(position)
+        key: Union[int, str, None] = int(position) if not column else (
+            None if value is None else str(value)
         )
-        found = latest.get(str(key)) or {}
+        found = {} if key is None else latest.get(str(key)) or {}
         rows.append({
             "row": int(position), "key": key, "id": value,
             "score": plain_value(record.get("score")),
@@ -181,11 +225,9 @@ def get_queue(request: Request, result_id: str) -> dict[str, Any]:
             "reviewer": found.get("reviewer"),
             "reviewed_at": found.get("reviewed_at"),
         })
-    decided = (meta.get("decision") or {}).get("decision") or {}
-    capacity = decided.get("capacity")
-    # (JSON に書けない値を残さないように, 書いて読み直す)
+    # (JSON に書けない値を残さないための, 書いての読み直し)
     queue: dict[str, Any] = json.loads(json.dumps(
-        {"id": column, "capacity": capacity, "rows": rows},
+        {"id": column, "capacity": capacity, "problem": None, "rows": rows},
         ensure_ascii=False, default=str
     ))
 
@@ -253,8 +295,8 @@ def add_review(
     Raises
     ----------
     HTTPException
-        異常の度合いの結果でない場合, 名前が長すぎる場合, 結果に無い行と
-        形の誤りは 400
+        異常の度合いの結果でない場合, 名前が長すぎる場合, 行の id に同じ値
+        の行がある場合, 結果に無い行と形の誤りは 400
     """
     # 時刻は渡さず ML-Inference の既定 (今の時刻)
     place, meta = find_result_meta(request, result_id)
@@ -263,6 +305,11 @@ def add_review(
         raise HTTPException(
             400, f"確かめた人の名前は {MAX_REVIEWER} 文字までにしてください"
         )
+    problem = duplicate_problem(
+        read_frame(place, meta), (meta.get("summary") or {}).get("id")
+    )
+    if problem:
+        raise HTTPException(400, problem)
     with RESULT_LOCK:
         try:
             record: dict[str, Any] = ml_inference.record_review(

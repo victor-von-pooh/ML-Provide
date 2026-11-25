@@ -103,7 +103,7 @@ def weights_of(bundle: ml_inference.Bundle) -> Optional[Path]:
         重みのファイル (モデルを持たない一式は None. 距離に基づく異常の
         度合いの一式など)
     """
-    # model が null の一式 (版 11) は重みを持たない
+    # 重みの無い一式 (版 11, model が null) は None
     weights = None if bundle.info.get("model") is None else (
         bundle.weights_path
     )

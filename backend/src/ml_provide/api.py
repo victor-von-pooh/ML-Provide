@@ -105,7 +105,7 @@ MAX_REPRESENTATIVES = 20
 KEPT_CONCLUSIONS = frozenset({"table", "ranking", "cluster"})
 
 # 異常の度合いの一式で, 人の確認に回す件数の上限 (確認の待ち行列を 1 度に
-# 返すため)
+# 返す件数の上限)
 MAX_CAPACITY = 1000
 
 # 並べるの一式だけに渡せる欄を, ほかの一式に渡したときの文
@@ -1250,9 +1250,9 @@ def predict(
     result_id, place = get_store(request).new_result_dir()
     meta = {k: v for k, v in result.items() if k != "frame"}
     # (表の出力, 並べる, 群分け, 異常の度合いの結果は infer の結論のまま.
-    # 表の出力の件数は数え直しても同じで, 並べるの利用者ごとの数え方と
+    # 表の出力の件数は数え直しても同じ件数. 並べるの利用者ごとの数え方,
     # 群分けの群の要約と群の安定性, 異常の度合いの分布と上位の行は件数
-    # だけの結論に無いため)
+    # だけの結論に無い中身)
     # (出し直しは書いた result.yaml を読んで渡す. 予測の表を読む列の型
     # column_types は write_result が書くときに決めるため)
     try:

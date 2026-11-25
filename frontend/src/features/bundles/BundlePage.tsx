@@ -195,7 +195,7 @@ function AnomalyRows({
       <Row label="前処理">
         <span className="font-mono text-xs">{steps.join(' → ') || 'なし'}</span>
       </Row>
-      <Row label="人の確認の上限">
+      <Row label="人の確認に回す件数の上限">
         1 回に {anomaly.capacity.toLocaleString()} 件 (実験の評価の上位 K 件は{' '}
         {anomaly.k.toLocaleString()} 件)
       </Row>

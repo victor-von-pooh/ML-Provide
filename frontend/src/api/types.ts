@@ -189,8 +189,8 @@ export type Judgment = 'anomaly' | 'normal'
 /** 人の確認に回した 1 行 (GET /api/results/{id}/queue) */
 export interface ReviewQueueRow {
   row: number
-  /** 記録に使う行の id (id の列の無い結果は行の位置) */
-  key: string | number
+  /** 記録に使う行の id (id の列の無い結果は行の位置. id の値の欠けた行は null) */
+  key: string | number | null
   id: string | number | boolean | null
   score: number | null
   rank: number | null
@@ -208,6 +208,8 @@ export interface ReviewQueue {
   id: string | null
   /** 人の確認に回す件数の上限 (振り分けていなければ null) */
   capacity: number | null
+  /** 人の確認を使えない理由 (行の id の重なり. 使えれば null で, 理由があれば rows は空) */
+  problem?: string | null
   rows: ReviewQueueRow[]
 }
 

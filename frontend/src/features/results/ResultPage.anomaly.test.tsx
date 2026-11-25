@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 
-import type { Result, ReviewQueue, ReviewRecord, Rows } from '../../api/types'
+import type { Result, ReviewQueue, ReviewQueueRow, ReviewRecord, Rows } from '../../api/types'
 import { ResultPage } from './ResultPage'
 
 // 4 行のうち 3 行の度合いを出し, 上位 2 行を人の確認に回した結果
@@ -54,6 +54,8 @@ const result = {
 const rows: Rows = { total: 0, offset: 0, columns: ['index'], rows: [] }
 
 let records: ReviewRecord[] = []
+// 待ち行列を差し替える値 (null は記録から作る待ち行列)
+let queueOverride: ReviewQueue | null = null
 const queueRows = (): ReviewQueue => ({
   id: 'reading_id',
   capacity: 2,
@@ -102,7 +104,7 @@ vi.mock('../../api/client', () => ({
     result: () => Promise.resolve(result),
     bundle: () => Promise.reject(new Error('無い')),
     rows: () => Promise.resolve(rows),
-    queue: () => Promise.resolve(queueRows()),
+    queue: () => Promise.resolve(queueOverride ?? queueRows()),
     reviews: () => Promise.resolve({ records }),
     addReview: (id: string, row: string | number, judgment: string, reviewer: string) =>
       addReview(id, row, judgment, reviewer),
@@ -126,6 +128,7 @@ function renderPage() {
 describe('異常の度合いの結果の画面', () => {
   beforeEach(() => {
     records = []
+    queueOverride = null
     addReview.mockClear()
     window.localStorage.clear()
   })
@@ -188,5 +191,37 @@ describe('異常の度合いの結果の画面', () => {
       ).toHaveLength(3),
     )
     expect(screen.getByText(/2 件のうち 1 件を確かめました/)).toBeInTheDocument()
+  })
+
+  it('行の id の重なる結果は, 名前の欄と待ち行列を出さずに理由を出す', async () => {
+    queueOverride = {
+      id: 'reading_id',
+      capacity: 2,
+      problem: '行の id の列 reading_id に同じ値の行があります (r013)',
+      rows: [],
+    }
+    renderPage()
+    expect(await screen.findByRole('note', { name: '人の確認を使えない理由' })).toHaveTextContent(
+      'r013',
+    )
+    expect(screen.queryByLabelText(/^確かめた人の名前/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('table', { name: /^人の確認に回した行/ })).not.toBeInTheDocument()
+  })
+
+  it('行の id の欠けた行は判断を付けられない', async () => {
+    const base = queueRows()
+    const [top, next] = base.rows as [ReviewQueueRow, ReviewQueueRow]
+    queueOverride = { ...base, rows: [{ ...top, key: null, id: null }, next] }
+    renderPage()
+    fireEvent.change(await screen.findByLabelText(/^確かめた人の名前/), {
+      target: { value: '佐藤' },
+    })
+    const queue = await screen.findByRole('table', { name: /^人の確認に回した行/ })
+    const lines = within(queue).getAllByRole('row')
+    const blank = lines[1]!
+    const other = lines[2]!
+    expect(within(blank).getByText(/行の id が欠けているので記録できません/)).toBeInTheDocument()
+    for (const button of within(blank).getAllByRole('button')) expect(button).toBeDisabled()
+    for (const button of within(other).getAllByRole('button')) expect(button).toBeEnabled()
   })
 })

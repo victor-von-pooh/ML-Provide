@@ -3,12 +3,15 @@ from datetime import datetime
 from pathlib import Path
 from types import ModuleType
 
+import ml_inference
 import pandas as pd
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 from test_bundle_v3 import register
 
 from ml_provide.app import create_app
+from ml_provide.cache import weights_of
 
 # テストで使うトークン
 TOKEN = "test-token"
@@ -28,7 +31,7 @@ def load_maker() -> ModuleType:
     module: ModuleType
         frontend/e2e/make_anomaly.py (骨組みと同じ成果物を書く関数を持つ)
     """
-    # 骨組みの成果物の書き方を 2 か所に持たないため, 同じスクリプトを使う
+    # 骨組みの成果物の書き方を 2 か所に持たないための, 同じスクリプト
     path = Path(__file__).parents[2] / "frontend" / "e2e" / "make_anomaly.py"
     spec = importlib.util.spec_from_file_location("make_anomaly", path)
     assert spec is not None and spec.loader is not None
@@ -103,7 +106,7 @@ def test_anomaly_bundle(
     ----------
     None
     """
-    # 版 11 の一式を登録すると, 説明に異常の欄があり, 問題の設定を読まない
+    # 版 11 の一式の登録. 説明の異常の欄と, 読まない問題の設定
     path, table = anomaly_files
     bundle = register(client, path)
     description = bundle["description"]
@@ -116,7 +119,7 @@ def test_anomaly_bundle(
     state = client.get(f"/api/bundles/{bundle['id']}/problem").json()
     assert state["linked"] is None and state["hint"] is None
 
-    # 既定の振り分けで推論すると, 度合いの結論と振り分けの結論のまま残す
+    # 既定の振り分けでの推論. 度合いの結論と振り分けの結論はそのまま
     url = f"/api/bundles/{bundle['id']}/predict"
     response = client.post(url, json={"source": str(table)})
     assert response.status_code == 201, response.text
@@ -147,7 +150,7 @@ def test_anomaly_bundle(
     assert rows[0]["column"] == "vibration"
     assert all(row["judgment"] is None for row in rows)
 
-    # 件数の上限を変えると, その数だけ回す
+    # 件数の上限を変えたときの回し数
     response = client.post(url, json={
         "source": str(table), "decision": {"type": "triage", "capacity": 2}
     })
@@ -155,7 +158,17 @@ def test_anomaly_bundle(
     other = response.json()
     assert other["decision"]["summary"]["acted"] == 2
     queue = client.get(f"/api/results/{other['id']}/queue").json()
-    assert len(queue["rows"]) == 2
+    assert len(queue["rows"]) == 2 and queue["problem"] is None
+
+    # 上限の境界の 1000 件は通り, 度合いを出した全ての行を回す
+    response = client.post(url, json={
+        "source": str(table), "decision": {"type": "triage", "capacity": 1000}
+    })
+    assert response.status_code == 201, response.text
+    every = response.json()
+    assert every["decision"]["summary"]["acted"] == 13
+    queue = client.get(f"/api/results/{every['id']}/queue").json()
+    assert len(queue["rows"]) == 13
 
     # 振り分けない結果の待ち行列は空
     response = client.post(url, json={"source": str(table), "decision": {}})
@@ -185,7 +198,7 @@ def test_anomaly_refusals(
     ----------
     None
     """
-    # 振り分けの他の型と項目は ML-Inference が断る
+    # 振り分けの他の型と項目は ML-Inference での断り
     path, table = anomaly_files
     bundle = register(client, path)
     url = f"/api/bundles/{bundle['id']}/predict"
@@ -203,7 +216,7 @@ def test_anomaly_refusals(
     })
     assert "1000 件まで" in response.json()["detail"]
 
-    # 結論の出し直し, 決め直し, たどり直しは列の出力の結果だけ
+    # 結論の出し直し, 決め直し, たどり直しは列の出力の結果だけの機能
     result = client.post(url, json={"source": str(table)}).json()
     for name, body in (("conclude", {"rules": {}}),
                        ("decide", {"decision": None}), ("backtest", None)):
@@ -240,7 +253,7 @@ def test_anomaly_reviews(
     reviews = f"/api/results/{result['id']}/reviews"
     assert client.get(reviews).json() == {"records": []}
 
-    # 1 件ずつ足すと, 時刻は今の時刻 (時差付き)
+    # 1 件ずつの書き足し. 時刻は今の時刻 (時差付き)
     queue = client.get(f"/api/results/{result['id']}/queue").json()["rows"]
     first, second = queue[0]["key"], queue[1]["key"]
     response = client.post(reviews, json={
@@ -275,7 +288,7 @@ def test_anomaly_reviews(
                                    "reviewed_at"]
     assert len(found) == 3
 
-    # 判断, 名前, 行の誤りは断る
+    # 判断, 名前, 行の誤りの断り
     for body, status in (
         ({"row": first, "judgment": "maybe", "reviewer": "a"}, 422),
         ({"row": first, "judgment": "normal", "reviewer": " "}, 400),
@@ -286,6 +299,153 @@ def test_anomaly_reviews(
         response = client.post(reviews, json=body)
         assert response.status_code == status, body
     assert len(client.get(reviews).json()["records"]) == 3
+
+    # 名前の上限の 80 字ちょうどは通る
+    response = client.post(reviews, json={
+        "row": first, "judgment": "normal", "reviewer": "a" * 80
+    })
+    assert response.status_code == 201, response.text
+    assert len(client.get(reviews).json()["records"]) == 4
+
+
+def test_anomaly_without_id(
+    tmp_path: Path, client: TestClient, anomaly_files: tuple[Path, Path]
+) -> None:
+    """
+    行の id の列の無い表の結果では, 行の位置で記録を足せることを確かめる
+    関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    client: TestClient
+        クライアント
+    anomaly_files: tuple[Path, Path]
+        一式と新しい行の表
+
+    Returns
+    ----------
+    None
+    """
+    # id の列を落とした表の推論. 待ち行列の key は行の位置の整数
+    path, table = anomaly_files
+    bundle = register(client, path)
+    lacking = tmp_path / "lacking.csv"
+    pd.read_csv(table).drop(columns=["reading_id"]).to_csv(
+        lacking, index=False
+    )
+    result = client.post(f"/api/bundles/{bundle['id']}/predict",
+                         json={"source": str(lacking)}).json()
+    assert result["summary"]["id"] is None
+    queue = client.get(f"/api/results/{result['id']}/queue").json()
+    assert queue["id"] is None
+    rows = queue["rows"]
+    assert [row["key"] for row in rows] == [row["row"] for row in rows]
+    assert all(isinstance(row["key"], int) for row in rows)
+
+    # 行の位置での記録と今の判断. 範囲の外と文字の行の断り
+    reviews = f"/api/results/{result['id']}/reviews"
+    response = client.post(reviews, json={
+        "row": rows[0]["key"], "judgment": "anomaly", "reviewer": "佐藤"
+    })
+    assert response.status_code == 201, response.text
+    assert response.json()["id"] == str(rows[0]["row"])
+    queue = client.get(f"/api/results/{result['id']}/queue").json()
+    assert queue["rows"][0]["judgment"] == "anomaly"
+    for row in (99, "r1013", str(rows[0]["row"])):
+        response = client.post(reviews, json={
+            "row": row, "judgment": "normal", "reviewer": "佐藤"
+        })
+        assert response.status_code == 400, row
+    assert len(client.get(reviews).json()["records"]) == 1
+
+
+def test_anomaly_duplicate_ids(
+    tmp_path: Path, client: TestClient, anomaly_files: tuple[Path, Path]
+) -> None:
+    """
+    行の id に同じ値の行がある結果では人の確認を断り, id の値の欠けた行は
+    記録の無い行として出すことを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    client: TestClient
+        クライアント
+    anomaly_files: tuple[Path, Path]
+        一式と新しい行の表
+
+    Returns
+    ----------
+    None
+    """
+    # 最も度合いの高い行 (最後の行) と同じ id の正常の行のある表
+    path, table = anomaly_files
+    bundle = register(client, path)
+    url = f"/api/bundles/{bundle['id']}/predict"
+    frame = pd.read_csv(table, dtype={"reading_id": str})
+    repeated = tmp_path / "repeated.csv"
+    frame.assign(reading_id=[*frame["reading_id"][:-1], "r1000"]).to_csv(
+        repeated, index=False
+    )
+    result = client.post(url, json={"source": str(repeated)}).json()
+    queue = client.get(f"/api/results/{result['id']}/queue").json()
+    assert queue["rows"] == [] and "r1000" in queue["problem"]
+    response = client.post(f"/api/results/{result['id']}/reviews", json={
+        "row": "r1000", "judgment": "anomaly", "reviewer": "佐藤"
+    })
+    assert response.status_code == 400
+    assert "同じ値の行" in response.json()["detail"]
+
+    # id の値の欠けた行は key が無く, 同じ番号の行の記録を引かない
+    blank = tmp_path / "blank.csv"
+    frame.assign(reading_id=[*frame["reading_id"][:-1], None]).to_csv(
+        blank, index=False
+    )
+    result = client.post(url, json={"source": str(blank)}).json()
+    rows = client.get(f"/api/results/{result['id']}/queue").json()["rows"]
+    assert rows[0]["row"] == 13
+    assert rows[0]["key"] is None and rows[0]["judgment"] is None
+    assert all(row["key"] is not None for row in rows[1:])
+
+
+def test_anomaly_bundle_reread(
+    client: TestClient, anomaly_files: tuple[Path, Path]
+) -> None:
+    """
+    モデルを持たない距離の一式の説明を覚え, 一式が変われば読み直すことを
+    確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    anomaly_files: tuple[Path, Path]
+        一式と新しい行の表
+
+    Returns
+    ----------
+    None
+    """
+    # 重みの無い一式の重みの場所は None
+    path, _ = anomaly_files
+    assert weights_of(ml_inference.load_bundle(path)) is None
+    bundle = register(client, path)
+    for _ in range(2):
+        found = client.get(f"/api/bundles/{bundle['id']}").json()
+        assert found["ok"] and found["description"]["kind"] == "anomaly"
+
+    # inference.yaml を書き換えたときの読み直し
+    info = yaml.safe_load((path / "inference.yaml").read_text(encoding="utf-8"))
+    info["name"] = "sensors-2"
+    (path / "inference.yaml").write_text(
+        yaml.safe_dump(info, allow_unicode=True, sort_keys=False),
+        encoding="utf-8"
+    )
+    found = client.get(f"/api/bundles/{bundle['id']}").json()
+    assert found["ok"] and found["description"]["name"] == "sensors-2"
 
 
 def test_reviews_only_anomaly(client: TestClient) -> None:

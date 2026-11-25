@@ -169,7 +169,7 @@ function TopRowsCard({ summary }: { summary: AnomalySummary }) {
             <thead className="text-xs text-ink-3">
               <tr className="border-b border-line">
                 <Heading right>順位</Heading>
-                <Heading right>#</Heading>
+                <Heading right>行</Heading>
                 <Heading>{summary.id ?? '行の id'}</Heading>
                 <Heading right>度合い</Heading>
                 <Heading>最も外れた列 (度合いのうちの割合)</Heading>
@@ -206,7 +206,7 @@ function ReviewCard({ result }: { result: Result }) {
   const client = useQueryClient()
   const triage = triageSummary(result)
   const [reviewer, setReviewer] = useState(loadReviewer)
-  const problem = reviewerProblem(reviewer)
+  const nameProblem = reviewerProblem(reviewer)
   const queue = useQuery({ queryKey: ['queue', result.id], queryFn: () => api.queue(result.id) })
   const review = useMutation({
     mutationFn: ({ row, judgment }: { row: string | number; judgment: Judgment }) =>
@@ -241,23 +241,33 @@ function ReviewCard({ result }: { result: Result }) {
           </p>
         )}
         <p className="text-xs text-ink-2">{ANOMALY_UNSUPPORTED}</p>
-        {triage && (
+        {/* 行の id の重なる結果は, 記録がどの行を指すか決まらないので欄を出さず理由だけ */}
+        {triage && queue.data?.problem && (
+          <p
+            role="note"
+            aria-label="人の確認を使えない理由"
+            className="rounded-lg border border-warning-text/40 bg-surface p-2 text-sm text-warning-text"
+          >
+            {queue.data.problem}
+          </p>
+        )}
+        {triage && !queue.data?.problem && (
           <>
             <div className="max-w-xs">
               <label htmlFor="reviewer" className="mb-1 block text-xs font-medium text-ink-2">
-                確かめた人の名前 (記録に残します)
+                確かめた人の名前 (記録に残し, このブラウザに覚えます)
               </label>
               <input
                 id="reviewer"
                 value={reviewer}
                 onChange={(event) => setReviewer(event.target.value)}
                 autoComplete="name"
-                aria-describedby={problem ? 'reviewer-problem' : undefined}
+                aria-describedby={nameProblem ? 'reviewer-problem' : undefined}
                 className="h-8 w-full rounded-lg border border-line bg-surface px-2 text-sm"
               />
-              {problem && (
+              {nameProblem && (
                 <p id="reviewer-problem" className="mt-1 text-xs text-ink-3">
-                  {problem}
+                  {nameProblem}
                 </p>
               )}
             </div>
@@ -280,7 +290,7 @@ function ReviewCard({ result }: { result: Result }) {
                     <thead className="text-xs text-ink-3">
                       <tr className="border-b border-line">
                         <Heading right>順位</Heading>
-                        <Heading right>#</Heading>
+                        <Heading right>行</Heading>
                         <Heading>{queue.data?.id ?? '行の id'}</Heading>
                         <Heading right>度合い</Heading>
                         <Heading>最も外れた列</Heading>
@@ -314,6 +324,11 @@ function ReviewCard({ result }: { result: Result }) {
                             </td>
                             <td className="px-3 py-1.5 whitespace-nowrap">
                               <JudgmentText judgment={row.judgment} />
+                              {row.key === null && (
+                                <span className="block text-xs text-ink-3">
+                                  行の id が欠けているので記録できません
+                                </span>
+                              )}
                               {row.reviewer && (
                                 <span className="block text-xs text-ink-3">
                                   {row.reviewer} · {reviewedText(row.reviewed_at)}
@@ -326,8 +341,16 @@ function ReviewCard({ result }: { result: Result }) {
                                   <Button
                                     key={judgment}
                                     aria-label={`${name} を${JUDGMENT_LABELS[judgment]}とする`}
-                                    disabled={!!problem || review.isPending}
-                                    onClick={() => review.mutate({ row: row.key, judgment })}
+                                    disabled={!!nameProblem || row.key === null || review.isPending}
+                                    title={
+                                      row.key === null
+                                        ? '行の id の欠けた行は記録できません'
+                                        : undefined
+                                    }
+                                    onClick={() => {
+                                      if (row.key !== null)
+                                        review.mutate({ row: row.key, judgment })
+                                    }}
                                   >
                                     {JUDGMENT_LABELS[judgment]}
                                   </Button>
