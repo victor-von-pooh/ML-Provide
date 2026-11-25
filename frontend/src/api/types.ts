@@ -534,6 +534,8 @@ export interface Comparison {
   basis: ('bundle' | 'source')[]
   /** 比べられない理由 */
   reasons: string[]
+  /** 群分けの結果どうしか (群の要約を並べる) */
+  grouping?: boolean
 }
 
 /** 配列の出力の 1 件の見本 */

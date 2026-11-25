@@ -418,3 +418,66 @@ def test_group_text_values(
     assert again["groups"][0]["rows"][:3] == (
         result["summary"]["representatives"][0]["rows"]
     )
+
+
+def test_group_compare(
+    tmp_path: Path, client: TestClient, group_files: tuple[Path, Path]
+) -> None:
+    """
+    同じ群分けの一式の結果どうしを比べ, 群分けでない結果と混ぜた組は
+    理由を返すことを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    client: TestClient
+        クライアント
+    group_files: tuple[Path, Path]
+        一式と新しい行の表
+
+    Returns
+    ----------
+    None
+    """
+    # 同じ一式で, 行の違う 2 つの表 (別の時期の新しいデータの代わり)
+    path, table = group_files
+    bundle = register(client, path)
+    later = tmp_path / "later.csv"
+    pd.read_csv(table).iloc[:8].to_csv(later, index=False)
+    url = f"/api/bundles/{bundle['id']}/predict"
+    first = client.post(url, json={"source": str(table)}).json()
+    second = client.post(url, json={"source": str(later)}).json()
+    both = client.get(
+        f"/api/results/compare?ids={first['id']},{second['id']}"
+    ).json()
+    assert both["comparable"] and both["grouping"]
+    assert both["basis"] == ["bundle"] and both["reasons"] == []
+    groups = [r["summary"]["groups"] for r in both["results"]]
+    assert [row["group"] for row in groups[1]] == [0, 1, 2, "全体"]
+    assert groups[0][-1]["rows"] == 15
+    learned = both["results"][1]["grouping"]["learned"]
+    assert learned == both["results"][0]["grouping"]["learned"]
+
+    # 列の出力の結果と混ぜると, 結論の形が違う理由を返す (列の出力で
+    # ない理由は出さない)
+    samples = client.post("/api/samples").json()
+    sample = next(b for b in samples if "解約" in b["name"])
+    other = client.post(
+        f"/api/bundles/{sample['id']}/predict",
+        json={"source": sample["sample_input"]}
+    ).json()
+    mixed = client.get(
+        f"/api/results/compare?ids={first['id']},{other['id']}"
+    ).json()
+    assert not mixed["comparable"] and not mixed["grouping"]
+    assert any("群分けの結果と他の結果" in r for r in mixed["reasons"])
+    assert not any("列の出力でない" in r for r in mixed["reasons"])
+
+    # 一式を消しても, 結果に残した群の情報で比べられる
+    assert client.delete(f"/api/bundles/{bundle['id']}").status_code == 204
+    kept = client.get(
+        f"/api/results/compare?ids={first['id']},{second['id']}"
+    ).json()
+    assert kept["comparable"] and kept["grouping"]
+    assert kept["results"][0]["grouping"]["learned"] == learned

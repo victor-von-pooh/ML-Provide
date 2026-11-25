@@ -1962,6 +1962,74 @@ def same_value(values: list[Any]) -> bool:
     return same
 
 
+def is_cluster(meta: dict[str, Any]) -> bool:
+    """
+    結果が群分けの一式の結果かを返す関数
+
+    Parameters
+    ----------
+    meta: dict[str, Any]
+        result.yaml の中身
+
+    Returns
+    ----------
+    cluster: bool
+        出力の形が群 (cluster) か
+    """
+    cluster = meta.get("output_form") == "cluster"
+
+    return cluster
+
+
+def has_grouping(meta: dict[str, Any]) -> bool:
+    """
+    群分けの結果が群の情報 (群の数) を残しているかを返す関数
+
+    Parameters
+    ----------
+    meta: dict[str, Any]
+        result.yaml の中身
+
+    Returns
+    ----------
+    kept: bool
+        grouping に群の数があるか
+    """
+    kept = (meta.get("grouping") or {}).get("k") is not None
+
+    return kept
+
+
+def same_grouping(metas: list[dict[str, Any]]) -> bool:
+    """
+    群分けの結果の群の数, 群を作る列, 学習のときの群の要約が全て同じかを
+    返す関数
+
+    Parameters
+    ----------
+    metas: list[dict[str, Any]]
+        result.yaml の中身の並び
+
+    Returns
+    ----------
+    same: bool
+        全ての結果の grouping (k, columns, learned) が同じか (群の情報を
+        持たない結果は has_grouping で先に除く)
+    """
+    # 推論した表で文字だった列 (texts) は入力で変わるので見ない
+    keys = [
+        (
+            (m.get("grouping") or {}).get("k"),
+            (m.get("grouping") or {}).get("columns"),
+            (m.get("grouping") or {}).get("learned"),
+        )
+        for m in metas
+    ]
+    same = all(key == keys[0] for key in keys)
+
+    return same
+
+
 def comparison(metas: list[dict[str, Any]]) -> dict[str, Any]:
     """
     結果どうしを比べられるかと, 何が同じかを返す関数
@@ -1974,8 +2042,8 @@ def comparison(metas: list[dict[str, Any]]) -> dict[str, Any]:
     Returns
     ----------
     found: dict[str, Any]
-        同じもの (`basis`. `bundle` は一式, `source` は入力のファイル) と,
-        比べられない理由 (`reasons`)
+        同じもの (`basis`. `bundle` は一式, `source` は入力のファイル),
+        比べられない理由 (`reasons`), 群分けの結果どうしか (`grouping`)
     """
     # 一式は id (一式の id が無い古い結果は一式の場所), 入力は読んだ
     # ファイルの場所 (書いた文は同じ件数でも中身が違いうるので同じ入力と
@@ -1989,8 +2057,15 @@ def comparison(metas: list[dict[str, Any]]) -> dict[str, Any]:
         name for name, values in (("bundle", bundles), ("source", sources))
         if same_value(values)
     ]
+    clusters = [is_cluster(m) for m in metas]
+    grouping = all(clusters)
     reasons = []
-    if not all(is_column(m) for m in metas):
+    if any(clusters) and not grouping:
+        reasons.append(
+            "群分けの結果と他の結果は比べられません (群の要約と判断の内訳で"
+            "結論の形が違うため)"
+        )
+    if not all(is_column(m) or is_cluster(m) for m in metas):
         reasons.append(
             "列の出力でない一式の結果は比べられません (判断の内訳と意思決定を"
             "持たないため)"
@@ -1999,13 +2074,29 @@ def comparison(metas: list[dict[str, Any]]) -> dict[str, Any]:
         reasons.append(
             "タスクの違う結果は比べられません (判断の内訳と得の意味が違うため)"
         )
-    if not basis:
+    if grouping:
+        # 群の情報 (grouping) を残す前の結果は, 群の数, 群を作る列,
+        # 学習のときの群の要約を持たないので比べない. 群の番号の意味は
+        # 一式ごとに違うので, 同じ入力でも違う一式は比べない (同じ場所に
+        # 登録し直した一式は残した群で見分ける)
+        if not all(has_grouping(m) for m in metas):
+            reasons.append(
+                "群の情報を持たない古い群分けの結果は比べられません "
+                "(推論し直すと比べられます)"
+            )
+        elif "bundle" not in basis or not same_grouping(metas):
+            reasons.append(
+                "違う群分けの一式の結果は比べられません (群の番号と群を作る"
+                "列の意味が一式ごとに違うため). 同じ群分けの一式の結果を"
+                "選んでください"
+            )
+    elif not basis:
         reasons.append(
             "一式も入力も違う結果は比べられません (違いが一式によるものか"
             "入力によるものかを分けられないため). 同じ一式か同じ入力の"
             "ファイルの結果を選んでください"
         )
-    found = {"basis": basis, "reasons": reasons}
+    found = {"basis": basis, "reasons": reasons, "grouping": grouping}
 
     return found
 
@@ -2028,7 +2119,8 @@ def compare_results(
     ----------
     view: dict[str, Any]
         結果のまとめの並び (`results`), 比べられるか (`comparable`),
-        同じもの (`basis`), 比べられない理由 (`reasons`)
+        同じもの (`basis`), 比べられない理由 (`reasons`), 群分けの
+        結果どうしか (`grouping`)
 
     Raises
     ----------

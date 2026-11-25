@@ -1026,6 +1026,40 @@ test('まとめるの骨組みの実験の中に作った群分けの一式を, 
     await expect(rows.locator('tbody tr').first()).toContainText(
       "列 spend の値 '?' を数にできません",
     )
+
+    // 別の時期の新しいデータの代わりに先頭の 8 行を推論し, 同じ一式の 2 つの結果を比べる
+    const lines = fs.readFileSync(path.join(tables, 'customers.csv'), 'utf8').split(/\r?\n/)
+    const later = path.join(tables, 'later.csv')
+    fs.writeFileSync(later, `${lines.slice(0, 9).join('\n')}\n`)
+    await page.goto(`/bundles/${id}`)
+    await page.getByLabel(/^群に割り当てる行の表/).fill(later)
+    await page.getByRole('button', { name: '推論する' }).click()
+    await expect(page.getByText(/^8 行のうち 8 行を 3 個の群に割り当てた/)).toBeVisible({
+      timeout: 30_000,
+    })
+    await page.goto(`/bundles/${id}`)
+    const own = page.getByRole('listitem').filter({ hasText: /customers\.csv|later\.csv/ })
+    await expect(own).toHaveCount(2)
+    for (const item of await own.all()) await item.getByRole('checkbox').check()
+    await page.getByRole('button', { name: /つを比べる/ }).click()
+    await expect(page.getByRole('heading', { name: '結果どうしの比べ' })).toBeVisible()
+    const compared = page.getByRole('table')
+    await expect(
+      compared.getByRole('columnheader', {
+        name: '群の大きさ (件数, 割合, 学習のときの割合との差)',
+      }),
+    ).toBeVisible()
+    await expect(compared.getByRole('rowheader', { name: /^群 0 \(学習のとき / })).toBeVisible()
+    await expect(compared).toContainText('増えた')
+    await expect(compared).toContainText('減った')
+    await expect(
+      compared.getByRole('columnheader', { name: '結果 1 からの割合の差' }),
+    ).toBeVisible()
+    await expect(
+      compared.getByRole('rowheader', { name: /^spend \(平均\) \(学習のとき / }).first(),
+    ).toBeVisible()
+    await expect(compared.getByRole('columnheader', { name: '全体の列の特徴' })).toBeVisible()
+    await expect(compared.getByRole('columnheader', { name: '判断の内訳' })).toHaveCount(0)
   } finally {
     await page.request.delete(`/api/bundles/${id}`)
   }

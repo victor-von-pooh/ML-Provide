@@ -56,6 +56,42 @@ describe('結果どうしの比べの画面', () => {
     expect(screen.getByText('保留にする確信の下限')).toBeInTheDocument()
   })
 
+  it('群分けの結果どうしは群の大きさと列の特徴を並べる', async () => {
+    const groups = [
+      { group: 0, rows: 2, share: 1, stability: 0.9, spend: 5 },
+      { group: '全体', rows: 2, share: 1, stability: null, spend: 5 },
+    ] as unknown as NonNullable<Result['summary']>['groups']
+    const cluster: Result = {
+      ...first,
+      task: null,
+      rules: {},
+      output_form: 'cluster',
+      summary: { rows: 2, predicted: 2, skipped: 0, k: 1, groups },
+      grouping: {
+        k: 1,
+        columns: ['spend'],
+        learned: [
+          { group: 0, rows: 4, share: 1, stability: 0.9, spend: 4 },
+          { group: '全体', rows: 4, share: 1, stability: null, spend: 4 },
+        ],
+      },
+    }
+    view = {
+      results: [cluster, { ...cluster, id: 'r2' }],
+      comparable: true,
+      basis: ['bundle'],
+      reasons: [],
+      grouping: true,
+    }
+    show()
+    expect(
+      await screen.findByText('群の大きさ (件数, 割合, 学習のときの割合との差)'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('群 0 (学習のとき 100.0%)')).toBeInTheDocument()
+    expect(screen.getByText('全体の列の特徴')).toBeInTheDocument()
+    expect(screen.queryByText('判断の内訳')).not.toBeInTheDocument()
+  })
+
   it('比べられない組は理由と結果へのリンクだけを出す', async () => {
     view = {
       results: [first, { ...second, bundle_id: 'b2', source: 'other.csv' }],
