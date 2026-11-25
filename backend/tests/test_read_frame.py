@@ -400,3 +400,81 @@ def test_text_like_read_result(tmp_path: Path) -> None:
         if name in ("status", "reason", "decision"):
             continue
         assert values(read[name]) == values(expected[name]), name
+
+
+def test_given_types(tmp_path: Path) -> None:
+    """
+    このアプリが read_result に渡す列の型で, 分類の予測, 並べるの利用者,
+    品物, 順位, 群分けの群の番号と文字の元の列, 表の出力の種類の列を読む
+    ことを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 分類の数字のクラス (column_types の integer より文字が強い)
+    frame = pd.DataFrame({
+        "status": ["ok", "ok", "skipped"], "reason": [None, None, "無し"],
+        "prediction": pd.array([1, 2, None], dtype="Int64"),
+    })
+    meta = write(tmp_path / "class", frame, task="classification",
+                 classes=["1", "2"])
+    assert meta["column_types"]["prediction"] == "integer"
+    read = read_frame(tmp_path / "class", meta)
+    assert str(read["prediction"].dtype) == "str"
+    assert values(read["prediction"]) == ["1", "2", None]
+
+    # 並べるの利用者と品物は文字, 順位は欠損を持てる整数
+    frame = pd.DataFrame({
+        "user": [1, 1, 2], "status": ["ok", "ok", "skipped"],
+        "reason": [None, None, "知らない利用者"],
+        "rank": pd.array([1, 2, None], dtype="Int64"),
+        "item": pd.array([10, 20, None], dtype="Int64"),
+        "score": [0.9, 0.5, np.nan],
+    })
+    meta = write(tmp_path / "rank", frame, output_form="ranking")
+    read = read_frame(tmp_path / "rank", meta)
+    assert str(read["user"].dtype) == "str"
+    assert values(read["user"]) == ["1", "1", "2"]
+    assert str(read["item"].dtype) == "str"
+    assert values(read["item"]) == ["10", "20", None]
+    assert str(read["rank"].dtype) == "Int64"
+    assert values(read["rank"]) == [1, 2, None]
+
+    # 群分けの群の番号は欠損を持てる整数, 文字の元の列は文字
+    frame = pd.DataFrame({
+        "code": ["001", "NA", "010"], "status": ["ok", "ok", "skipped"],
+        "reason": [None, None, "読めません"],
+        "group": pd.array([0, 1, None], dtype="Int64"),
+        "distance": [0.5, 0.25, np.nan],
+    })
+    meta = write(tmp_path / "group", frame, output_form="cluster",
+                 grouping={"texts": ["code"]})
+    read = read_frame(tmp_path / "group", meta)
+    assert str(read["group"].dtype) == "Int64"
+    assert values(read["group"]) == [0, 1, None]
+    assert str(read["code"].dtype) == "str"
+    assert values(read["code"]) == ["001", "NA", "010"]
+
+    # 表の出力の種類の列は文字, 整数の列は欠損を持てる整数
+    columns = [
+        {"name": "shop", "type": "category", "categories": 2},
+        {"name": "units", "type": "number", "integer": True},
+    ]
+    frame = pd.DataFrame({
+        "status": ["ok", "skipped"], "reason": [None, "読めません"],
+        "shop": pd.array([1, None], dtype="Int64"),
+        "units": pd.array([3, None], dtype="Int64"),
+    })
+    meta = write(tmp_path / "table", frame, output_form="table",
+                 table_columns=columns)
+    read = read_frame(tmp_path / "table", meta)
+    assert str(read["shop"].dtype) == "str"
+    assert values(read["shop"]) == ["1", None]
+    assert str(read["units"].dtype) == "Int64"
+    assert values(read["units"]) == [3, None]

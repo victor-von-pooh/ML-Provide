@@ -1649,13 +1649,12 @@ def read_frame(place: Path, meta: dict[str, Any]) -> pd.DataFrame:
         予測と判断の表 (状態, 理由と判断の空は空の文字. 文の出力の予測
         した行の空の文と番号も空の文字)
     """
-    # 画面の都合の列の型 (column_types と文の出力の文と番号より強い). 状態,
-    # 理由, 判断は文字, 分類の予測は文字 (数字のクラスも. 決め方のクラス
-    # の名前と合わせるため. 文の出力の予測は read_result のまま), 並べるの
-    # 利用者と品物は文字 (番号の表と同じく文字にして引くため), 表の出力の
-    # 種類の列は文字 (数の種類の値で欠けた行があると column_types が
-    # integer になり, 行の有無で型が変わらないように), 群分けの文字の元の
-    # 列は文字 (column_types の integer に負けないように)
+    # column_types より強く当てる型. 画面の都合: 状態, 理由, 判断は文字
+    # (空を空の文字で出すため), 表の出力の種類の列は文字 (欠けた行の有無に
+    # 依らず種類の値を文字で出すため), 群分けの文字の元の列は文字 (推論した
+    # ときの値のまま出すため). 引く都合: 並べるの利用者と品物は文字 (番号の
+    # 表と同じく文字にして引くため). 結論の都合: 分類の予測は文字 (数字の
+    # クラスも, 決め方のクラスの名前と合わせるため. 文の出力は下)
     text = meta.get("output_form") == "text"
     override: dict[str, str] = {
         "status": "text", "reason": "text", "decision": "text"
@@ -1672,8 +1671,8 @@ def read_frame(place: Path, meta: dict[str, Any]) -> pd.DataFrame:
         for name in (meta.get("grouping") or {}).get("texts") or []:
             override[str(name)] = "text"
 
-    # column_types の無い列の, このアプリが結果に残した型 (版 1 と 2 の
-    # 結果は column_types を持たないため. 版 3 の結果では同じ型)
+    # 版 1 と 2 の補い: column_types に無い列だけに, このアプリが結果に
+    # 残した型を当てる (版 1 と 2 の結果は列の型を持たないため)
     fallback: dict[str, str] = {}
     for column in columns:
         if column.get("type") != "category" and column.get("integer"):
@@ -1683,18 +1682,18 @@ def read_frame(place: Path, meta: dict[str, Any]) -> pd.DataFrame:
     if meta.get("output_form") == "cluster":
         fallback["group"] = "integer"
 
-    # 文の出力の予測は文字 (tokens の列の無い古い文の結果は read_result が
-    # 文の出力と見分けないため. 全ての行が番号 1 つでも数にしないように)
+    # 版の補い: 文の出力の予測は文字 (古い文の結果は tokens の列を持たない
+    # ので, 出力の形で補う. 全ての行が番号 1 つでも数にしないように)
     if text:
         override["prediction"] = "text"
 
-    # 表は read_result で 1 回だけ読む (空の欄だけを欠損にする決まりと
-    # column_types の型を 2 か所に持たないため)
+    # 表は read_result で 1 回だけ読む (読み方の決まりを 2 か所に持たない
+    # ため)
     frame: pd.DataFrame = ml_inference.read_result(
         place, override_types=override, fallback_types=fallback
     )["frame"]
 
-    # 古い文の結果の予測した行の空の文は, 欠損と分けて空の文字に
+    # 版の補い: 古い文の結果の予測した行の空の文は, 欠損と分けて空の文字に
     if (text and "tokens" not in frame.columns
             and "prediction" in frame.columns and "status" in frame.columns):
         frame["prediction"] = frame["prediction"].astype(object)
