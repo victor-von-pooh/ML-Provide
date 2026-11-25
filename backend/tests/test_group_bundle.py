@@ -6,6 +6,7 @@ from typing import Any
 import ml_inference
 import pandas as pd
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 from test_bundle_v3 import register
 
@@ -386,6 +387,22 @@ def test_group_text_values(
     assert [row["customer"] for row in rows] == ["000", "001", "002"]
     assert rows[1]["region"] == "NA"
     assert isinstance(rows[0]["visits"], int)
+
+    # 列の型は版 3 の結果に残り, 列の型の無い古い結果 (版 1) も texts で
+    # 文字のまま読む
+    place = tmp_path / "home" / "results" / result["id"]
+    meta = yaml.safe_load((place / "result.yaml").read_text(encoding="utf-8"))
+    assert result["format_version"] == 3
+    assert meta["column_types"]["customer"] == "text"
+    old = {**meta, "format_version": 1}
+    del old["column_types"]
+    (place / "result.yaml").write_text(yaml.safe_dump(old), encoding="utf-8")
+    rows = client.get(
+        f"/api/results/{result['id']}/rows", params={"limit": 3}
+    ).json()["rows"]
+    assert [row["customer"] for row in rows] == ["000", "001", "002"]
+    assert isinstance(rows[0]["group"], int)
+    (place / "result.yaml").write_text(yaml.safe_dump(meta), encoding="utf-8")
 
     # 件数を変えた代表の行は, 推論した表から求めた代表の行と同じ
     again = client.get(

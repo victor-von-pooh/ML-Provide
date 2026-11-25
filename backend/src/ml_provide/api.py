@@ -1241,9 +1241,9 @@ def predict(
     # (書き出しの途中で失敗した結果は, 壊れたまま残さずに削除)
     result_id, place = get_store(request).new_result_dir()
     meta = {k: v for k, v in result.items() if k != "frame"}
-    # (表の出力, 並べる, 群分けの結果は infer の結論のまま. 読み直すと数に
-    # 見える種類の値が数になり, 並べるの利用者ごとの数え方と群分けの群の
-    # 要約と群の安定性は件数だけの結論に無いため)
+    # (表の出力, 並べる, 群分けの結果は infer の結論のまま. 表の出力の件数は
+    # 数え直しても同じで, 並べるの利用者ごとの数え方と群分けの群の要約と
+    # 群の安定性は件数だけの結論に無いため)
     try:
         ml_inference.write_result(result, place)
         if meta.get("output_form") not in KEPT_CONCLUSIONS:
@@ -1668,60 +1668,70 @@ def read_frame(place: Path, meta: dict[str, Any]) -> pd.DataFrame:
     place: Path
         結果のディレクトリ
     meta: dict[str, Any]
-        result.yaml の中身 (タスクで予測の列の型を決める)
+        result.yaml の中身 (タスク, 出力の形, 残した列の型で読み直す列を
+        決める)
 
     Returns
     ----------
     frame: pd.DataFrame
-        予測と判断の表 (理由と判断の空は空の文字. 文の出力の予測した行の
-        空の文と番号も空の文字)
+        予測と判断の表 (状態, 理由と判断の空は空の文字. 文の出力の予測
+        した行の空の文と番号も空の文字)
     """
-    # 文の出力の文と番号 (tokens) は ML-Inference の read_result の決まり
-    # (文字のまま読み, 予測した行の空は空の文字) で読む. 番号 1 つの並びや
-    # 数に見える文を数にせず, 決まりを 2 か所に持たないため
-    if meta.get("output_form") == "text":
-        frame: pd.DataFrame = ml_inference.read_result(place)["frame"]
-        if "tokens" not in frame.columns and "prediction" in frame.columns:
-            frame["prediction"] = old_text_predictions(place, frame)
-        for name in ("status", "reason", "decision"):
-            if name in frame.columns:
-                column = frame[name].astype(object)
-                frame[name] = column.where(column.notna(), "").astype(str)
-        return frame
+    # 表は ML-Inference の read_result の決まり (空の欄だけを欠損にし,
+    # column_types の列はその型) で読む. 読み直すと値の変わる列の決まりを
+    # 2 か所に持たないため
+    result = ml_inference.read_result(place)
+    frame: pd.DataFrame = result["frame"]
+    if (meta.get("output_form") == "text" and "tokens" not in frame.columns
+            and "prediction" in frame.columns):
+        frame["prediction"] = old_text_predictions(place, frame)
 
-    # クラスの名前と判断は文字のまま (数字のクラスも). 表の出力の種類の
-    # 列は文字, 整数の列は欠損を持てる整数 (予測しなかった行は欠損)
-    texts: dict[str, Any] = {"status": str, "reason": str, "decision": str}
-    if meta.get("task") == "classification":
-        texts["prediction"] = str
+    # 画面の都合で CSV の文字から読み直す列 (column_types に依らない).
+    # 状態, 理由, 判断は文字, 分類の予測は文字 (数字のクラスも. 決め方の
+    # クラスの名前と合わせるため. 文の出力の予測は read_result のまま),
+    # 並べるの利用者と品物は文字 (番号の表と同じく文字にして引くため)
+    again: dict[str, Any] = {"status": str, "reason": str, "decision": str}
+    text = meta.get("output_form") == "text"
+    if meta.get("task") == "classification" and not text:
+        again["prediction"] = str
+    if meta.get("output_form") == "ranking":
+        again.update(user=str, item=str)
+
+    # column_types の無い列は, このアプリが結果に残した型で読み直す. 版 1
+    # と 2 の結果は column_types を持たず, 数に見える種類の値が数に, 欠損の
+    # ある整数が小数になるため (版 3 の結果では同じ型になる)
+    kept = result.get("column_types")
+    if not isinstance(kept, dict):
+        kept = {}
+    hints: dict[str, Any] = {}
     for column in meta.get("table_columns") or []:
         if column.get("type") == "category":
-            texts[str(column["name"])] = str
+            hints[str(column["name"])] = str
         elif column.get("integer"):
-            texts[str(column["name"])] = "Int64"
-    # 表の出力, 並べる, 群分けは空の欄だけを欠損にする (種類の値の NA,
-    # null, None などを文字のまま読むため)
-    # 並べるの結果の利用者と品物は文字 (番号の表と同じく文字にして引く),
-    # 順位は欠損を持てる整数 (並べられない利用者の行は欠損)
+            hints[str(column["name"])] = "Int64"
     if meta.get("output_form") == "ranking":
-        texts.update(user=str, item=str, rank="Int64")
-    # 群分けの結果の群の番号は欠損を持てる整数 (割り当てない行は欠損).
-    # 推論したときに値が全て文字だった元の列は文字のまま (代表の行と
-    # 割り当てた行の表の値を, 結論の代表の行と同じにするため)
+        hints["rank"] = "Int64"
     if meta.get("output_form") == "cluster":
-        texts["group"] = "Int64"
+        hints["group"] = "Int64"
         for name in (meta.get("grouping") or {}).get("texts") or []:
-            texts[str(name)] = str
-    blanks: dict[str, Any] = {}
-    if meta.get("output_form") in ("table", "ranking", "cluster"):
-        blanks = {"keep_default_na": False, "na_values": [""]}
-    frame = pd.read_csv(
-        place / "predictions.csv", encoding="utf-8-sig", dtype=texts,
-        **blanks
-    )
-    for name in ("reason", "decision"):
+            hints[str(name)] = str
+    for name, kind in hints.items():
+        if name not in kept:
+            again.setdefault(name, kind)
+
+    # 読み直す列は表にある列だけ (空の欄だけを欠損にする決まりは同じ)
+    names = [name for name in again if name in frame.columns]
+    if names:
+        raw = pd.read_csv(
+            place / "predictions.csv", encoding="utf-8-sig", usecols=names,
+            dtype={name: again[name] for name in names},
+            keep_default_na=False, na_values=[""]
+        )
+        for name in names:
+            frame[name] = raw[name]
+    for name in ("status", "reason", "decision"):
         if name in frame.columns:
-            frame[name] = frame[name].fillna("")
+            frame[name] = frame[name].astype(object).fillna("").astype(str)
 
     return frame
 

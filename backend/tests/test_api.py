@@ -368,6 +368,52 @@ def test_index_column_and_stable_groups(
     assert [g["group"] for g in again["summary"]["groups"]] == groups
 
 
+def test_number_like_inputs(tmp_path: Path, client: TestClient) -> None:
+    """
+    版 3 の結果で, 数に見える文字の入力の列 ("001") が表とまとめの名前に
+    文字のまま出ることを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    client: TestClient
+        クライアント
+
+    Returns
+    ----------
+    None
+    """
+    # 文字のまま持つ表 (parquet) の, 数に見える番号の列
+    paths = write_project(tmp_path / "project")
+    bundle = create(client, paths)
+    frame = pd.read_csv(paths["csv"])
+    frame["code"] = [f"{n % 3:03d}" for n in range(len(frame))]
+    source = tmp_path / "new.parquet"
+    frame.to_parquet(source)
+    result = client.post(
+        f"/api/bundles/{bundle['id']}/predict",
+        json={"source": str(source), "rules": {"group_by": "code"}},
+    ).json()
+
+    # 結果は列の型を残す版 3
+    place = tmp_path / "home" / "results" / result["id"]
+    meta = yaml.safe_load((place / "result.yaml").read_text(encoding="utf-8"))
+    assert result["format_version"] == 3
+    assert meta["column_types"]["code"] == "text"
+
+    # 表とまとめの名前は文字のまま (出し直しても同じ)
+    rows = client.get(f"/api/results/{result['id']}/rows?limit=3").json()
+    assert [row["code"] for row in rows["rows"]] == ["000", "001", "002"]
+    groups = sorted(g["group"] for g in result["summary"]["groups"])
+    assert groups == ["000", "001", "002"]
+    again = client.post(
+        f"/api/results/{result['id']}/conclude",
+        json={"rules": {"group_by": "code"}},
+    ).json()
+    assert sorted(g["group"] for g in again["summary"]["groups"]) == groups
+
+
 def test_samples(client: TestClient) -> None:
     """
     見本の一式を作り, 見本の新しいデータを推論できることを確かめる関数

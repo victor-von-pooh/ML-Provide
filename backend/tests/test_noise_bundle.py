@@ -605,14 +605,15 @@ def test_table_output(tmp_path: Path, client: TestClient) -> None:
     assert description["output"]["columns"] == columns
     assert description["column_output"] is False
 
-    # 件数と種で推論すると, 配列を持たない版 1 の結果で, 列の名前と型を残す
+    # 件数と種で推論すると, 配列を持たない結果で, 列の名前と型を残す (数に
+    # 見える種類の値の型を残す版 3)
     response = client.post(f"/api/bundles/{bundle['id']}/predict",
                            json={"count": 3, "seed": 1})
     assert response.status_code == 201, response.text
     result = response.json()
     assert result["output_form"] == "table"
     assert result["artifacts"] is None
-    assert result["format_version"] == 1
+    assert result["format_version"] == 3
     assert result["summary"] == {"rows": 3, "predicted": 3, "skipped": 0}
     assert result["table_columns"] == [
         {"name": "price", "type": "number", "integer": False},
@@ -634,8 +635,15 @@ def test_table_output(tmp_path: Path, client: TestClient) -> None:
     assert all(isinstance(row["count"], int) for row in rows)
     assert all(isinstance(row["price"], float) for row in rows)
 
-    # 推論しなかった行の値は欠損 (整数の列も小数にしない)
+    # 列の型の無い古い結果 (版 1) も, 残した列の名前と型で文字のまま読む
     place = tmp_path / "home" / "results" / result["id"]
+    meta = yaml.safe_load((place / "result.yaml").read_text(encoding="utf-8"))
+    assert meta["column_types"] == {"shop": "text"}
+    old = {**meta, "format_version": 1}
+    del old["column_types"]
+    (place / "result.yaml").write_text(yaml.safe_dump(old), encoding="utf-8")
+
+    # 推論しなかった行の値は欠損 (整数の列も小数にしない)
     table = pd.read_csv(place / "predictions.csv", encoding="utf-8-sig",
                         dtype=str, keep_default_na=False)
     table.loc[1, ["status", "reason", "price", "count", "shop"]] = [
