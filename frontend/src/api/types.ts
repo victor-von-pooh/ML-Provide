@@ -181,6 +181,8 @@ export interface GroupingInfo {
   k: number
   columns: string[]
   learned: ClusterRow[]
+  /** 推論した表で値が全て文字だった元の列 (読み直すときに文字で読む) */
+  texts?: string[]
 }
 
 /** 反応の表 (前に反応した品物と正解の反応) の列の名前 */

@@ -1234,7 +1234,7 @@ def predict(
         pretrained_warnings=warned,
         table_columns=table_columns(bundle),
         ranking=ranking,
-        grouping=grouping_meta(bundle)
+        grouping=grouping_meta(bundle, result["frame"])
     )
     # 書いた表を読み直して結論を出し直す (出し直しと同じ型の値でまとめ,
     # 日時のような列のまとめの名前が, 後の出し直しで変わらないように)
@@ -1257,7 +1257,9 @@ def predict(
     return view
 
 
-def grouping_meta(bundle: Any) -> Optional[dict[str, Any]]:
+def grouping_meta(
+    bundle: Any, frame: pd.DataFrame
+) -> Optional[dict[str, Any]]:
     """
     群分けの結果に残す, 群を作る列と学習のときの群の要約を返す関数
 
@@ -1265,12 +1267,15 @@ def grouping_meta(bundle: Any) -> Optional[dict[str, Any]]:
     ----------
     bundle: Any
         読んだ一式 (ML-Inference の Bundle)
+    frame: pd.DataFrame
+        推論した予測の表
 
     Returns
     ----------
     grouping: Optional[dict[str, Any]]
         k, columns (群を作る列), learned (学習のときの群の要約の行. 最後は
-        全体). 群分けの一式でなければ None
+        全体), texts (値が全て文字の元の列. 読み直すときに文字で読む).
+        群分けの一式でなければ None
     """
     # 一式を消しても, 学習のときの群の大きさと比べられるように写す
     if not bundle.from_group:
@@ -1280,9 +1285,37 @@ def grouping_meta(bundle: Any) -> Optional[dict[str, Any]]:
         "k": int(group["k"]),
         "columns": [str(name) for name in group["columns"]],
         "learned": copy.deepcopy(list(group.get("summary") or [])),
+        "texts": text_columns(frame),
     }
 
     return grouping
+
+
+def text_columns(frame: pd.DataFrame) -> list[str]:
+    """
+    予測の表の, 値が全て文字の元の列の名前を返す関数
+
+    Parameters
+    ----------
+    frame: pd.DataFrame
+        推論した予測の表
+
+    Returns
+    ----------
+    names: list[str]
+        欠けを除いた値が全て文字の列 (予測と判断の列は除く)
+    """
+    # 書き出した CSV を読み直すと, 数に見える文字 ("001") が数になるため
+    # (数と文字の混ざる列は, 数を文字にしないように除く)
+    names = []
+    for name in frame.columns:
+        if name in OWN_COLUMNS or name in ("group", "distance"):
+            continue
+        values = frame[name].dropna()
+        if len(values) and all(isinstance(v, str) for v in values):
+            names.append(str(name))
+
+    return names
 
 
 def table_columns(bundle: Any) -> Optional[list[dict[str, Any]]]:
@@ -1666,17 +1699,21 @@ def read_frame(place: Path, meta: dict[str, Any]) -> pd.DataFrame:
             texts[str(column["name"])] = str
         elif column.get("integer"):
             texts[str(column["name"])] = "Int64"
-    # 表の出力は空の欄だけを欠損にする (種類の値の NA, null, None などを
-    # 文字のまま読むため)
+    # 表の出力, 並べる, 群分けは空の欄だけを欠損にする (種類の値の NA,
+    # null, None などを文字のまま読むため)
     # 並べるの結果の利用者と品物は文字 (番号の表と同じく文字にして引く),
     # 順位は欠損を持てる整数 (並べられない利用者の行は欠損)
     if meta.get("output_form") == "ranking":
         texts.update(user=str, item=str, rank="Int64")
-    # 群分けの結果の群の番号は欠損を持てる整数 (割り当てない行は欠損)
+    # 群分けの結果の群の番号は欠損を持てる整数 (割り当てない行は欠損).
+    # 推論したときに値が全て文字だった元の列は文字のまま (代表の行と
+    # 割り当てた行の表の値を, 結論の代表の行と同じにするため)
     if meta.get("output_form") == "cluster":
         texts["group"] = "Int64"
+        for name in (meta.get("grouping") or {}).get("texts") or []:
+            texts[str(name)] = str
     blanks: dict[str, Any] = {}
-    if meta.get("output_form") in ("table", "ranking"):
+    if meta.get("output_form") in ("table", "ranking", "cluster"):
         blanks = {"keep_default_na": False, "na_values": [""]}
     frame = pd.read_csv(
         place / "predictions.csv", encoding="utf-8-sig", dtype=texts,

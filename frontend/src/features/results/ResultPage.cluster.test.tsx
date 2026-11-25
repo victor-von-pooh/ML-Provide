@@ -213,6 +213,13 @@ describe('群分けの結果の画面', () => {
 
     // 件数を変えると API で求める
     fireEvent.change(screen.getByLabelText('代表の行の件数'), { target: { value: '1' } })
+    // 求め終わるまでは結論の 3 件を出さず, 読み込み中を出す
+    expect(screen.getByText('代表の行を求めています')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('table', {
+        name: '群の代表の行 (群ごとに中心に近い順の行, 距離, 群を作る列の値)',
+      }),
+    ).not.toBeInTheDocument()
     await waitFor(() => expect(representativesCall).toHaveBeenLastCalledWith('r1', 1))
     await waitFor(() =>
       expect(
@@ -227,7 +234,7 @@ describe('群分けの結果の画面', () => {
     )
 
     // 行を見るで, 割り当てた行の表をその行だけにし, 群で絞る欄もその群にする
-    fireEvent.click(screen.getByRole('button', { name: '群 1 の代表の行 #2 を見る' }))
+    fireEvent.click(screen.getByRole('button', { name: '行を見る (群 1 の代表の行 #2)' }))
     await waitFor(() =>
       expect(rowsCall).toHaveBeenLastCalledWith(
         'r1',
@@ -246,7 +253,7 @@ describe('群分けの結果の画面', () => {
     expect(screen.queryByText(/だけを見ています/)).not.toBeInTheDocument()
 
     // 群で絞る欄を変えても 1 行の絞りは外れる
-    fireEvent.click(screen.getByRole('button', { name: '群 0 の代表の行 #0 を見る' }))
+    fireEvent.click(screen.getByRole('button', { name: '行を見る (群 0 の代表の行 #0)' }))
     await waitFor(() =>
       expect(rowsCall).toHaveBeenLastCalledWith('r1', expect.objectContaining({ row: 0 })),
     )

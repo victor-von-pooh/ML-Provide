@@ -1003,7 +1003,7 @@ test('まとめるの骨組みの実験の中に作った群分けの一式を, 
     // 代表の行の「行を見る」で, 割り当てた行の表をその行だけにする
     const rows = page.getByRole('table', { name: '群に割り当てた行 (行ごとの群と距離)' })
     await page
-      .getByRole('button', { name: /^群 1 の代表の行 #\d+ を見る$/ })
+      .getByRole('button', { name: /^行を見る \(群 1 の代表の行 #\d+\)$/ })
       .first()
       .click()
     await expect(page.getByLabel('群で絞る')).toHaveValue('1')

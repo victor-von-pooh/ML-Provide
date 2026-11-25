@@ -608,10 +608,10 @@ function RepresentativesCard({
     queryKey: ['representatives', result.id, count],
     queryFn: () => api.representatives(result.id, count),
     enabled: !useKept,
-    placeholderData: keepPreviousData,
   })
-  // (初めて求める件数の間は, 結論の 3 件を出したままにする)
-  const groups = useKept ? kept : (asked.data?.groups ?? (asked.isFetching ? kept : undefined))
+  // 結論の 3 件は件数が 3 のときだけ使い, 他の件数は求め終わるまで読み込み中を出す
+  // (選んだ件数と違う件数の表を出さないため)
+  const groups = useKept ? kept : asked.data?.groups
   const columns = result.grouping?.columns ?? []
   return (
     <Card

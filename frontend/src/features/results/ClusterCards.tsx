@@ -241,7 +241,7 @@ export function ClusterRepresentativesTable({
                         <button
                           type="button"
                           className="text-xs whitespace-nowrap text-accent-text underline"
-                          aria-label={`${clusterName(item.group)} の代表の行 #${line.row} を見る`}
+                          aria-label={`行を見る (${clusterName(item.group)} の代表の行 #${line.row})`}
                           onClick={() => onPick(line.row, item.group)}
                         >
                           行を見る
