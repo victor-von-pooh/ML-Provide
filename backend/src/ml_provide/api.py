@@ -35,13 +35,6 @@ from ml_provide.units import unit_hint
 
 router = APIRouter(prefix="/api")
 
-# 予測の表の列の型の名前と読む型 (ML-Inference の read_result と同じ)
-COLUMN_DTYPES: dict[str, Any] = {"text": str, "integer": "Int64"}
-
-# 予測の表の文の出力の番号の列と, 配列の相対パスの列 (ML-Inference の決まり)
-TOKENS_COLUMN = "tokens"
-ARTIFACT_COLUMN = "artifact"
-
 # 推論を 1 つずつにする鍵 (大きなモデルでメモリを使い切らないように)
 PREDICT_LOCK = threading.Lock()
 
@@ -1647,7 +1640,8 @@ def read_frame(place: Path, meta: dict[str, Any]) -> pd.DataFrame:
     place: Path
         結果のディレクトリ
     meta: dict[str, Any]
-        result.yaml の中身 (タスク, 出力の形, 列の型で読む列の型を決める)
+        result.yaml の中身 (タスク, 出力の形, 残した列の型で, 型を渡す列を
+        決める)
 
     Returns
     ----------
@@ -1655,69 +1649,57 @@ def read_frame(place: Path, meta: dict[str, Any]) -> pd.DataFrame:
         予測と判断の表 (状態, 理由と判断の空は空の文字. 文の出力の予測
         した行の空の文と番号も空の文字)
     """
-    # 表は ML-Inference の read_result と同じ決まり (空の欄だけを欠損にし,
-    # column_types の列はその型, 文の出力の文と番号は文字) で読む. 画面の
-    # 都合の列と残した型の列の型も合わせ, predictions.csv を 1 回で読む
-    # (ML-Inference の公開の名前に, 型を渡して表を読む関数が無いため)
-    text = meta.get("output_form") == "text"
-    dtype: dict[str, Any] = (
-        {"prediction": str, TOKENS_COLUMN: str} if text else {}
-    )
-    kept = meta.get("column_types")
-    if not isinstance(kept, dict):
-        kept = {}
-    for name, kind in kept.items():
-        if kind in COLUMN_DTYPES:
-            dtype[str(name)] = COLUMN_DTYPES[kind]
-
-    # column_types の無い列は, このアプリが結果に残した型で読む. 版 1 と 2
-    # の結果は column_types を持たないため (版 3 の結果では同じ型)
-    columns = meta.get("table_columns") or []
-    hints: dict[str, Any] = {}
-    for column in columns:
-        if column.get("type") != "category" and column.get("integer"):
-            hints[str(column["name"])] = "Int64"
-    if meta.get("output_form") == "ranking":
-        hints["rank"] = "Int64"
-    if meta.get("output_form") == "cluster":
-        hints["group"] = "Int64"
-        for name in (meta.get("grouping") or {}).get("texts") or []:
-            hints[str(name)] = str
-    dtype.update({n: k for n, k in hints.items() if n not in kept})
-
-    # 画面の都合で文字で読む列 (column_types と残した型より先). 状態,
+    # 画面の都合の列の型 (column_types と文の出力の文と番号より強い). 状態,
     # 理由, 判断は文字, 分類の予測は文字 (数字のクラスも. 決め方のクラス
-    # の名前と合わせるため. 文の出力の予測は上のまま), 並べるの利用者と
-    # 品物は文字 (番号の表と同じく文字にして引くため), 表の出力の種類の列は
-    # 文字 (数の種類の値で欠けた行があると column_types が integer になり,
-    # 行の有無で型が変わらないように)
-    dtype.update(status=str, reason=str, decision=str)
+    # の名前と合わせるため. 文の出力の予測は read_result のまま), 並べるの
+    # 利用者と品物は文字 (番号の表と同じく文字にして引くため), 表の出力の
+    # 種類の列は文字 (数の種類の値で欠けた行があると column_types が
+    # integer になり, 行の有無で型が変わらないように), 群分けの文字の元の
+    # 列は文字 (column_types の integer に負けないように)
+    text = meta.get("output_form") == "text"
+    override: dict[str, str] = {
+        "status": "text", "reason": "text", "decision": "text"
+    }
     if meta.get("task") == "classification" and not text:
-        dtype["prediction"] = str
+        override["prediction"] = "text"
     if meta.get("output_form") == "ranking":
-        dtype.update(user=str, item=str)
+        override.update(user="text", item="text")
+    columns = meta.get("table_columns") or []
     for column in columns:
         if column.get("type") == "category":
-            dtype[str(column["name"])] = str
+            override[str(column["name"])] = "text"
+    if meta.get("output_form") == "cluster":
+        for name in (meta.get("grouping") or {}).get("texts") or []:
+            override[str(name)] = "text"
 
-    # 表に無い列の型は pandas が無視する
-    frame = pd.read_csv(
-        place / "predictions.csv", encoding="utf-8-sig",
-        keep_default_na=False, na_values=[""], dtype=dtype
-    )
+    # column_types の無い列の, このアプリが結果に残した型 (版 1 と 2 の
+    # 結果は column_types を持たないため. 版 3 の結果では同じ型)
+    fallback: dict[str, str] = {}
+    for column in columns:
+        if column.get("type") != "category" and column.get("integer"):
+            fallback[str(column["name"])] = "integer"
+    if meta.get("output_form") == "ranking":
+        fallback["rank"] = "integer"
+    if meta.get("output_form") == "cluster":
+        fallback["group"] = "integer"
 
-    # 文の出力の予測した行の空の文 (戻すと何も残らない並び) は欠損と分ける.
-    # tokens の列の無い古い文の結果も, result.yaml の出力の形で文字のまま
+    # 文の出力の予測は文字 (tokens の列の無い古い文の結果は read_result が
+    # 文の出力と見分けないため. 全ての行が番号 1 つでも数にしないように)
     if text:
-        done = (frame["status"] == ml_inference.OK
-                if "status" in frame.columns else None)
-        for name in ("prediction", TOKENS_COLUMN):
-            if name in frame.columns:
-                frame[name] = frame[name].astype(object)
-                if done is not None:
-                    frame.loc[done & frame[name].isna(), name] = ""
-    if ARTIFACT_COLUMN in frame.columns and meta.get("artifacts"):
-        frame[ARTIFACT_COLUMN] = frame[ARTIFACT_COLUMN].fillna("")
+        override["prediction"] = "text"
+
+    # 表は read_result で 1 回だけ読む (空の欄だけを欠損にする決まりと
+    # column_types の型を 2 か所に持たないため)
+    frame: pd.DataFrame = ml_inference.read_result(
+        place, override_types=override, fallback_types=fallback
+    )["frame"]
+
+    # 古い文の結果の予測した行の空の文は, 欠損と分けて空の文字に
+    if (text and "tokens" not in frame.columns
+            and "prediction" in frame.columns and "status" in frame.columns):
+        frame["prediction"] = frame["prediction"].astype(object)
+        done = frame["status"] == ml_inference.OK
+        frame.loc[done & frame["prediction"].isna(), "prediction"] = ""
     for name in ("status", "reason", "decision"):
         if name in frame.columns:
             frame[name] = frame[name].astype(object).fillna("").astype(str)

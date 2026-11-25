@@ -6,12 +6,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from ml_provide.api import (
-    ARTIFACT_COLUMN,
-    COLUMN_DTYPES,
-    TOKENS_COLUMN,
-    read_frame,
-)
+from ml_provide.api import read_frame
 
 
 def values(column: pd.Series) -> list[Any]:
@@ -285,13 +280,6 @@ def test_same_as_read_result(tmp_path: Path) -> None:
     ----------
     None
     """
-    # 型と欠損の決まりの写しが ML-Inference と食い違わないこと
-    from ml_inference import result as inference_result
-
-    assert COLUMN_DTYPES == inference_result.COLUMN_DTYPES
-    assert TOKENS_COLUMN == inference_result.TOKENS_COLUMN
-    assert ARTIFACT_COLUMN == inference_result.ARTIFACT_COLUMN
-
     # 数に見える文字, 欠けた整数, NA に見える文字, 小数, 文の出力の表
     plain = pd.DataFrame({
         "sample": [0, 1, 2], "status": ["ok", "skipped", "ok"],
@@ -327,7 +315,8 @@ def test_same_as_read_result(tmp_path: Path) -> None:
 
 def test_reads_once(tmp_path: Path, monkeypatch: Any) -> None:
     """
-    予測の表を 1 回だけ読み, result.yaml を読まないことを確かめる関数
+    予測の表を 1 回だけ読むことを確かめる関数 (列の名前だけを読む見出しの
+    読みは数えない)
 
     Parameters
     ----------
@@ -354,25 +343,60 @@ def test_reads_once(tmp_path: Path, monkeypatch: Any) -> None:
     meta = write(tmp_path / "once", frame, task="classification",
                  output_form="table", table_columns=columns)
 
-    # pandas の CSV の読みと yaml の読みを数える
+    # pandas の CSV の読みのうち, 行まで読むものを数える
     reads: list[Any] = []
-    loads: list[Any] = []
     original = pd.read_csv
-    safe_load = yaml.safe_load
 
     def counted(*args: Any, **kwargs: Any) -> Any:
-        reads.append(args[0] if args else kwargs.get("filepath_or_buffer"))
+        if kwargs.get("nrows") != 0:
+            reads.append(Path(args[0] if args
+                              else kwargs["filepath_or_buffer"]).name)
         return original(*args, **kwargs)
 
-    def counted_load(*args: Any, **kwargs: Any) -> Any:
-        loads.append(args)
-        return safe_load(*args, **kwargs)
-
     monkeypatch.setattr(pd, "read_csv", counted)
-    monkeypatch.setattr(yaml, "safe_load", counted_load)
     read = read_frame(tmp_path / "once", meta)
-    assert reads == [tmp_path / "once" / "predictions.csv"]
-    assert loads == []
+    assert reads == ["predictions.csv"]
     assert values(read["shop"]) == ["1", None]
     assert str(read["units"].dtype) == "Int64"
     assert values(read["prediction"]) == ["1", None]
+
+
+def test_text_like_read_result(tmp_path: Path) -> None:
+    """
+    出力の形の無い古い文の結果 (tokens あり) と, tokens という列を持つ表の
+    出力の結果で, read_result と同じ値で読むことを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 出力の形の無い古い文の結果 (予測 07 を数にせず, 空の文は空の文字)
+    csv = "status,reason,prediction,tokens\nok,,07,4\nok,,,\n"
+    meta = write_old(tmp_path / "text", csv, {"format_version": 1,
+                                              "task": "regression"})
+    read = read_frame(tmp_path / "text", meta)
+    expected = ml_inference.read_result(tmp_path / "text")["frame"]
+    assert list(read["prediction"]) == ["07", ""]
+    assert list(read["tokens"]) == ["4", ""]
+    for name in ("prediction", "tokens"):
+        assert values(read[name]) == values(expected[name])
+
+    # tokens という入力の列を持つ表の出力の結果
+    columns = [{"name": "tokens", "type": "category", "categories": 2}]
+    frame = pd.DataFrame({
+        "status": ["ok", "ok"], "reason": [None, None],
+        "tokens": ["1", "2"], "prediction": [0.5, 1.5],
+    })
+    meta = write(tmp_path / "table", frame, task="regression",
+                 output_form="table", table_columns=columns)
+    read = read_frame(tmp_path / "table", meta)
+    expected = ml_inference.read_result(tmp_path / "table")["frame"]
+    for name in expected.columns:
+        if name in ("status", "reason", "decision"):
+            continue
+        assert values(read[name]) == values(expected[name]), name
