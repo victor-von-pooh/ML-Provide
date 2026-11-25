@@ -6,7 +6,12 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from ml_provide.api import read_frame
+from ml_provide.api import (
+    ARTIFACT_COLUMN,
+    COLUMN_DTYPES,
+    TOKENS_COLUMN,
+    read_frame,
+)
 
 
 def values(column: pd.Series) -> list[Any]:
@@ -264,3 +269,110 @@ def test_old_artifacts(tmp_path: Path) -> None:
     assert list(read["status"]) == ["ok", "skipped"]
     assert list(read["reason"]) == ["", "読めません"]
     assert list(read["decision"]) == ["", "予測なし"]
+
+
+def test_same_as_read_result(tmp_path: Path) -> None:
+    """
+    画面の都合の列の他は, ML-Inference の read_result と同じ値と型で
+    読むことを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 型と欠損の決まりの写しが ML-Inference と食い違わないこと
+    from ml_inference import result as inference_result
+
+    assert COLUMN_DTYPES == inference_result.COLUMN_DTYPES
+    assert TOKENS_COLUMN == inference_result.TOKENS_COLUMN
+    assert ARTIFACT_COLUMN == inference_result.ARTIFACT_COLUMN
+
+    # 数に見える文字, 欠けた整数, NA に見える文字, 小数, 文の出力の表
+    plain = pd.DataFrame({
+        "sample": [0, 1, 2], "status": ["ok", "skipped", "ok"],
+        "reason": [None, "列 a を数にできません", None],
+        "code": ["001", "007", None], "label": ["NA", "null", None],
+        "count": pd.array([3, None, 2 ** 60], dtype="Int64"),
+        "prediction": [1.5, np.nan, 2.0],
+        "decision": [None, "予測なし", None],
+    })
+    text = pd.DataFrame({
+        "status": ["ok", "ok", "skipped"], "reason": [None, None, "長い"],
+        "prediction": ["5", "", None], "tokens": ["4", "", None],
+    })
+    cases = [
+        (plain, {"task": "regression"}),
+        (text, {"task": "classification", "output_form": "text"}),
+    ]
+    for number, (frame, extra) in enumerate(cases):
+        place = tmp_path / str(number)
+        meta = write(place, frame, **extra)
+        if number == 0:
+            assert meta["column_types"] == {"code": "text",
+                                            "count": "integer"}
+        read = read_frame(place, meta)
+        expected = ml_inference.read_result(place)["frame"]
+        assert list(read.columns) == list(expected.columns)
+        for name in expected.columns:
+            if name in ("status", "reason", "decision"):
+                continue
+            assert read[name].dtype == expected[name].dtype, name
+            assert values(read[name]) == values(expected[name]), name
+
+
+def test_reads_once(tmp_path: Path, monkeypatch: Any) -> None:
+    """
+    予測の表を 1 回だけ読み, result.yaml を読まないことを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    monkeypatch: Any
+        pytest の差し替え
+
+    Returns
+    ----------
+    None
+    """
+    # 読み直す列 (状態, 分類の予測, 種類の列, 残した型の列) のある結果
+    columns = [
+        {"name": "shop", "type": "category", "categories": 2},
+        {"name": "units", "type": "number", "integer": True},
+    ]
+    frame = pd.DataFrame({
+        "status": ["ok", "skipped"], "reason": [None, "読めません"],
+        "shop": pd.array([1, None], dtype="Int64"),
+        "units": pd.array([3, None], dtype="Int64"),
+        "prediction": ["1", None], "decision": [None, "予測なし"],
+    })
+    meta = write(tmp_path / "once", frame, task="classification",
+                 output_form="table", table_columns=columns)
+
+    # pandas の CSV の読みと yaml の読みを数える
+    reads: list[Any] = []
+    loads: list[Any] = []
+    original = pd.read_csv
+    safe_load = yaml.safe_load
+
+    def counted(*args: Any, **kwargs: Any) -> Any:
+        reads.append(args[0] if args else kwargs.get("filepath_or_buffer"))
+        return original(*args, **kwargs)
+
+    def counted_load(*args: Any, **kwargs: Any) -> Any:
+        loads.append(args)
+        return safe_load(*args, **kwargs)
+
+    monkeypatch.setattr(pd, "read_csv", counted)
+    monkeypatch.setattr(yaml, "safe_load", counted_load)
+    read = read_frame(tmp_path / "once", meta)
+    assert reads == [tmp_path / "once" / "predictions.csv"]
+    assert loads == []
+    assert values(read["shop"]) == ["1", None]
+    assert str(read["units"].dtype) == "Int64"
+    assert values(read["prediction"]) == ["1", None]
