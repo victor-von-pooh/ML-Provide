@@ -1,6 +1,7 @@
 import hashlib
 import http.client
 import io
+import json
 import time
 import urllib.request
 from collections.abc import Iterator
@@ -11,9 +12,12 @@ from urllib.error import URLError
 import ml_inference
 import ml_quest
 import numpy as np
+import pandas as pd
 import pytest
 import torch
+import yaml
 from fastapi.testclient import TestClient
+from ml_eda import Data, describe_groups
 from ml_modelcontrol import register_unit
 from ml_quest import example_problem
 from PIL import Image
@@ -787,3 +791,161 @@ def test_ready_issues_match(tmp_path: Path, client: TestClient) -> None:
     assert problems_module.ready_issues(
         bundle, {**planned, "sha256": None}
     ) == []
+
+
+def write_group_artifacts(root: Path, images: Path) -> Path:
+    """
+    骨組みと同じ手順で, 既製の埋め込みの群分けの成果物を書く関数
+
+    埋め込みの一式 (form="vector") で画像を埋め込み, 赤とそれ以外を 2 つの
+    群にする
+
+    Parameters
+    ----------
+    root: Path
+        一時ディレクトリ (埋め込みの一式を root / "embedder" に作る)
+    images: Path
+        画像のディレクトリ
+
+    Returns
+    ----------
+    folder: Path
+        成果物のディレクトリ
+    """
+    # 埋め込みの一式での, 読めた画像だけの埋め込み (チャンネルの平均)
+    info = ml_inference.make_ready_bundle(
+        root / "embedder", "tiny", "V1", library="test", license=LICENSE,
+        form="vector"
+    )
+    frame = ml_inference.predict(root / "embedder", images)
+    frame = frame[frame["status"] == "ok"].reset_index(drop=True)
+    points = np.stack(frame["output"].to_list())
+    labels = (points[:, 0] <= points[:, 1:].max(1)).astype(int)
+    centers = np.stack([points[labels == n].mean(0) for n in range(2)])
+
+    # 群の中心, 割り当て, 群の安定性と群の要約 (ML-EDA の群の要約)
+    folder = root / "grouping"
+    (folder / "evaluations").mkdir(parents=True)
+    sha256 = info["model"]["pretrained"][0]["sha256"]
+    (folder / "group_centers.json").write_text(json.dumps({
+        "k": 2,
+        "ready": {"library": "test", "model": "tiny", "weights": "V1",
+                  "sha256": sha256},
+        "centers": centers.tolist(),
+    }), encoding="utf-8")
+    pd.DataFrame({"path": frame["path"], "group": labels,
+                  "split": "train"}).to_csv(
+        folder / "group_assignments.csv", index=False
+    )
+    summary = describe_groups(
+        Data(kind="table", frame=frame[["width", "height"]]),
+        columns=["width", "height"], labels=labels.tolist()
+    )["groups"]
+    stability = {
+        "k": 2, "method": "seed", "repeats": 3, "ari": 1.0,
+        "ari_baseline": 0.5, "ari_diff": 0.5, "ari_min": 1.0,
+        "ari_min_baseline": 0.5, "ari_min_diff": 0.5, "silhouette": 0.9,
+        "silhouette_baseline": 0.4, "silhouette_diff": 0.5,
+    }
+    (folder / "evaluations" / "group_stability.json").write_text(
+        json.dumps({"rows": [stability], "epoch": None,
+                    "baseline": "画素をそのまま分けた群"}),
+        encoding="utf-8"
+    )
+    (folder / "evaluations" / "group_summary.json").write_text(
+        json.dumps({"rows": summary}), encoding="utf-8"
+    )
+
+    return folder
+
+
+def test_ready_vector_and_group_bundles(
+    tmp_path: Path, client: TestClient
+) -> None:
+    """
+    既製のモデルの埋め込みの一式 (form="vector") と既製の埋め込みの群分けの
+    一式 (版 10) を, 登録, 一覧, 推論で誤りなく扱い, 読めない新しい版は
+    理由を出すことを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        一時ディレクトリ
+    client: TestClient
+        作り物の出どころを足したクライアント
+
+    Returns
+    ----------
+    None
+    """
+    # 埋め込みの一式と, その埋め込みの群の中心から作った群分けの一式
+    images = write_images(tmp_path / "images")
+    artifacts = write_group_artifacts(tmp_path, images)
+    ml_inference.make_group_bundle(
+        tmp_path / "group", artifacts, data=images, license=LICENSE
+    )
+    ids = {}
+    for name in ("embedder", "group"):
+        response = client.post(
+            "/api/bundles", json={"path": str(tmp_path / name)}
+        )
+        assert response.status_code == 201, response.text
+        ids[name] = response.json()["id"]
+
+    # 一覧は誤りなく説明を出す (出力の形, 版, 出どころ)
+    views = {view["id"]: view for view in client.get("/api/bundles").json()}
+    embedder = views[ids["embedder"]]
+    group = views[ids["group"]]
+    assert embedder["ok"] and group["ok"]
+    assert embedder["description"]["output"]["form"] == "vector"
+    assert embedder["description"]["column_output"] is False
+    assert group["description"]["format_version"] == 10
+    assert group["description"]["kind"] == "group"
+    assert group["description"]["ready"]["model"] == "tiny"
+    assert group["description"]["group"]["k"] == 2
+
+    # 埋め込みの一式の推論は 1 件ごとのベクトル (読めない画像は飛ばす)
+    response = client.post(
+        f"/api/bundles/{ids['embedder']}/predict",
+        json={"source": str(images)},
+    )
+    assert response.status_code == 201, response.text
+    result = response.json()
+    assert result["output_form"] == "vector"
+    assert result["summary"]["predicted"] == 3
+    preview = client.get(f"/api/results/{result['id']}/artifacts/0").json()
+    assert preview["form"] == "vector" and preview["shape"] == [3]
+
+    # 群分けの一式の推論は群の要約と群の安定性を持ち, 行ごとの群を読める
+    response = client.post(
+        f"/api/bundles/{ids['group']}/predict", json={"source": str(images)}
+    )
+    assert response.status_code == 201, response.text
+    result = response.json()
+    assert result["output_form"] == "cluster"
+    assert result["summary"]["k"] == 2
+    assert result["summary"]["stability"]["ari"] == 1.0
+    rows = client.get(f"/api/results/{result['id']}/rows").json()["rows"]
+    grouped = {row["path"]: row["group"] for row in rows
+               if row["status"] == "ok"}
+    assert grouped["a_red.png"] != grouped["b_green.png"]
+    assert grouped["b_green.png"] == grouped["c_blue.png"]
+
+    # 読めない新しい版は, 登録を理由付きで断り, 一覧では理由を出す
+    file = tmp_path / "group" / "inference.yaml"
+    info = yaml.safe_load(file.read_text(encoding="utf-8"))
+    file.write_text(
+        yaml.safe_dump({**info, "format_version": 99}, allow_unicode=True),
+        encoding="utf-8"
+    )
+    views = {view["id"]: view for view in client.get("/api/bundles").json()}
+    assert views[ids["group"]]["ok"] is False
+    assert "99" in views[ids["group"]]["error"]
+    copy = tmp_path / "copy"
+    copy.mkdir()
+    (copy / "inference.yaml").write_text(
+        file.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    response = client.post("/api/bundles", json={"path": str(copy)})
+    assert response.status_code == 400
+    assert "99" in response.json()["detail"]

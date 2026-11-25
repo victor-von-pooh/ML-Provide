@@ -136,8 +136,9 @@ function GroupRows({ group }: { group: NonNullable<Description['group']> }) {
         </span>
       </Row>
       <Row label="群の数">
-        {group.k} 個 (学習で {group.rows.toLocaleString()} 行を分けた. 符号化した行の幅{' '}
-        {group.features}, 埋め込みの幅 {group.width})
+        {group.k} 個 (学習で {group.rows.toLocaleString()} 行を分けた.{' '}
+        {group.features !== null && `符号化した行の幅 ${group.features}, `}埋め込みの幅{' '}
+        {group.width})
       </Row>
       {group.check && (
         <Row label="割り当て直しの一致">

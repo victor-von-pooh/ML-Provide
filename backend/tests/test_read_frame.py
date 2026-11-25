@@ -5,8 +5,16 @@ import ml_inference
 import numpy as np
 import pandas as pd
 import yaml
+from fastapi.testclient import TestClient
 
 from ml_provide.api import read_frame
+from ml_provide.app import create_app
+
+# テストで使うトークン
+TOKEN = "test-token"
+
+# 数と文字の混ざる元の列の値 (数に見える文字と空の欄も)
+MIXED = [1, "a", 2.5, "007", None, "12"]
 
 
 def values(column: pd.Series) -> list[Any]:
@@ -478,3 +486,72 @@ def test_given_types(tmp_path: Path) -> None:
     assert values(read["shop"]) == ["1", None]
     assert str(read["units"].dtype) == "Int64"
     assert values(read["units"]) == [3, None]
+
+
+def test_mixed_values(tmp_path: Path) -> None:
+    """
+    数と文字の混ざる元の列を, 版 4 の結果から値ごとの型のまま読み,
+    結果の画面の予測の表と結論の出し直しでも元の値のまま出すことを
+    確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 分類の結果の, 混ざる元の列 (数に見える文字 007 と 12 は文字のまま)
+    frame = pd.DataFrame({
+        "code": pd.Series(MIXED, dtype=object),
+        "status": ["ok"] * 5 + ["skipped"],
+        "reason": [None] * 5 + ["列 a を数にできません"],
+        "prediction": ["x", "y", "x", "y", "x", None],
+        "confidence": [0.9, 0.8, 0.7, 0.6, 0.95, None],
+    })
+    home = tmp_path / "home"
+    place = home / "results" / "mixed-1"
+    meta = write(place, frame, task="classification", classes=["x", "y"])
+    assert meta["format_version"] == 4
+    assert meta["column_types"]["code"] == "mixed"
+    assert sorted(meta["text_rows"]["code"]) == [3, 5]
+    read = read_frame(place, meta)
+    assert values(read["code"]) == MIXED
+    assert [type(v) for v in values(read["code"])] == [
+        int, str, float, str, type(None), str
+    ]
+
+    # 結果の画面の予測の表は元の値のまま (数は数, 文字は文字)
+    app = create_app(
+        data_dir=home, token=TOKEN, allowed_hosts=["testserver"],
+        procedures=[]
+    )
+    client = TestClient(app, headers={"x-provide-token": TOKEN})
+    rows = client.get("/api/results/mixed-1/rows").json()["rows"]
+    assert [row["code"] for row in rows] == MIXED
+
+    # 結論を出し直して書き直しても, 混ざる列は版 4 のまま元の値
+    response = client.post(
+        "/api/results/mixed-1/conclude", json={"rules": {}}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["format_version"] == 4
+    rows = client.get("/api/results/mixed-1/rows").json()["rows"]
+    assert [row["code"] for row in rows] == MIXED
+
+    # 群分けの結果の混ざる列も, 文字の元の列 (texts) と分けて元の値
+    grouped = pd.DataFrame({
+        "code": pd.Series(MIXED, dtype=object),
+        "name": ["001", "b", "c", "d", "e", "f"],
+        "status": ["ok"] * 5 + ["skipped"],
+        "reason": [None] * 5 + ["列 a を数にできません"],
+        "group": pd.array([0, 1, 0, 1, 0, None], dtype="Int64"),
+    })
+    meta = write(tmp_path / "group", grouped, output_form="cluster",
+                 grouping={"texts": ["name"]})
+    read = read_frame(tmp_path / "group", meta)
+    assert values(read["code"]) == MIXED
+    assert values(read["name"]) == ["001", "b", "c", "d", "e", "f"]
+    assert values(read["group"]) == [0, 1, 0, 1, 0, None]

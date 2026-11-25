@@ -79,12 +79,57 @@ const customers = {
   },
 } as unknown as Bundle
 
+// 既製の埋め込みの群分けの一式 (版 10. 列を符号化せず, 既製のモデルの出どころを持つ)
+const photos = {
+  ...customers,
+  id: 'g2',
+  name: 'photos',
+  description: {
+    ...customers.description,
+    name: 'photos',
+    format_version: 10,
+    run: null,
+    model: {
+      name: 'resnet18',
+      inputs: { image: { source: 'items', prepend: [] } },
+      output: null,
+      kind: 'value',
+    },
+    ready: {
+      library: 'torchvision',
+      model: 'resnet18',
+      weights: 'IMAGENET1K_V1',
+      input: 'image',
+      preprocess: {
+        resize: 256,
+        crop: 224,
+        interpolation: 'bilinear',
+        mean: [0.485, 0.456, 0.406],
+        std: [0.229, 0.224, 0.225],
+      },
+      url: null,
+      file: 'resnet18-f37072fd.pth',
+      license: null,
+      weights_file: '/hub/checkpoints/resnet18-f37072fd.pth',
+      weights_cached: true,
+    },
+    group: {
+      ...customers.description!.group!,
+      columns: ['width', 'height'],
+      features: null,
+      width: 512,
+      id: 'path',
+    },
+  },
+} as unknown as Bundle
+
+let current = customers
 const bundleProblem = vi.fn()
 const predict = vi.fn()
 
 vi.mock('../../api/client', () => ({
   api: {
-    bundle: () => Promise.resolve(customers),
+    bundle: () => Promise.resolve(current),
     results: () => Promise.resolve([]),
     bundleProblem: () => bundleProblem(),
     info: () => new Promise(() => {}),
@@ -95,10 +140,10 @@ vi.mock('../../api/client', () => ({
 /** 一覧から開いた一式の画面を描く */
 function show() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  client.setQueryData(['bundles'], [customers])
+  client.setQueryData(['bundles'], [current])
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/bundles/g1']}>
+      <MemoryRouter initialEntries={[`/bundles/${current.id}`]}>
         <Routes>
           <Route path="/bundles/:id" element={<BundlePage />} />
           <Route path="/results/:id" element={<p>結果の画面</p>} />
@@ -110,6 +155,7 @@ function show() {
 
 describe('群分けの一式の画面', () => {
   beforeEach(() => {
+    current = customers
     bundleProblem.mockReset()
     predict.mockReset()
   })
@@ -155,5 +201,17 @@ describe('群分けの一式の画面', () => {
       expect(predict).toHaveBeenCalledWith('g1', { source: '/data/customers.csv' }),
     )
     expect(await screen.findByText('結果の画面')).toBeInTheDocument()
+  })
+
+  it('既製の埋め込みの群分けの一式 (版 10) も, 出どころと学習のときの群を出して落ちない', async () => {
+    current = photos
+    show()
+    expect(await screen.findByText(/画像 \(既製のモデル/)).toBeInTheDocument()
+    expect(screen.getByText('resnet18')).toBeInTheDocument()
+    expect(
+      screen.getByRole('table', { name: '学習の群の安定性 (モデル, 比べる相手, 差)' }),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText(/^群に割り当てる行の表/)).toBeVisible()
+    expect(bundleProblem).not.toHaveBeenCalled()
   })
 })
