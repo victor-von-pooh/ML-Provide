@@ -1146,6 +1146,64 @@ async function registerFresh(request: APIRequestContext, place: string): Promise
   return ((await response.json()) as { id: string }).id
 }
 
+test('異常の度合いの一式を場所で登録して推論し, 人の確認に回した行に 1 件ずつ判断を付けて記録を見る', async ({
+  page,
+}) => {
+  const root = path.resolve(import.meta.dirname, '.work', 'anomaly')
+  const bundle = { id: await registerFresh(page.request, path.join(root, 'bundle')) }
+  try {
+    // 一式の画面: 度合いの決め方, 件数の上限, 実験の評価. 問題の設定と意思決定の欄は無い
+    await page.goto(`/bundles/${bundle.id}`)
+    await expect(page.getByText('学習用の正常の行の中心からの距離')).toBeVisible()
+    await expect(page.getByText(/1 回に 3 件/)).toBeVisible()
+    await expect(
+      page.getByRole('table', { name: '実験の評価 (分割ごとの上位 K 件の適合率と PR-AUC)' }),
+    ).toContainText('0.333')
+    await expect(page.getByRole('region', { name: '意思決定' })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: '問題の設定' })).toHaveCount(0)
+
+    // 新しい行の度合いを出し, 上位 2 件を人の確認に回す
+    await page.getByLabel(/^度合いを出す行の表/).fill(path.join(root, 'readings.csv'))
+    await page.getByLabel(/^人の確認に回す件数の上限/).fill('2')
+    await page.getByRole('button', { name: '推論する' }).click()
+    await expect(page.getByText(/^14 行のうち 13 行の異常の度合い/)).toBeVisible({
+      timeout: 30_000,
+    })
+    await expect(page.getByText(/^度合いの高い順に 2 件を人の確認に回す/)).toBeVisible()
+    await expect(
+      page
+        .getByRole('table', { name: /^度合いの分布/ })
+        .getByRole('row')
+        .nth(1),
+    ).toContainText('新しい行 (13 行)')
+    const top = page.getByRole('table', { name: /^度合いの上位の行/ })
+    await expect(top.getByRole('row')).toHaveCount(4)
+    await expect(top.getByRole('row').nth(1)).toContainText('vibration')
+
+    // 名前を書いて 1 件ずつ判断を付けると, 待ち行列の今の判断と記録が変わる
+    const queue = page.getByRole('table', { name: /^人の確認に回した行/ })
+    await expect(queue.getByRole('row')).toHaveCount(3)
+    await page.getByLabel(/^確かめた人の名前/).fill('佐藤')
+    const first = queue.getByRole('row').nth(1)
+    await first.getByRole('button', { name: /を異常とする$/ }).click()
+    await expect(first).toContainText('異常')
+    await expect(first).toContainText('佐藤')
+    await queue
+      .getByRole('row')
+      .nth(2)
+      .getByRole('button', { name: /を正常とする$/ })
+      .click()
+    const log = page.getByRole('table', { name: /^確認の記録/ })
+    await expect(log.getByRole('row')).toHaveCount(3)
+    await expect(log.getByRole('row').nth(1)).toContainText('異常')
+    await expect(log.getByRole('row').nth(2)).toContainText('正常')
+    await expect(page.getByText('2 件のうち 2 件を確かめました', { exact: false })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /^意思決定/ })).toHaveCount(0)
+  } finally {
+    await page.request.delete(`/api/bundles/${bundle.id}`)
+  }
+})
+
 test('既製のモデルの一式を下見して作り, ライセンスの警告と重みの置き場を見て, 画像の種類を推論する', async ({
   page,
 }) => {

@@ -19,6 +19,7 @@ from ml_provide.policies import router as policy_router
 from ml_provide.policy_results import router as policy_result_router
 from ml_provide.problems import router as problem_router
 from ml_provide.procedures import configured_modules, load_modules
+from ml_provide.reviews import router as review_router
 from ml_provide.settings import get_data_dir
 from ml_provide.store import Store
 from ml_provide.units import configured_units, load_unit_modules
@@ -367,6 +368,7 @@ def create_app(
     app.include_router(dataset_router)
     app.include_router(policy_router)
     app.include_router(policy_result_router)
+    app.include_router(review_router)
     mount_frontend(app, STATIC_DIR)
 
     return app

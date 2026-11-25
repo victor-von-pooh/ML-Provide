@@ -8,6 +8,14 @@ import type { Bundle, Description, LinkedProblem, UncertaintySummary } from '../
 import { PathField } from '../../components/PathPicker'
 import { Button, Card, ErrorBox, PageHeader, Spinner } from '../../components/ui'
 import { SEED_RANGE_PROBLEM, SHORT_SOURCE_LABELS } from '../../lib/bundleForm'
+import {
+  ANOMALY_NO_PROBLEM,
+  ANOMALY_UNSUPPORTED,
+  capacityProblem,
+  MAX_CAPACITY,
+  normalText,
+  SCORE_LABELS,
+} from '../../lib/anomaly'
 import { CLUSTER_NO_PROBLEM, CLUSTER_UNSUPPORTED } from '../../lib/clusters'
 import { formatNumber, KIND_LABELS, TASK_LABELS } from '../../lib/format'
 import { fromDecisionForm, toDecisionForm, type DecisionForm } from '../../lib/decision'
@@ -31,6 +39,7 @@ import {
 } from '../../lib/ranking'
 import { classesText, licenseAlert, preprocessText, READY_UNSUPPORTED } from '../../lib/ready'
 import { fromForm, toForm, withCleared, type RulesForm } from '../../lib/rules'
+import { AnomalyEvaluationsTable } from '../results/AnomalyCards'
 import { ClusterStabilityView, ClusterSummaryTable } from '../results/ClusterCards'
 import { CompareResultsCard, MAX_COMPARE } from '../results/CompareResultsCard'
 import { DecisionEditor } from '../results/DecisionEditor'
@@ -156,6 +165,52 @@ function GroupRows({ group }: { group: NonNullable<Description['group']> }) {
   )
 }
 
+/** 異常の度合いの一式 (版 11) の度合いの決め方, 列, 前処理, 件数の上限, 正常の行の分布, 確かめ */
+function AnomalyRows({
+  anomaly,
+  steps,
+}: {
+  anomaly: NonNullable<Description['anomaly']>
+  steps: string[]
+}) {
+  return (
+    <>
+      <Row label="データ">
+        度合いの決め方と前処理のレシピ (データセットなし. 推論は表の行ごとに異常の度合いを出す)
+      </Row>
+      <Row label="度合いの決め方">
+        {SCORE_LABELS[anomaly.score] ?? anomaly.score}
+        <span className="block text-xs text-ink-2">大きいほど異常で, 確率ではありません</span>
+      </Row>
+      <Row label={`度合いに使う列 (${anomaly.features.length})`}>
+        <span className="font-mono text-xs">{anomaly.features.join(', ')}</span>
+        <span className="block text-xs text-ink-2">
+          推論する表に学習のときと同じ前処理をかけた後の列です
+        </span>
+      </Row>
+      <Row label="行の id の列">
+        <span className="font-mono text-xs">{anomaly.id}</span>
+        <span className="block text-xs text-ink-2">人の確認の記録が行を指す列です</span>
+      </Row>
+      <Row label="前処理">
+        <span className="font-mono text-xs">{steps.join(' → ') || 'なし'}</span>
+      </Row>
+      <Row label="人の確認に回す件数の上限">
+        1 回に {anomaly.capacity.toLocaleString()} 件 (実験の評価の上位 K 件は{' '}
+        {anomaly.k.toLocaleString()} 件)
+      </Row>
+      <Row label="正常の行の度合い">{normalText(anomaly.normal)}</Row>
+      {anomaly.check && (
+        <Row label="元の表での確かめ">
+          学習の元の表 {anomaly.check.rows.toLocaleString()} 行の度合いを一式で出し直し,{' '}
+          {(anomaly.check.agreement * 100).toFixed(1)} % が実験の度合いと合う (差の最大{' '}
+          {formatNumber(anomaly.check.max_diff)})
+        </Row>
+      )}
+    </>
+  )
+}
+
 /** 群分けの一式の, 学習のときの群の要約と群の安定性 */
 function GroupLearnedCard({ group }: { group: NonNullable<Description['group']> }) {
   return (
@@ -208,6 +263,8 @@ function DescriptionView({ description }: { description: Description }) {
   const rank = description.rank
   // 群分けの一式は列の符号化と群の中心 (モデルの入力は群を作る列を一式の式で符号化したもの)
   const group = description.group
+  // 異常の度合いの一式は度合いの決め方と前処理のレシピ (入力は度合いに使う列を前処理したもの)
+  const anomaly = description.anomaly
   const unit = items ? '件' : '行'
   return (
     <dl className="text-sm">
@@ -223,6 +280,8 @@ function DescriptionView({ description }: { description: Description }) {
         <RankRows rank={rank} />
       ) : group ? (
         <GroupRows group={group} />
+      ) : anomaly ? (
+        <AnomalyRows anomaly={anomaly} steps={description.steps} />
       ) : noise ? (
         <Row label="データ">雑音だけ (データセットなし. 推論は件数と種から作る)</Row>
       ) : (
@@ -237,13 +296,13 @@ function DescriptionView({ description }: { description: Description }) {
           {classesText(description.classes)}
         </Row>
       )}
-      {description.features.length > 0 && (
+      {description.features.length > 0 && !anomaly && (
         <Row label={`学習に使う列 (${description.features.length})`}>
           <span className="font-mono text-xs">{description.features.join(', ')}</span>
         </Row>
       )}
       {description.text_column && <Row label="文の列">{description.text_column}</Row>}
-      {!items && !noise && !ready && !rank && !group && (
+      {!items && !noise && !ready && !rank && !group && !anomaly && (
         <>
           <Row label="読み込み">
             <span className="font-mono text-xs">
@@ -259,7 +318,7 @@ function DescriptionView({ description }: { description: Description }) {
           </Row>
         </>
       )}
-      {!rank && !group && (
+      {!rank && !group && !anomaly && (
         <Row label="モデルの入力">
           <span className="font-mono text-xs">
             {inputs
@@ -338,6 +397,11 @@ function PredictCard({
   const readyModel = description.kind === 'ready'
   // 群分けの一式は群を作る列を持つ表のファイルだけで, 結論は群の要約
   const group = description.group
+  // 異常の度合いの一式は行の表のファイルと, 人の確認に回す件数の上限 (振り分けだけ)
+  const anomaly = description.anomaly
+  const [capacity, setCapacity] = useState(() =>
+    String(description.decision?.capacity ?? anomaly?.capacity ?? ''),
+  )
   const info = useQuery({ queryKey: ['info'], queryFn: api.info, staleTime: Infinity })
   const maxSamples = info.data?.max_samples ?? 1000
   const [count, setCount] = useState('4')
@@ -374,6 +438,8 @@ function PredictCard({
     description.classes,
   )
   const problems = column ? [...ruleProblems, ...(readyModel ? [] : decisionProblems)] : []
+  const capacityError = anomaly ? capacityProblem(capacity) : null
+  if (capacityError) problems.push(capacityError)
   if (noise) {
     const number = Number(count)
     if (!/^\d+$/.test(count.trim()) || number < 1 || number > maxSamples)
@@ -393,21 +459,27 @@ function PredictCard({
               count: Number(count),
               ...(noiseSeed.trim() ? { seed: Number(noiseSeed) } : {}),
             }
-          : !column
-            ? mode === 'texts'
-              ? { texts: texts.split('\n') }
-              : { source: source.trim() }
-            : readyModel
-              ? { source: source.trim(), rules: withCleared(rules) }
-              : mode === 'texts'
-                ? { texts: texts.split('\n'), rules: withCleared(rules), decision: decision ?? {} }
-                : {
-                    source: source.trim(),
-                    rules: withCleared(rules),
-                    forecast: canForecast && ahead,
-                    // 意思決定しない場合は空 (省くと一式の既定値になる)
-                    decision: decision ?? {},
-                  },
+          : anomaly
+            ? { source: source.trim(), decision: { type: 'triage', capacity: Number(capacity) } }
+            : !column
+              ? mode === 'texts'
+                ? { texts: texts.split('\n') }
+                : { source: source.trim() }
+              : readyModel
+                ? { source: source.trim(), rules: withCleared(rules) }
+                : mode === 'texts'
+                  ? {
+                      texts: texts.split('\n'),
+                      rules: withCleared(rules),
+                      decision: decision ?? {},
+                    }
+                  : {
+                      source: source.trim(),
+                      rules: withCleared(rules),
+                      forecast: canForecast && ahead,
+                      // 意思決定しない場合は空 (省くと一式の既定値になる)
+                      decision: decision ?? {},
+                    },
       ),
     onSuccess: (result) => {
       client.invalidateQueries({ queryKey: ['results'] })
@@ -415,7 +487,17 @@ function PredictCard({
     },
   })
   // 欄の中身の印 (送った後に欄を変えたら, 前の誤りを消す)
-  const formKey = JSON.stringify([mode, source, texts, count, noiseSeed, ahead, form, decisionForm])
+  const formKey = JSON.stringify([
+    mode,
+    source,
+    texts,
+    count,
+    noiseSeed,
+    ahead,
+    form,
+    decisionForm,
+    capacity,
+  ])
   const ready =
     (noise || (mode === 'texts' ? texts.trim() : source.trim())) && problems.length === 0
   return (
@@ -487,7 +569,9 @@ function PredictCard({
                   ? '推論する画像 (画像のファイルか, 画像を並べたディレクトリ)'
                   : group
                     ? `群に割り当てる行の表 (群を作る列 ${group.columns.join(', ')} を持つファイル)`
-                    : sourceLabel(description.items?.input_kind, description.kind)
+                    : anomaly
+                      ? `度合いを出す行の表 (前処理に要る元の列と行の id の列 ${anomaly.id} を持つファイル)`
+                      : sourceLabel(description.items?.input_kind, description.kind)
               }
               value={source}
               onChange={setSource}
@@ -496,9 +580,11 @@ function PredictCard({
                   ? '重みの説明の前処理 (大きさ, 切り出し, 正規化) をかけ, 種類の名前と確信度を出します. 読めない画像は理由を付けて飛ばします'
                   : group
                     ? '行ごとに学習のときと同じ式で列を符号化し, 最も近い群の中心に割り当てます. 数の列を数にできない行は理由を付けて飛ばします'
-                    : description.items
-                      ? '学習のときと同じ 1 件の扱いをかけます (撮影は同じ正規化も). 読めない件は理由を付けて飛ばします'
-                      : '目的の列は有っても無くてもかまいません. 学習のときと同じ読み込みで読みます'
+                    : anomaly
+                      ? '学習のときと同じ前処理をかけ, 行ごとに異常の度合いを出します. 前処理の後に欠けた値のある行は理由を付けて飛ばします'
+                      : description.items
+                        ? '学習のときと同じ 1 件の扱いをかけます (撮影は同じ正規化も). 読めない件は理由を付けて飛ばします'
+                        : '目的の列は有っても無くてもかまいません. 学習のときと同じ読み込みで読みます'
               }
             />
             {bundle.sample_input && (
@@ -581,7 +667,36 @@ function PredictCard({
             {CLUSTER_UNSUPPORTED}. {CLUSTER_NO_PROBLEM}
           </p>
         )}
-        {!column && !group && (
+        {anomaly && (
+          <section aria-label="人の確認">
+            <div className="max-w-xs">
+              <label
+                htmlFor="predict-capacity"
+                className="mb-1 block text-xs font-medium text-ink-2"
+              >
+                人の確認に回す件数の上限 (既定は一式の {anomaly.capacity} 件. {MAX_CAPACITY} 件まで)
+              </label>
+              <input
+                id="predict-capacity"
+                type="number"
+                min={1}
+                max={MAX_CAPACITY}
+                value={capacity}
+                onChange={(event) => setCapacity(event.target.value)}
+                className="h-8 w-full rounded-lg border border-line bg-surface px-2 text-sm"
+              />
+            </div>
+            <p className="mt-2 text-xs text-ink-2">
+              {ANOMALY_UNSUPPORTED}. {ANOMALY_NO_PROBLEM}
+            </p>
+            {problems.map((problem) => (
+              <p key={problem} role="alert" className="mt-1 text-xs text-critical-text">
+                {problem}
+              </p>
+            ))}
+          </section>
+        )}
+        {!column && !group && !anomaly && (
           <p className="text-xs text-ink-2">
             この一式の出力は{FORM_LABELS[outputForm] ?? outputForm}なので,
             結論は推論した件数だけです. 結論の決め方と意思決定は使えません
@@ -819,13 +934,13 @@ export function BundlePage() {
   const client = useQueryClient()
   const bundle = useQuery({ queryKey: ['bundles', id], queryFn: () => api.bundle(id) })
   const results = useQuery({ queryKey: ['results', id], queryFn: () => api.results(id) })
-  // 雑音だけの一式, 並べるの一式, 群分けの一式は, 問題の設定の結論と意思決定を扱わないので問題の設定を読まない
+  // 雑音だけの一式, 並べるの一式, 群分けの一式, 異常の度合いの一式は, 問題の設定の結論と意思決定を扱わないので問題の設定を読まない
   // (既製のモデルの一式は読み, 結論の決め方だけを既定にする).
   // 種類は一式か一覧の読んだ値から. 分からない間は一式と並べて読む (推論の欄を 1 往復早く出すため.
   // 読まない種類の一式なら, サーバーは問題の設定を読まずに空の状態を返す)
   const listed = client.getQueryData<Bundle[]>(['bundles'])?.find((item) => item.id === id)
   const kind = bundle.data?.description?.kind ?? listed?.description?.kind
-  const noise = kind === 'noise' || kind === 'rank' || kind === 'group'
+  const noise = kind === 'noise' || kind === 'rank' || kind === 'group' || kind === 'anomaly'
   const problem = useQuery({
     queryKey: ['bundle-problem', id],
     queryFn: () => api.bundleProblem(id),
@@ -934,6 +1049,11 @@ export function BundlePage() {
               {data.description.uncertainty?.restorable && <RestoreButton bundle={data} />}
             </Card>
             {data.description.group && <GroupLearnedCard group={data.description.group} />}
+            {data.description.anomaly && (
+              <Card title="実験の評価">
+                <AnomalyEvaluationsTable evaluations={data.description.anomaly.evaluations} />
+              </Card>
+            )}
             {/* 版 3 からの項目 (版 2 までの一式は前と同じ画面) */}
             {(data.description.format_version ?? 0) >= 3 && (
               <Card title="受け持ちと出力">

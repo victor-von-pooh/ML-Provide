@@ -29,7 +29,9 @@ Stamp = tuple[Any, ...]
 MODELS: OrderedDict[str, tuple[Stamp, ml_inference.Bundle]] = OrderedDict()
 
 # 場所ごとの (印, 重みの場所, 説明)
-DESCRIPTIONS: OrderedDict[str, tuple[Stamp, Path, dict[str, Any]]] = (
+DESCRIPTIONS: OrderedDict[
+    str, tuple[Stamp, Optional[Path], dict[str, Any]]
+] = (
     OrderedDict()
 )
 
@@ -86,6 +88,29 @@ def file_stamp(path: Path) -> tuple[float, ...]:
     return stamp
 
 
+def weights_of(bundle: ml_inference.Bundle) -> Optional[Path]:
+    """
+    一式の重みのファイルを返す関数
+
+    Parameters
+    ----------
+    bundle: ml_inference.Bundle
+        読んだ一式
+
+    Returns
+    ----------
+    weights: Optional[Path]
+        重みのファイル (モデルを持たない一式は None. 距離に基づく異常の
+        度合いの一式など)
+    """
+    # 重みの無い一式 (版 11, model が null) は None
+    weights = None if bundle.info.get("model") is None else (
+        bundle.weights_path
+    )
+
+    return weights
+
+
 def bundle_stamp(path: str, weights: Optional[Path]) -> Stamp:
     """
     一式のディレクトリの全てのファイルと重みの印を返す関数
@@ -139,7 +164,7 @@ def fresh_model(path: str) -> Optional[ml_inference.Bundle]:
     bundle: Optional[ml_inference.Bundle] = None
     if cached is None:
         return bundle
-    if cached[0] != bundle_stamp(path, cached[1].weights_path):
+    if cached[0] != bundle_stamp(path, weights_of(cached[1])):
         return bundle
     with LOCK:
         if path in MODELS:
@@ -170,7 +195,7 @@ def open_bundle(path: str) -> ml_inference.Bundle:
     if found is not None:
         return found
     bundle = ml_inference.load_bundle(path)
-    stamp = bundle_stamp(path, bundle.weights_path)
+    stamp = bundle_stamp(path, weights_of(bundle))
     with LOCK:
         MODELS[path] = (stamp, bundle)
         MODELS.move_to_end(path)
@@ -220,7 +245,7 @@ def remember_warnings(path: str, bundle: ml_inference.Bundle) -> None:
     if "model" not in bundle.cache:
         return
     warnings = list(bundle.cache.get("pretrained_warnings") or [])
-    stamp = bundle_stamp(path, bundle.weights_path)
+    stamp = bundle_stamp(path, weights_of(bundle))
     with LOCK:
         WARNINGS[path] = (stamp, warnings)
 
@@ -259,7 +284,7 @@ def describe(path: str) -> tuple[dict[str, Any], bool]:
         known = WARNINGS.get(path)
         weights = DESCRIPTIONS.get(path, (None, None))[1]
     if known is not None and not description.get("pretrained_warnings"):
-        weights = bundle.weights_path if bundle is not None else weights
+        weights = weights_of(bundle) if bundle is not None else weights
         if known[0] == bundle_stamp(path, weights):
             description = {**description, "pretrained_warnings": known[1]}
     description = with_cached_weights(description)
@@ -317,9 +342,9 @@ def cached_description(path: str) -> dict[str, Any]:
         return description
     bundle = ml_inference.load_bundle(path)
     description = ml_inference.describe_bundle(bundle)
-    stamp = bundle_stamp(path, bundle.weights_path)
+    stamp = bundle_stamp(path, weights_of(bundle))
     with LOCK:
-        DESCRIPTIONS[path] = (stamp, bundle.weights_path, description)
+        DESCRIPTIONS[path] = (stamp, weights_of(bundle), description)
         DESCRIPTIONS.move_to_end(path)
         while len(DESCRIPTIONS) > DESCRIPTION_CACHE_SIZE:
             DESCRIPTIONS.popitem(last=False)

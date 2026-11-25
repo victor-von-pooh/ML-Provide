@@ -35,10 +35,12 @@ import {
   rankRowColumns,
 } from '../../lib/ranking'
 import { READY_UNSUPPORTED } from '../../lib/ready'
+import { anomalySummary, triageSummary } from '../../lib/anomaly'
 import { groupColumns } from '../../lib/remeasure'
 import { rowReasonable } from '../../lib/rowReason'
 import { fromForm, toForm, type RulesForm } from '../../lib/rules'
 import { OutputNotices } from '../bundles/OutputView'
+import { AnomalyCards } from './AnomalyCards'
 import { ArtifactCard } from './ArtifactCard'
 import {
   ClusterRepresentativesTable,
@@ -825,6 +827,9 @@ export function ResultPage() {
   const ranking = data.output_form === 'ranking'
   // 群分けの結果は行ごとの群 (結論は群の要約と学習の群の安定性)
   const grouped = data.output_form === 'cluster'
+  // 異常の度合いの結果は行ごとの度合い (結論は度合いの分布と上位の行, 意思決定は人の確認への振り分け)
+  const anomaly = anomalySummary(data)
+  const triage = triageSummary(data)
   const form = data.artifacts?.form ?? data.output_form ?? ''
   // 外れ方を種類ごとに分けられる列 (回帰と予測の一式の, 予測と判断と目的の列を除いた列)
   const target = bundle.data?.description?.target
@@ -910,6 +915,7 @@ export function ResultPage() {
             }}
           />
         )}
+        {anomaly && <AnomalyCards result={data} summary={anomaly} />}
         {column && !readyModel && (
           <DecisionCard
             key={`decision:${JSON.stringify(data.decision?.decision ?? null)}`}
@@ -931,7 +937,15 @@ export function ResultPage() {
             <StatTile label={ranking ? '利用者' : '行'} value={summary.rows.toLocaleString()} />
             <StatTile
               label={
-                ranking ? '並べた利用者' : grouped ? '割り当てた' : column ? '予測した' : '推論した'
+                ranking
+                  ? '並べた利用者'
+                  : grouped
+                    ? '割り当てた'
+                    : anomaly
+                      ? '度合いを出した'
+                      : column
+                        ? '予測した'
+                        : '推論した'
               }
               value={summary.predicted.toLocaleString()}
             />
@@ -941,9 +955,11 @@ export function ResultPage() {
                   ? '並べられなかった利用者'
                   : grouped
                     ? '割り当てられなかった'
-                    : column
-                      ? '予測しなかった'
-                      : '推論しなかった'
+                    : anomaly
+                      ? '度合いを出せなかった'
+                      : column
+                        ? '予測しなかった'
+                        : '推論しなかった'
               }
               value={summary.skipped.toLocaleString()}
             />
@@ -951,6 +967,12 @@ export function ResultPage() {
               <StatTile label="並べた件数" value={`${summary.k ?? data.ranking?.k ?? '–'} 件`} />
             ) : grouped ? (
               <StatTile label="群の数" value={`${summary.k ?? data.grouping?.k ?? '–'} 個`} />
+            ) : anomaly ? (
+              <StatTile
+                label="人の確認に回す"
+                value={`${triage?.acted ?? 0} 件`}
+                hint={triage ? `上限 ${triage.capacity} 件` : '振り分けなし'}
+              />
             ) : !column ? (
               <StatTile label="出力の形" value={FORM_LABELS[form] ?? form} />
             ) : values ? (

@@ -79,6 +79,7 @@ export const KIND_LABELS: Record<string, string> = {
   ready: '既製のモデル',
   rank: '並べる (利用者と品物)',
   group: '群分け',
+  anomaly: '異常の度合い',
 }
 
 /** タスクの日本語の名前 */
