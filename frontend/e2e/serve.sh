@@ -123,6 +123,11 @@ uv run python ../frontend/e2e/make_rank.py "$WORK/project" "$WORK/rank"
 # ML-Inference の make_group_bundle) を作り, 群に割り当てる新しい行の表を書く
 uv run python ../frontend/e2e/make_group.py "$WORK/project" "$WORK/group"
 
+# 異常の検知の骨組みの実験と同じ成果物 (距離に基づく度合いの決め方, 前処理のレシピ, 行ごとの
+# 度合い, 検証用の評価) と, 異常の度合いの一式 (版 11. ML-Inference の make_anomaly_bundle) を作り,
+# 度合いを出す新しい行の表を書く
+uv run python ../frontend/e2e/make_anomaly.py "$WORK/anomaly"
+
 # 既製のモデルの一式で推論する画像 (赤, 緑, 青と, 読めないファイル)
 uv run python - "$WORK/ready-images" <<'PY'
 import sys

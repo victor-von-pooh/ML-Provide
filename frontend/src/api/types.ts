@@ -100,6 +100,123 @@ export interface Description {
   rank?: RankInfo | null
   /** 群分けの一式 (版 9) の群の数, 群を作る列, 学習の群の安定性と群の要約 */
   group?: GroupInfo | null
+  /** 異常の度合いの一式 (版 11) の度合いの決め方, 列, 件数の上限, 正常の行の分布, 実験の評価 */
+  anomaly?: AnomalyInfo | null
+}
+
+/** 学習用の正常の行の度合いの分布 */
+export interface AnomalyNormal {
+  rows: number
+  mean: number
+  p50: number
+  p90: number
+  p95: number
+  p99: number
+  max: number
+}
+
+/** 実験の 1 つの分割の上位 K 件の適合率と PR-AUC (異常の行のある分割だけ) */
+export interface AnomalyEvaluation {
+  rows: number
+  anomalies: number
+  k: number
+  precision_at_k: number | null
+  average_precision: number | null
+}
+
+/** 異常の度合いの一式の anomaly の欄 */
+export interface AnomalyInfo {
+  /** autoencoder (自己符号化器の再構成の誤差) か distance (正常の行の中心からの距離) */
+  score: string
+  /** 度合いに使う列 (前処理の後の列) */
+  features: string[]
+  /** 行の id の列 (人の確認の記録が行を指す) */
+  id: string
+  /** 人が 1 回に確かめる件数の上限 */
+  capacity: number
+  /** 実験の評価の上位 K 件の K */
+  k: number
+  /** 実験の行ごとの度合いの表の行の数 */
+  rows: number
+  normal: AnomalyNormal
+  /** 分割の名前から評価 */
+  evaluations: Record<string, AnomalyEvaluation>
+  /** 元の表の度合いと実験の度合いの比べ (表を渡して作った場合だけ) */
+  check: { rows: number; agreement: number; max_diff: number } | null
+}
+
+/** 度合いの上位の 1 行 (ML-Inference の異常の度合いの結論の top) */
+export interface AnomalyTopRow {
+  /** 予測の表の行の位置 */
+  row: number
+  /** 行の id の値 (表に id の列が無ければ null) */
+  id: string | number | boolean | null
+  score: number
+  /** 最も外れた列とその割合 */
+  column: string | null
+  column_share: number | null
+}
+
+/** 異常の度合いの結果のまとめ (ML-Inference の異常の度合いの結論) */
+export interface AnomalySummary extends Counts {
+  score: string
+  /** 予測の表の行の id の列 (無ければ null) */
+  id: string | null
+  /** 予測した行の度合いの分布 (予測した行が無ければ null) */
+  distribution: { p50: number; p90: number; p99: number; max: number } | null
+  normal: AnomalyNormal
+  /** 学習用の正常の行の 99 % 点を超えた行の数 */
+  beyond_normal: number
+  top: AnomalyTopRow[]
+  evaluations: Record<string, AnomalyEvaluation>
+}
+
+/** 異常の度合いの振り分けのまとめ (意思決定の結果の summary) */
+export interface TriageSummary {
+  rows: number
+  acted: number
+  capacity: number
+  /** 回した行の最も低い度合い (回す行が無ければ null) */
+  lowest: number | null
+  normal_p99: number
+  /** 回さなかった行のうち 99 % 点を超えた行の数 */
+  left_beyond: number
+}
+
+/** 人の確認の判断 */
+export type Judgment = 'anomaly' | 'normal'
+
+/** 人の確認に回した 1 行 (GET /api/results/{id}/queue) */
+export interface ReviewQueueRow {
+  row: number
+  /** 記録に使う行の id (id の列の無い結果は行の位置) */
+  key: string | number
+  id: string | number | boolean | null
+  score: number | null
+  rank: number | null
+  column: string | null
+  column_share: number | null
+  /** 今の判断 (その行の最後の記録. 無ければ null) */
+  judgment: Judgment | null
+  reviewer: string | null
+  reviewed_at: string | null
+}
+
+/** 人の確認の待ち行列 */
+export interface ReviewQueue {
+  /** 行の id の列 (無ければ null) */
+  id: string | null
+  /** 人の確認に回す件数の上限 (振り分けていなければ null) */
+  capacity: number | null
+  rows: ReviewQueueRow[]
+}
+
+/** 人の確認の記録の 1 件 (ML-Inference の reviews.csv の 1 行) */
+export interface ReviewRecord {
+  id: string
+  judgment: string
+  reviewer: string
+  reviewed_at: string
 }
 
 /**

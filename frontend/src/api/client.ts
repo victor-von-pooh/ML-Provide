@@ -7,6 +7,7 @@ import type {
   DatasetDescription,
   Decision,
   ExperimentList,
+  Judgment,
   Listing,
   Policy,
   PolicyAct,
@@ -19,6 +20,8 @@ import type {
   Remeasure,
   Representatives,
   Result,
+  ReviewQueue,
+  ReviewRecord,
   RowReason,
   Rows,
   Rules,
@@ -137,6 +140,10 @@ export const api = {
   },
   representatives: (id: string, count: number) =>
     request<Representatives>(`/api/results/${id}/representatives?count=${count}`),
+  queue: (id: string) => request<ReviewQueue>(`/api/results/${id}/queue`),
+  reviews: (id: string) => request<{ records: ReviewRecord[] }>(`/api/results/${id}/reviews`),
+  addReview: (id: string, row: string | number, judgment: Judgment, reviewer: string) =>
+    request<ReviewRecord>(`/api/results/${id}/reviews`, json('POST', { row, judgment, reviewer })),
   conclude: (id: string, rules: Rules) =>
     request<Result>(`/api/results/${id}/conclude`, json('POST', { rules })),
   decide: (id: string, decision: Decision | null) =>

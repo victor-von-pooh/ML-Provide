@@ -759,9 +759,9 @@ def bundle_kind(path: str) -> Optional[str]:
     Returns
     ----------
     kind: Optional[str]
-        データの種類 (noise は問題の設定を読まない雑音だけの一式, rank と
-        group は同じく読まない並べるの一式と群分けの一式, ready は既製の
-        モデルの一式. 読めない一式は None)
+        データの種類 (noise は問題の設定を読まない雑音だけの一式, rank,
+        group, anomaly は同じく読まない並べるの一式, 群分けの一式, 異常の
+        度合いの一式, ready は既製のモデルの一式. 読めない一式は None)
     """
     # 一覧と同じ覚えた説明 (読めない一式は, 今までどおり読んで理由を出す)
     try:
@@ -792,14 +792,15 @@ def problem_state(entry: dict[str, Any], home: Path) -> dict[str, Any]:
         None), error (読めない理由), hint (つないでいない場合の候補),
         hint_note (候補が写しか元かを伝える文)
     """
-    # 雑音だけの一式, 並べるの一式, 群分けの一式は, 問題の設定を読まず
-    # 候補も探さない (画面が一式と並べて要求しても, 結論と意思決定に使わない
-    # ため. 並べる件数と反応の表の列は, 一式が問題の設定の rank から写して
-    # 持つ. 群の数と列は実験の成果物から写して持つ)
+    # 雑音だけの一式, 並べるの一式, 群分けの一式, 異常の度合いの一式は,
+    # 問題の設定を読まず候補も探さない (画面が一式と並べて要求しても, 結論と
+    # 意思決定に使わないため. 並べる件数と反応の表の列は, 一式が問題の設定の
+    # rank から写して持つ. 群の数と列, 人の確認の件数の上限は実験の成果物
+    # から写して持つ)
     text = entry.get("problem")
     state: dict[str, Any]
     kind = bundle_kind(str(entry["path"]))
-    if kind in ("noise", "rank", "group"):
+    if kind in ("noise", "rank", "group", "anomaly"):
         state = {"path": text if isinstance(text, str) else None,
                  "linked": None, "error": None, "hint": None,
                  "hint_note": None}

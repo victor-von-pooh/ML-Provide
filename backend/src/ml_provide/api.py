@@ -101,8 +101,12 @@ RANK_TABLES = {".csv": ",", ".tsv": "\t", ".parquet": None}
 MAX_REPRESENTATIVES = 20
 
 # 推論の後に表を読み直して結論を出し直さない出力の形 (表の出力, 並べる,
-# 群分け. infer の結論のまま残す)
+# 群分け. infer の結論のまま残す. 異常の度合いの一式も同じ)
 KEPT_CONCLUSIONS = frozenset({"table", "ranking", "cluster"})
+
+# 異常の度合いの一式で, 人の確認に回す件数の上限 (確認の待ち行列を 1 度に
+# 返すため)
+MAX_CAPACITY = 1000
 
 # 並べるの一式だけに渡せる欄を, ほかの一式に渡したときの文
 RANK_ONLY = (
@@ -1168,7 +1172,11 @@ def predict(
     except (OSError, *USER_ERRORS) as error:
         raise bundle_error(str(entry["path"]), error) from error
     rules, decision = body.rules, body.decision
-    if not bundle.column_output:
+    if bundle.from_anomaly:
+        # 異常の度合いの一式は振り分けだけ (省くと一式の既定)
+        decision = anomaly_decision(bundle, body)
+        rules = None
+    elif not bundle.column_output:
         # 列の出力でない一式は件数だけ (決め方と意思決定は使えないもの)
         given = any(v is not None for v in (rules or {}).values())
         if given or decision or body.forecast:
@@ -1241,14 +1249,18 @@ def predict(
     # (書き出しの途中で失敗した結果は, 壊れたまま残さずに削除)
     result_id, place = get_store(request).new_result_dir()
     meta = {k: v for k, v in result.items() if k != "frame"}
-    # (表の出力, 並べる, 群分けの結果は infer の結論のまま. 表の出力の件数は
-    # 数え直しても同じで, 並べるの利用者ごとの数え方と群分けの群の要約と
-    # 群の安定性は件数だけの結論に無いため)
+    # (表の出力, 並べる, 群分け, 異常の度合いの結果は infer の結論のまま.
+    # 表の出力の件数は数え直しても同じで, 並べるの利用者ごとの数え方と
+    # 群分けの群の要約と群の安定性, 異常の度合いの分布と上位の行は件数
+    # だけの結論に無いため)
     # (出し直しは書いた result.yaml を読んで渡す. 予測の表を読む列の型
     # column_types は write_result が書くときに決めるため)
     try:
         ml_inference.write_result(result, place)
-        if meta.get("output_form") not in KEPT_CONCLUSIONS:
+        kept = meta.get("output_form") in KEPT_CONCLUSIONS or (
+            meta.get("kind") == "anomaly"
+        )
+        if not kept:
             with RESULT_LOCK:
                 conclude_into(
                     place, read_meta(place), meta.get("rules") or {}
@@ -1259,6 +1271,55 @@ def predict(
     view = result_view(result_id, place)
 
     return view
+
+
+def anomaly_decision(
+    bundle: ml_inference.Bundle, body: PredictRequest
+) -> Optional[dict[str, Any]]:
+    """
+    異常の度合いの一式に渡す振り分けを確かめる関数
+
+    Parameters
+    ----------
+    bundle: ml_inference.Bundle
+        異常の度合いの一式
+    body: PredictRequest
+        推論の要求
+
+    Returns
+    ----------
+    decision: Optional[dict[str, Any]]
+        渡す振り分け (None は一式の既定, 空の辞書は振り分けない. 型と
+        項目は ML-Inference が確かめる)
+
+    Raises
+    ----------
+    HTTPException
+        結論の決め方か何段も先の予測を渡した場合と, 件数の上限が
+        MAX_CAPACITY を超える場合は 400
+    """
+    # 結論の決め方と何段も先の予測は使えないもの
+    given = any(v is not None for v in (body.rules or {}).values())
+    if given or body.forecast:
+        raise HTTPException(
+            400, "異常の度合いの一式には, 結論の決め方と何段も先の予測を"
+            "使えません. 意思決定は振り分け ({type: triage, capacity}) だけ"
+            "です"
+        )
+    decision = body.decision
+    found = bundle.info.get("decision") if decision is None else decision
+    capacity = (found or {}).get("capacity") if isinstance(
+        found, dict
+    ) else None
+    if isinstance(capacity, int) and not isinstance(capacity, bool) and (
+        capacity > MAX_CAPACITY
+    ):
+        raise HTTPException(
+            400, f"人の確認に回す件数の上限は {MAX_CAPACITY} 件までに"
+            f"してください (今は {capacity} 件)"
+        )
+
+    return decision
 
 
 def grouping_meta(
