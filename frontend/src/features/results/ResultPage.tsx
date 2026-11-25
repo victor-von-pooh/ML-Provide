@@ -20,8 +20,11 @@ import {
   CLUSTER_STATUS_LABELS,
   CLUSTER_UNSUPPORTED,
   clusterName,
+  clusterRepresentatives,
   clusterRowColumns,
   clusterRows,
+  DEFAULT_REPRESENTATIVES,
+  REPRESENTATIVE_COUNTS,
 } from '../../lib/clusters'
 import {
   metricText,
@@ -37,7 +40,11 @@ import { rowReasonable } from '../../lib/rowReason'
 import { fromForm, toForm, type RulesForm } from '../../lib/rules'
 import { OutputNotices } from '../bundles/OutputView'
 import { ArtifactCard } from './ArtifactCard'
-import { ClusterStabilityView, ClusterSummaryTable } from './ClusterCards'
+import {
+  ClusterRepresentativesTable,
+  ClusterStabilityView,
+  ClusterSummaryTable,
+} from './ClusterCards'
 import { DecisionCard } from './DecisionCard'
 import { ExplainCard } from './ExplainCard'
 import { RemeasureCard } from './RemeasureCard'
@@ -181,6 +188,8 @@ function RowsTable({
   onReason,
   cluster = '',
   onCluster,
+  focus = null,
+  onFocus,
 }: {
   result: Result
   onView?: (row: number) => void
@@ -188,6 +197,9 @@ function RowsTable({
   /** 群分けの結果で絞る群の番号 (空は全ての群. 群の要約の「行を見る」と同じ値) */
   cluster?: string
   onCluster?: (group: string) => void
+  /** 1 行だけを見る行の位置 (群の代表の行の「行を見る」. null は絞らない) */
+  focus?: number | null
+  onFocus?: (row: number | null) => void
 }) {
   const column = result.column_output !== false
   const [page, setPage] = useState(0)
@@ -197,13 +209,16 @@ function RowsTable({
   const grouped = result.output_form === 'cluster'
   const clusterCount = result.summary?.k ?? result.grouping?.k ?? 0
   // 群の要約から絞る群を変えたら, ページを初めに戻す
+  // (代表の行の「行を見る」で 1 行に絞るときも同じ)
   const [seenCluster, setSeenCluster] = useState(cluster)
-  if (seenCluster !== cluster) {
+  const [seenFocus, setSeenFocus] = useState(focus)
+  if (seenCluster !== cluster || seenFocus !== focus) {
     setSeenCluster(cluster)
+    setSeenFocus(focus)
     setPage(0)
   }
   const rows = useQuery({
-    queryKey: ['rows', result.id, page, status, decision, cluster, result.rules],
+    queryKey: ['rows', result.id, page, status, decision, cluster, focus, result.rules],
     queryFn: () =>
       api.rows(result.id, {
         offset: page * PAGE,
@@ -211,6 +226,7 @@ function RowsTable({
         status: status || undefined,
         decision: decision || undefined,
         group: grouped && cluster !== '' ? Number(cluster) : undefined,
+        row: focus ?? undefined,
       }),
     placeholderData: keepPreviousData,
   })
@@ -267,6 +283,7 @@ function RowsTable({
             onChange={(event) => {
               setStatus(event.target.value)
               setPage(0)
+              onFocus?.(null)
             }}
             className="h-8 rounded-lg border border-line bg-surface px-2 text-sm"
           >
@@ -321,6 +338,7 @@ function RowsTable({
                 onChange={(event) => {
                   setDecision(event.target.value)
                   setPage(0)
+                  onFocus?.(null)
                 }}
                 className="h-8 rounded-lg border border-line bg-surface px-2 text-sm"
               >
@@ -360,6 +378,23 @@ function RowsTable({
               1 行ごとに, 最も近い群の中心の番号 (群) と, その中心までの埋め込みの空間の距離
               (小さいほど群の中心に近い) を出します. 割り当てられなかった行は理由を出します.
               表の全ての行は CSV で持ち出せます
+            </p>
+          )}
+          {focus !== null && (
+            <p
+              role="status"
+              className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-2 px-4 py-2 text-xs text-ink-2"
+            >
+              群の代表の行 #{focus} だけを見ています
+              {onFocus && (
+                <button
+                  type="button"
+                  className="text-accent-text underline"
+                  onClick={() => onFocus(null)}
+                >
+                  1 行の絞りを外す
+                </button>
+              )}
             </p>
           )}
           {manyProbabilities && (
@@ -555,8 +590,89 @@ function RankingCard({ result }: { result: Result }) {
   )
 }
 
+/**
+ * 群分けの結果の群の代表の行. 件数は既定が結論の 3 件で, 他の件数 (と結論に代表の行の
+ * 無い結果) は API で求める
+ */
+function RepresentativesCard({
+  result,
+  onPick,
+}: {
+  result: Result
+  onPick: (row: number, group: number) => void
+}) {
+  const [count, setCount] = useState(DEFAULT_REPRESENTATIVES)
+  const kept = clusterRepresentatives(result)
+  const useKept = count === DEFAULT_REPRESENTATIVES && kept !== undefined
+  const asked = useQuery({
+    queryKey: ['representatives', result.id, count],
+    queryFn: () => api.representatives(result.id, count),
+    enabled: !useKept,
+    placeholderData: keepPreviousData,
+  })
+  // (初めて求める件数の間は, 結論の 3 件を出したままにする)
+  const groups = useKept ? kept : (asked.data?.groups ?? (asked.isFetching ? kept : undefined))
+  const columns = result.grouping?.columns ?? []
+  return (
+    <Card
+      title="群の代表の行"
+      padded={false}
+      actions={
+        <>
+          <label className="sr-only" htmlFor="representatives-count">
+            代表の行の件数
+          </label>
+          <select
+            id="representatives-count"
+            value={count}
+            onChange={(event) => setCount(Number(event.target.value))}
+            className="h-8 rounded-lg border border-line bg-surface px-2 text-sm"
+          >
+            {REPRESENTATIVE_COUNTS.map((value) => (
+              <option key={value} value={value}>
+                群ごとに {value} 件
+              </option>
+            ))}
+          </select>
+        </>
+      }
+    >
+      <p className="border-b border-line px-4 py-2 text-xs text-ink-3">
+        群ごとに, 群の中心に近い順の割り当てた行と, 群を作る列の値です
+        (距離は群の中心までの埋め込みの空間の距離. 小さいほど群らしい行).
+        群の平均や最も多い値と並べて, 群を具体的な行で解釈できます. 「行を見る」で,
+        割り当てた行の表をその行だけにします
+      </p>
+      {!useKept && asked.error && <ErrorBox error={asked.error} live={false} />}
+      {groups ? (
+        groups.length > 0 ? (
+          <ClusterRepresentativesTable
+            groups={groups}
+            columns={columns}
+            summary={clusterRows(result)}
+            onPick={onPick}
+            caption="群の代表の行 (群ごとに中心に近い順の行, 距離, 群を作る列の値)"
+          />
+        ) : (
+          <p className="p-4 text-sm text-ink-2">群に割り当てた行が無いので, 代表の行はありません</p>
+        )
+      ) : (
+        !asked.error && <Spinner label="代表の行を求めています" />
+      )}
+    </Card>
+  )
+}
+
 /** 群分けの結果の群の要約 (新しいデータの群ごとの件数と特徴) と学習の群の安定性 */
-function ClusterCards({ result, onPick }: { result: Result; onPick: (group: number) => void }) {
+function ClusterCards({
+  result,
+  onPick,
+  onPickRow,
+}: {
+  result: Result
+  onPick: (group: number) => void
+  onPickRow: (row: number, group: number) => void
+}) {
   const rows = clusterRows(result)
   const stability = result.summary?.stability
   const columns = result.grouping?.columns ?? []
@@ -584,6 +700,7 @@ function ClusterCards({ result, onPick }: { result: Result; onPick: (group: numb
           <p className="p-4 text-sm text-ink-2">群に割り当てた行が無いので, 群の要約はありません</p>
         )}
       </Card>
+      <RepresentativesCard result={result} onPick={onPickRow} />
       {stability && (
         <Card title="群の安定性 (学習のとき)">
           <ClusterStabilityView stability={stability} />
@@ -657,12 +774,15 @@ export function ResultPage() {
   const [reasonRow, setReasonRow] = useState<number | null>(null)
   // 群分けの結果の表で絞る群 (群の要約の「行を見る」と表の欄で選ぶ. 空は全ての群)
   const [cluster, setCluster] = useState('')
+  // 1 行だけを見る行の位置 (群の代表の行の「行を見る」. null は絞らない)
+  const [focusRow, setFocusRow] = useState<number | null>(null)
   const [artifactOf, setArtifactOf] = useState(id)
   if (artifactOf !== id) {
     setArtifactOf(id)
     setArtifactRow(null)
     setReasonRow(null)
     setCluster('')
+    setFocusRow(null)
   }
   const navigate = useNavigate()
   const client = useQueryClient()
@@ -780,6 +900,12 @@ export function ResultPage() {
             result={data}
             onPick={(group) => {
               setCluster(String(group))
+              setFocusRow(null)
+              document.getElementById('result-rows')?.scrollIntoView({ block: 'start' })
+            }}
+            onPickRow={(row, group) => {
+              setCluster(String(group))
+              setFocusRow(row)
               document.getElementById('result-rows')?.scrollIntoView({ block: 'start' })
             }}
           />
@@ -869,7 +995,16 @@ export function ResultPage() {
             onView={data.artifacts ? setArtifactRow : undefined}
             onReason={reasonable ? setReasonRow : undefined}
             cluster={cluster}
-            onCluster={grouped ? setCluster : undefined}
+            onCluster={
+              grouped
+                ? (group) => {
+                    setCluster(group)
+                    setFocusRow(null)
+                  }
+                : undefined
+            }
+            focus={grouped ? focusRow : null}
+            onFocus={grouped ? setFocusRow : undefined}
           />
         </div>
       </div>

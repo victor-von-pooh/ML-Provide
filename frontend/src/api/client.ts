@@ -17,6 +17,7 @@ import type {
   ReadyCreateBody,
   ReadyPreview,
   Remeasure,
+  Representatives,
   Result,
   RowReason,
   Rows,
@@ -119,7 +120,14 @@ export const api = {
     request<Comparison>(`/api/results/compare?ids=${ids.map(encodeURIComponent).join(',')}`),
   rows: (
     id: string,
-    params: { offset: number; limit: number; status?: string; decision?: string; group?: number },
+    params: {
+      offset: number
+      limit: number
+      status?: string
+      decision?: string
+      group?: number
+      row?: number
+    },
   ) => {
     const search = new URLSearchParams()
     for (const [key, value] of Object.entries(params)) {
@@ -127,6 +135,8 @@ export const api = {
     }
     return request<Rows>(`/api/results/${id}/rows?${search.toString()}`)
   },
+  representatives: (id: string, count: number) =>
+    request<Representatives>(`/api/results/${id}/representatives?count=${count}`),
   conclude: (id: string, rules: Rules) =>
     request<Result>(`/api/results/${id}/conclude`, json('POST', { rules })),
   decide: (id: string, decision: Decision | null) =>

@@ -981,10 +981,40 @@ test('まとめるの骨組みの実験の中に作った群分けの一式を, 
     await expect(stability.locator('tbody tr').nth(2)).toContainText('+0.070')
     await expect(page.getByRole('heading', { name: '結論の決め方' })).toHaveCount(0)
 
+    // 群の代表の行: 群ごとに中心に近い 3 件 (結論のまま) と, 件数を変えて 5 件
+    const representatives = page.getByRole('table', {
+      name: '群の代表の行 (群ごとに中心に近い順の行, 距離, 群を作る列の値)',
+    })
+    await expect(representatives.locator('thead th')).toHaveText([
+      '群',
+      '順位',
+      '#',
+      '距離',
+      'spend',
+      'visits',
+      'region',
+      '行を見る',
+    ])
+    await expect(representatives.locator('tbody tr')).toHaveCount(9)
+    await page.getByLabel('代表の行の件数').selectOption('5')
+    await expect(representatives.locator('tbody tr')).toHaveCount(15)
+    await expect(representatives.locator('tbody tr').nth(5)).toContainText('south')
+
+    // 代表の行の「行を見る」で, 割り当てた行の表をその行だけにする
+    const rows = page.getByRole('table', { name: '群に割り当てた行 (行ごとの群と距離)' })
+    await page
+      .getByRole('button', { name: /^群 1 の代表の行 #\d+ を見る$/ })
+      .first()
+      .click()
+    await expect(page.getByLabel('群で絞る')).toHaveValue('1')
+    await expect(page.getByText(/^群の代表の行 #\d+ だけを見ています/)).toBeVisible()
+    await expect(rows.locator('tbody tr')).toHaveCount(1)
+    await expect(rows.locator('tbody tr').first()).toContainText('群 1')
+    await page.getByRole('button', { name: '1 行の絞りを外す' }).click()
+
     // 群の要約から群 1 の行だけを見る
     await page.getByRole('button', { name: '群 1 の行を見る' }).click()
     await expect(page.getByLabel('群で絞る')).toHaveValue('1')
-    const rows = page.getByRole('table', { name: '群に割り当てた行 (行ごとの群と距離)' })
     await expect(rows.locator('tbody tr')).toHaveCount(5)
     await expect(rows.locator('tbody tr').first()).toContainText('群 1')
     await expect(rows.locator('tbody tr').first()).toContainText('south')

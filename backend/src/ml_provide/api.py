@@ -96,6 +96,10 @@ MAX_REACTION_ROWS = MAX_RANK_ROWS
 # 並べるの一式で読む表のファイルの拡張子と区切り
 RANK_TABLES = {".csv": ",", ".tsv": "\t", ".parquet": None}
 
+# 群分けの結果で, 群ごとの代表の行を一度に求める件数の上限 (群の数 × 件数の
+# 行を 1 度に返すため)
+MAX_REPRESENTATIVES = 20
+
 # 推論の後に表を読み直して結論を出し直さない出力の形 (表の出力, 並べる,
 # 群分け. infer の結論のまま残す)
 KEPT_CONCLUSIONS = frozenset({"table", "ranking", "cluster"})
@@ -2040,7 +2044,8 @@ def get_rows(
     request: Request, result_id: str,
     offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=MAX_ROWS),
     status: Optional[str] = None, decision: Optional[str] = None,
-    group: Optional[int] = Query(None, ge=0)
+    group: Optional[int] = Query(None, ge=0),
+    row: Optional[int] = Query(None, ge=0)
 ) -> dict[str, Any]:
     """
     予測の表の一部を返す関数
@@ -2061,6 +2066,8 @@ def get_rows(
         判断で絞る
     group: Optional[int] = Query(None, ge=0)
         群の番号で絞る (群分けの結果だけ)
+    row: Optional[int] = Query(None, ge=0)
+        行の位置 (index) で 1 行だけに絞る
 
     Returns
     ----------
@@ -2091,6 +2098,8 @@ def get_rows(
         frame = frame[frame["decision"] == decision]
     if group is not None:
         frame = frame[frame["group"] == group]
+    if row is not None:
+        frame = frame[frame["index"] == row]
     part = frame.iloc[offset:offset + limit]
     records = json.loads(part.to_json(orient="records", force_ascii=False))
     rows = {
@@ -2101,6 +2110,59 @@ def get_rows(
     }
 
     return rows
+
+
+@router.get("/results/{result_id}/representatives")
+def get_representatives(
+    request: Request, result_id: str,
+    count: int = Query(ge=1, le=MAX_REPRESENTATIVES)
+) -> dict[str, Any]:
+    """
+    群分けの結果の, 群ごとの代表の行を件数を変えて求める関数 (結果には
+    残さない)
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    result_id: str
+        結果の id
+    count: int = Query(ge=1, le=MAX_REPRESENTATIVES)
+        群ごとの代表の行の件数の上限
+
+    Returns
+    ----------
+    representatives: dict[str, Any]
+        count と groups (ML-Inference の group_representatives の並び)
+
+    Raises
+    ----------
+    HTTPException
+        群分けでない結果の場合と, 一式が登録されていないか読めない場合は
+        400
+    """
+    # 群を作る列は一式から読むので, 登録した一式で求める
+    place = find_result(request, result_id)
+    meta = read_meta(place)
+    if meta.get("output_form") != "cluster":
+        raise HTTPException(400, "代表の行は群分けの結果だけで求めます")
+    entry = get_store(request).find(str(meta.get("bundle_id")))
+    if entry is None:
+        raise HTTPException(
+            400, "一式が登録されていないので, 代表の行の件数を変えられません"
+        )
+    try:
+        bundle = open_bundle(str(entry["path"]))
+    except (OSError, *USER_ERRORS) as error:
+        raise bundle_error(str(entry["path"]), error) from error
+    frame = read_frame(place, meta)
+    try:
+        groups = ml_inference.group_representatives(bundle, frame, count)
+    except USER_ERRORS as error:
+        raise user_error(error) from error
+    representatives = {"count": count, "groups": groups}
+
+    return representatives
 
 
 # 配列の見本を同時に作る数 (大きな配列でメモリを使い切らないための上限)

@@ -1,8 +1,10 @@
 import type { ClusterRow, Result } from '../api/types'
 import {
   clusterName,
+  clusterRepresentatives,
   clusterRowColumns,
   clusterRows,
+  representativeValue,
   diffText,
   featureHeading,
   scoreText,
@@ -74,5 +76,27 @@ describe('群分けの結果と欄', () => {
     expect(stabilityMethodText({ ...stability, method: 'other' })).toBe('other, 5 回')
     expect(clusterName(2)).toBe('群 2')
     expect(clusterName('全体')).toBe('全体')
+  })
+
+  it('結論の群の代表の行は群分けの結果だけで, 結論に無ければ undefined', () => {
+    const representatives = [{ group: 0, rows: [{ row: 4, distance: 0.1, values: { a: 1 } }] }]
+    const grouped = {
+      output_form: 'cluster',
+      summary: { rows: 1, predicted: 1, skipped: 0, representatives },
+    } as unknown as Result
+    expect(clusterRepresentatives(grouped)).toEqual(representatives)
+    expect(
+      clusterRepresentatives({ ...grouped, summary: { rows: 1, predicted: 1, skipped: 0 } }),
+    ).toBeUndefined()
+    expect(clusterRepresentatives({ ...grouped, output_form: 'class' })).toBeUndefined()
+  })
+
+  it('代表の行の数の列の値は, 文字でも数に読めれば数にする', () => {
+    expect(representativeValue('1045.25', true)).toBe(1045.25)
+    expect(representativeValue('001', false)).toBe('001')
+    expect(representativeValue('?', true)).toBe('?')
+    expect(representativeValue('', true)).toBe('')
+    expect(representativeValue(null, true)).toBeNull()
+    expect(representativeValue(3, true)).toBe(3)
   })
 })

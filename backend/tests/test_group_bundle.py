@@ -233,3 +233,83 @@ def test_group_refusals(
                           params={"group": 0})
     assert response.status_code == 400
     assert response.json()["detail"] == "群で絞れるのは群分けの結果だけです"
+
+
+def test_group_representatives(
+    client: TestClient, group_files: tuple[Path, Path]
+) -> None:
+    """
+    群分けの結論に群の代表の行があり, 件数を変えて求められ, 代表の行の
+    位置で 1 行に絞れることと, 求められない場合に断ることを確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    group_files: tuple[Path, Path]
+        一式と新しい行の表
+
+    Returns
+    ----------
+    None
+    """
+    # 結論の代表の行は ML-Inference の group_representatives の既定の 3 件
+    path, table = group_files
+    bundle = register(client, path)
+    result = client.post(
+        f"/api/bundles/{bundle['id']}/predict", json={"source": str(table)}
+    ).json()
+    representatives = result["summary"]["representatives"]
+    frame = ml_inference.predict(str(path), table)
+    assert representatives == ml_inference.group_representatives(
+        str(path), frame
+    )
+    assert [item["group"] for item in representatives] == [0, 1, 2]
+    assert [len(item["rows"]) for item in representatives] == [3, 3, 3]
+    first = representatives[0]["rows"][0]
+    assert set(first) == {"row", "distance", "values"}
+    assert list(first["values"]) == ["spend", "visits", "region"]
+
+    # 件数を変えると, 置き場の表と登録した一式で求め直す (群の行が少なければ
+    # その数だけ)
+    url = f"/api/results/{result['id']}/representatives"
+    response = client.get(url, params={"count": 10})
+    assert response.status_code == 200, response.text
+    again = response.json()
+    assert again["count"] == 10
+    assert [len(item["rows"]) for item in again["groups"]] == [5, 5, 5]
+    assert [item["rows"][:3] for item in again["groups"]] == [
+        item["rows"] for item in representatives
+    ]
+    for item in again["groups"]:
+        distances = [line["distance"] for line in item["rows"]]
+        assert distances == sorted(distances)
+
+    # 代表の行の位置で, 割り当てた行の表を 1 行に絞る
+    one = client.get(
+        f"/api/results/{result['id']}/rows", params={"row": first["row"]}
+    ).json()
+    assert one["total"] == 1
+    assert one["rows"][0]["index"] == first["row"]
+    assert one["rows"][0]["group"] == 0
+
+    # 件数の範囲の外と, 群分けでない結果と, 一式を消した結果は断る
+    for count in (0, 21):
+        assert client.get(url, params={"count": count}).status_code == 422
+    sample = client.post("/api/samples").json()[0]
+    other = client.post(
+        f"/api/bundles/{sample['id']}/predict",
+        json={"source": sample["sample_input"]}
+    ).json()
+    response = client.get(
+        f"/api/results/{other['id']}/representatives", params={"count": 5}
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "代表の行は群分けの結果だけで求めます"
+    assert client.delete(f"/api/bundles/{bundle['id']}").status_code == 204
+    response = client.get(url, params={"count": 5})
+    assert response.status_code == 400
+    assert "一式が登録されていない" in response.json()["detail"]
+    # 結論の 3 件は残る
+    kept = client.get(f"/api/results/{result['id']}").json()
+    assert kept["summary"]["representatives"] == representatives
