@@ -140,8 +140,8 @@ export interface GroupInfo {
   k: number
   /** 群を作る列 (群の要約の列の順) */
   columns: string[]
-  /** 符号化した行の幅と埋め込みの幅 */
-  features: number
+  /** 符号化した行の幅 (既製の埋め込みの群分けの一式 (版 10) は列を符号化しないので null) と埋め込みの幅 */
+  features: number | null
   width: number
   /** 実験の群の割り当ての表の行を見分ける列 (行の番号なら null) */
   id: string | null
