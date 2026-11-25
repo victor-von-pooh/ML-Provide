@@ -1689,25 +1689,28 @@ def read_frame(place: Path, meta: dict[str, Any]) -> pd.DataFrame:
     # 画面の都合で CSV の文字から読み直す列 (column_types に依らない).
     # 状態, 理由, 判断は文字, 分類の予測は文字 (数字のクラスも. 決め方の
     # クラスの名前と合わせるため. 文の出力の予測は read_result のまま),
-    # 並べるの利用者と品物は文字 (番号の表と同じく文字にして引くため)
+    # 並べるの利用者と品物は文字 (番号の表と同じく文字にして引くため), 表の
+    # 出力の種類の列は文字 (数の種類の値で欠けた行があると column_types が
+    # integer になり, 行の有無で型が変わらないように)
     again: dict[str, Any] = {"status": str, "reason": str, "decision": str}
     text = meta.get("output_form") == "text"
     if meta.get("task") == "classification" and not text:
         again["prediction"] = str
     if meta.get("output_form") == "ranking":
         again.update(user=str, item=str)
+    columns = meta.get("table_columns") or []
+    for column in columns:
+        if column.get("type") == "category":
+            again[str(column["name"])] = str
 
     # column_types の無い列は, このアプリが結果に残した型で読み直す. 版 1
-    # と 2 の結果は column_types を持たず, 数に見える種類の値が数に, 欠損の
-    # ある整数が小数になるため (版 3 の結果では同じ型になる)
+    # と 2 の結果は column_types を持たないため (版 3 の結果では同じ型)
     kept = result.get("column_types")
     if not isinstance(kept, dict):
         kept = {}
     hints: dict[str, Any] = {}
-    for column in meta.get("table_columns") or []:
-        if column.get("type") == "category":
-            hints[str(column["name"])] = str
-        elif column.get("integer"):
+    for column in columns:
+        if column.get("type") != "category" and column.get("integer"):
             hints[str(column["name"])] = "Int64"
     if meta.get("output_form") == "ranking":
         hints["rank"] = "Int64"

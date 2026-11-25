@@ -370,8 +370,8 @@ def test_index_column_and_stable_groups(
 
 def test_number_like_inputs(tmp_path: Path, client: TestClient) -> None:
     """
-    版 3 の結果で, 数に見える文字の入力の列 ("001") が表とまとめの名前に
-    文字のまま出ることを確かめる関数
+    版 3 の結果で, 数に見える文字の入力の列 ("001") と NA, None, null の値
+    が表とまとめの名前に文字のまま出ることを確かめる関数
 
     Parameters
     ----------
@@ -389,6 +389,7 @@ def test_number_like_inputs(tmp_path: Path, client: TestClient) -> None:
     bundle = create(client, paths)
     frame = pd.read_csv(paths["csv"])
     frame["code"] = [f"{n % 3:03d}" for n in range(len(frame))]
+    frame["area"] = [("NA", "None", "null")[n % 3] for n in range(len(frame))]
     source = tmp_path / "new.parquet"
     frame.to_parquet(source)
     result = client.post(
@@ -412,6 +413,16 @@ def test_number_like_inputs(tmp_path: Path, client: TestClient) -> None:
         json={"rules": {"group_by": "code"}},
     ).json()
     assert sorted(g["group"] for g in again["summary"]["groups"]) == groups
+
+    # NA, None, null の値は欠損にせず, 1 つの値として数える
+    rows = client.get(f"/api/results/{result['id']}/rows?limit=3").json()
+    assert [row["area"] for row in rows["rows"]] == ["NA", "None", "null"]
+    areas = client.post(
+        f"/api/results/{result['id']}/conclude",
+        json={"rules": {"group_by": "area"}},
+    ).json()["summary"]["groups"]
+    assert sorted(g["group"] for g in areas) == ["NA", "None", "null"]
+    assert sum(g["rows"] for g in areas) == 40
 
 
 def test_samples(client: TestClient) -> None:
