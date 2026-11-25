@@ -1,4 +1,5 @@
-import type { Result } from '../api/types'
+import type { ClusterRow, Result } from '../api/types'
+import { ALL_ROWS, clusterName, clusterRows, featureHeading } from './clusters'
 import { DECISION_TYPES } from './decision'
 import { formatPercent, formatValue, TASK_LABELS } from './format'
 
@@ -256,15 +257,133 @@ function columns(results: Result[]): CompareSection | null {
   return { title: '予測の表の列', rows: [row('他の結果に無い列', values)] }
 }
 
+/** 割合の差をポイントで (+5.0 ポイント (増えた). 表示の桁で 0 なら ±0.0 ポイント) */
+export function shareDiffText(share: number, base: number): string {
+  const points = (share - base) * 100
+  const text = Math.abs(points).toFixed(1)
+  if (Number(text) === 0) return '±0.0 ポイント'
+  return points > 0 ? `+${text} ポイント (増えた)` : `-${text} ポイント (減った)`
+}
+
+/** 群分けの結果が全てか (群分けの結果どうしの比べの表にする) */
+export function isClusterComparison(results: Result[]): boolean {
+  return results.length > 0 && results.every((r) => r.output_form === 'cluster')
+}
+
+/** 群分けの結論 (全体の文, 行, 割り当てた行, 割り当てられなかった行, 群の数) */
+function clusterConclusion(results: Result[]): CompareSection {
+  return {
+    title: '結論',
+    rows: [
+      row(
+        '結論の文',
+        results.map((r) => r.sentences.slice(0, r.overall_count ?? r.sentences.length).join(' ')),
+      ),
+      row(
+        '行',
+        results.map((r) => show(r.summary?.rows)),
+      ),
+      row(
+        '割り当てた行',
+        results.map((r) => show(r.summary?.predicted)),
+      ),
+      row(
+        '割り当てられなかった行',
+        results.map((r) => show(r.summary?.skipped)),
+      ),
+      row(
+        '群の数',
+        results.map((r) => show(r.summary?.k ?? r.grouping?.k)),
+      ),
+    ],
+  }
+}
+
+/**
+ * 群分けの結果どうしの比べ. 群の大きさ (件数, 割合, 学習のときの割合との差), 結果 1 からの
+ * 割合の差, 群ごとと全体の列の特徴. 値は結論の群の要約 (summary.groups) と, 結果に残した
+ * 学習のときの群の要約 (grouping.learned) から取る. 同じ一式の結果だけなので, 群の数,
+ * 群を作る列, 学習のときの群の要約は結果 1 のものを使う
+ */
+function clusterSections(results: Result[]): CompareSection[] {
+  const first = results[0]
+  const learned = first?.grouping?.learned ?? []
+  const columns = first?.grouping?.columns ?? []
+  const own = results.map((r) => clusterRows(r))
+  // 群の番号は群の数と, 結果と学習の群の要約にある番号の和 (行の無い群も 0 件で並べる)
+  const k = first?.summary?.k ?? first?.grouping?.k ?? 0
+  const numbers = [
+    ...new Set([
+      ...Array.from({ length: k }, (_, index) => index),
+      ...[...learned, ...own.flat()]
+        .map((item) => item.group)
+        .filter((group): group is number => typeof group === 'number'),
+    ]),
+  ].sort((a, b) => a - b)
+  const pick = (items: ClusterRow[], group: number | string) =>
+    items.find((item) => item.group === group)
+  const share = (index: number, group: number) => pick(own[index] ?? [], group)?.share ?? 0
+  const sizes = numbers.map((group) => {
+    const base = pick(learned, group)?.share
+    const label =
+      base === undefined
+        ? clusterName(group)
+        : `${clusterName(group)} (学習のとき ${formatPercent(base)})`
+    return row(
+      label,
+      results.map((_, index) => {
+        const found = pick(own[index] ?? [], group)
+        const rows = found?.rows ?? 0
+        const part = share(index, group)
+        const note = base === undefined ? '' : `, 学習から ${shareDiffText(part, base)}`
+        return `${rows.toLocaleString()} 件 (${formatPercent(part)}${note})`
+      }),
+    )
+  })
+  // 結果 1 からの差 (結果 1 は空. 全ての差が表示の桁で 0 なら違う印を付けない)
+  const changes = numbers.map((group): CompareRow => {
+    const values = results.map((_, index) =>
+      index === 0 ? NONE : shareDiffText(share(index, group), share(0, group)),
+    )
+    return {
+      label: clusterName(group),
+      values,
+      differs: values.some((value) => value !== NONE && !value.startsWith('±')),
+    }
+  })
+  // 列の特徴 (見出しは数の列は平均, 種類の列は最も多い値. 学習のときの値を添える)
+  const every = [...learned, ...own.flat()]
+  const cell = (item: ClusterRow | undefined, name: string) => {
+    const value = item?.[name]
+    return value === null || value === undefined ? NONE : formatValue(value)
+  }
+  const features = [...numbers, ALL_ROWS].map((group): CompareSection => ({
+    title: group === ALL_ROWS ? '全体の列の特徴' : `${clusterName(group)} の列の特徴`,
+    rows: columns.map((name) => {
+      const base = pick(learned, group)
+      const heading = featureHeading(name, every)
+      const label = base ? `${heading} (学習のとき ${cell(base, name)})` : heading
+      return row(
+        label,
+        own.map((items) => cell(pick(items, group), name)),
+      )
+    }),
+  }))
+  return [
+    clusterConclusion(results),
+    { title: '群の大きさ (件数, 割合, 学習のときの割合との差)', rows: sizes },
+    { title: '結果 1 からの割合の差', rows: changes },
+    ...features,
+  ]
+}
+
 /** 比べの表のまとまりを作る (どの結果にも値の無い行と, 行の無いまとまりは除く) */
 export function compareSections(results: Result[]): CompareSection[] {
-  return [
-    heads(results),
-    rules(results),
-    ...conclusions(results),
-    decisions(results),
-    columns(results),
-  ]
+  // 群分けの結果どうしは, 結論の決め方, 判断の内訳, 意思決定の代わりに群の要約を並べる
+  const body = isClusterComparison(results)
+    ? clusterSections(results)
+    : [rules(results), ...conclusions(results), decisions(results)]
+  return [heads(results), ...body, columns(results)]
     .filter((section): section is CompareSection => !!section)
     .map((section) => ({
       ...section,

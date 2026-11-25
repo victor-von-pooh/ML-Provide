@@ -1,5 +1,5 @@
 import type { Result } from '../api/types'
-import { compareSections } from './compare'
+import { compareSections, shareDiffText } from './compare'
 
 // 解約の見本の同じ入力の結果 (決め方と意思決定だけが違う)
 const base: Result = {
@@ -98,5 +98,109 @@ describe('結果どうしの比べ', () => {
       '結論',
       '判断の内訳',
     ])
+  })
+})
+
+// 同じ群分けの一式の 2 つの結果 (結果 2 は群 0 が増え, 群 2 に行が無い)
+const learned = [
+  { group: 0, rows: 50, share: 0.5, stability: 0.9, spend: 10, region: 'north (80 %)' },
+  { group: 1, rows: 30, share: 0.3, stability: 0.8, spend: 20, region: 'south (70 %)' },
+  { group: 2, rows: 20, share: 0.2, stability: 0.7, spend: 30, region: 'east (90 %)' },
+  { group: '全体', rows: 100, share: 1, stability: null, spend: 17, region: 'north (40 %)' },
+]
+const clusterBase: Result = {
+  id: 'g1',
+  bundle: { name: '顧客の群', path: '/bundles/group' },
+  bundle_id: 'gb',
+  source: 'january.csv',
+  created_at: '2026-01-01T00:00:00Z',
+  task: null,
+  output_form: 'cluster',
+  column_output: false,
+  summary: {
+    rows: 10,
+    predicted: 10,
+    skipped: 0,
+    k: 3,
+    groups: [
+      { group: 0, rows: 5, share: 0.5, stability: 0.9, spend: 11, region: 'north (80 %)' },
+      { group: 1, rows: 3, share: 0.3, stability: 0.8, spend: 21, region: 'south (60 %)' },
+      { group: 2, rows: 2, share: 0.2, stability: 0.7, spend: 31, region: 'east (50 %)' },
+      { group: '全体', rows: 10, share: 1, stability: null, spend: 18, region: 'north (40 %)' },
+    ] as unknown as NonNullable<Result['summary']>['groups'],
+  },
+  sentences: ['10 行のうち 10 行を 3 個の群に割り当てた'],
+  overall_count: 1,
+  columns: ['index', 'group', 'distance', 'spend', 'region'],
+  grouping: { k: 3, columns: ['spend', 'region'], learned },
+}
+const clusterLater: Result = {
+  ...clusterBase,
+  id: 'g2',
+  source: 'february.csv',
+  summary: {
+    rows: 8,
+    predicted: 8,
+    skipped: 0,
+    k: 3,
+    groups: [
+      { group: 0, rows: 6, share: 0.75, stability: 0.9, spend: 12, region: 'north (90 %)' },
+      { group: 1, rows: 2, share: 0.25, stability: 0.8, spend: 22, region: 'south (50 %)' },
+      { group: 2, rows: 0, share: 0, stability: 0.7, spend: null, region: null },
+      { group: '全体', rows: 8, share: 1, stability: null, spend: 14, region: 'north (75 %)' },
+    ] as unknown as NonNullable<Result['summary']>['groups'],
+  },
+}
+
+describe('群分けの結果どうしの比べ', () => {
+  const sections = compareSections([clusterBase, clusterLater])
+  const titles = sections.map((s) => s.title)
+
+  it('結論の決め方, 判断の内訳, 意思決定の代わりに群の要約を並べる', () => {
+    expect(titles).not.toContain('結論の決め方')
+    expect(titles).not.toContain('判断の内訳')
+    expect(titles).toContain('群の大きさ (件数, 割合, 学習のときの割合との差)')
+    expect(titles).toContain('結果 1 からの割合の差')
+    expect(titles).toContain('群 0 の列の特徴')
+    expect(titles).toContain('全体の列の特徴')
+    expect(find(sections, '結論', '割り当てた行')?.values).toEqual(['10', '8'])
+    expect(find(sections, '結論', '群の数')?.values).toEqual(['3', '3'])
+  })
+
+  it('群ごとの件数, 割合と学習のときとの差を並べ, 行の無い群も 0 件で出す', () => {
+    const title = '群の大きさ (件数, 割合, 学習のときの割合との差)'
+    const zero = find(sections, title, '群 0 (学習のとき 50.0%)')
+    expect(zero?.values).toEqual([
+      '5 件 (50.0%, 学習から ±0.0 ポイント)',
+      '6 件 (75.0%, 学習から +25.0 ポイント (増えた))',
+    ])
+    expect(zero?.differs).toBe(true)
+    expect(find(sections, title, '群 2 (学習のとき 20.0%)')?.values[1]).toBe(
+      '0 件 (0.0%, 学習から -20.0 ポイント (減った))',
+    )
+  })
+
+  it('結果 1 からの差で増えた群と減った群が分かる', () => {
+    const title = '結果 1 からの割合の差'
+    expect(find(sections, title, '群 0')?.values).toEqual(['–', '+25.0 ポイント (増えた)'])
+    expect(find(sections, title, '群 1')?.values).toEqual(['–', '-5.0 ポイント (減った)'])
+    // 差が無い群は違う印を付けない
+    const same = compareSections([clusterBase, { ...clusterBase, id: 'g3' }])
+    expect(find(same, title, '群 0')?.differs).toBe(false)
+  })
+
+  it('列の特徴は数の列は平均, 種類の列は最も多い値で, 学習のときの値を添える', () => {
+    expect(find(sections, '群 0 の列の特徴', 'spend (平均) (学習のとき 10)')?.values).toEqual([
+      '11',
+      '12',
+    ])
+    const region = find(sections, '群 2 の列の特徴', 'region (最も多い値) (学習のとき east (90 %))')
+    expect(region?.values).toEqual(['east (50 %)', '–'])
+  })
+
+  it('差をポイントで書き, 表示の桁で 0 なら ±0.0 にする', () => {
+    expect(shareDiffText(0.3, 0.25)).toBe('+5.0 ポイント (増えた)')
+    expect(shareDiffText(0.2, 0.25)).toBe('-5.0 ポイント (減った)')
+    expect(shareDiffText(0.25001, 0.25)).toBe('±0.0 ポイント')
   })
 })

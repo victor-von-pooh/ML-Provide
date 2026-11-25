@@ -18,7 +18,9 @@ function CompareTable({ data, onlyDiffers }: { data: Comparison; onlyDiffers: bo
     <div className="overflow-auto rounded-xl border border-line bg-surface">
       <table className="w-full text-sm">
         <caption className="sr-only">
-          結果ごとの結論, 判断の内訳, 意思決定 (違う行に「違う」の印)
+          {data.grouping
+            ? '結果ごとの結論, 群の大きさ, 結果 1 からの割合の差, 群ごとの列の特徴 (違う行に「違う」の印)'
+            : '結果ごとの結論, 判断の内訳, 意思決定 (違う行に「違う」の印)'}
         </caption>
         <thead className="text-xs text-ink-3">
           <tr className="border-b border-line">
@@ -130,6 +132,13 @@ export function ComparePage() {
             />
             違う行だけを出す
           </label>
+          {data.grouping && (
+            <p className="text-xs text-ink-3">
+              同じ群分けの一式の結果の, 群ごとの件数と割合, 学習のときの割合との差, 結果 1
+              からの割合の差, 群を作る列の特徴 (数の列は平均, 種類の列は最も多い値と群の中の割合)
+              です. 割り当てた行の無い群も 0 件で並べます
+            </p>
+          )}
           <CompareTable data={data} onlyDiffers={onlyDiffers} />
         </div>
       )}

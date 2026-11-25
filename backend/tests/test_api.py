@@ -1019,3 +1019,34 @@ def test_comparison_reasons() -> None:
     texts = {"bundle_id": "a", "task": "classification"}
     found = comparison([texts, {**texts, "bundle_id": "b"}])
     assert found["basis"] == [] and len(found["reasons"]) == 1
+    assert not found["grouping"]
+
+    # 群分けの結果は同じ一式で, 残した群が同じ組だけ (同じ入力でも違う
+    # 一式なら比べない)
+    learned = [{"group": 0, "rows": 3, "share": 1.0}]
+    cluster = {
+        "bundle_id": "a", "task": "classification",
+        "source_path": "/data.csv", "column_output": False,
+        "output_form": "cluster",
+        "grouping": {"k": 1, "columns": ["x"], "learned": learned,
+                     "texts": []},
+    }
+    found = comparison([
+        cluster, {**cluster, "source_path": "/later.csv",
+                  "grouping": {**cluster["grouping"], "texts": ["x"]}}
+    ])
+    assert found["grouping"] and found["reasons"] == []
+    assert found["basis"] == ["bundle"]
+    found = comparison([cluster, {**cluster, "bundle_id": "b"}])
+    assert found["basis"] == ["source"]
+    assert ["違う群分けの一式" in r for r in found["reasons"]] == [True]
+    moved = {**cluster["grouping"], "k": 2}
+    found = comparison([cluster, {**cluster, "grouping": moved}])
+    assert ["違う群分けの一式" in r for r in found["reasons"]] == [True]
+    # 群分けと他の結果の混ざった組は, 形の違う理由 (列の出力でない理由は
+    # 出さない)
+    found = comparison([cluster, table])
+    assert not found["grouping"]
+    assert ["群分けの結果と他の結果" in r for r in found["reasons"]] == [
+        True
+    ]
