@@ -308,7 +308,7 @@ def test_vector_bundle(tmp_path: Path, client: TestClient) -> None:
 
     # 知らない新しい版の結果は止まり, 一覧では飛ばす
     meta = yaml.safe_load((place / "result.yaml").read_text(encoding="utf-8"))
-    meta["format_version"] = 3
+    meta["format_version"] = ml_inference.RESULT_FORMAT_VERSION + 1
     (place / "result.yaml").write_text(yaml.safe_dump(meta), encoding="utf-8")
     response = client.get(f"/api/results/{rid}")
     assert response.status_code == 400

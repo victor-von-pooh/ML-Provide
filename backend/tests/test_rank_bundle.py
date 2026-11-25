@@ -173,7 +173,8 @@ def test_rank_bundle(tmp_path: Path, client: TestClient) -> None:
         "k": 3, "excluded": False, "columns": COLUMNS, "seen": None,
         "truth": None, "metrics": None,
     }
-    assert result["format_version"] == 1
+    # 0 で始まる利用者と, 並べられない利用者の欠けた順位の型を残す版 3
+    assert result["format_version"] == 3
     assert result["artifacts"] is None
 
     # 利用者と順位ごとの行 (0 で始まる利用者は文字のまま, 順位は整数)
