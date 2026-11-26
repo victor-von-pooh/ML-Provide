@@ -5,6 +5,7 @@ import os
 import shutil
 import threading
 import uuid
+from itertools import islice
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -1546,10 +1547,11 @@ def search_decision(
         raise HTTPException(
             400, f"返す件数は 1 から {MAX_RANK_K} の整数にしてください"
         )
+    # (ディレクトリのファイルは上限を 1 つ超えたところで数えるのをやめる)
     place = Path(body.source).expanduser()
-    count = sum(1 for item in place.rglob("*") if item.is_file()) if (
-        place.is_dir()
-    ) else 1
+    count = sum(1 for _ in islice(
+        (item for item in place.rglob("*") if item.is_file()), MAX_TEXTS + 1
+    )) if place.is_dir() else 1
     if count > MAX_TEXTS:
         raise HTTPException(
             400, f"問いの写真は 1 回に {MAX_TEXTS:,} 枚までです (今は "

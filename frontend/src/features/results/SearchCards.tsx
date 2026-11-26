@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { api } from '../../api/client'
 import type { Result, SearchResultInfo } from '../../api/types'
 import { Button, Card, ErrorBox, Spinner } from '../../components/ui'
-import { groupQueries, type SearchQuery } from '../../lib/search'
+import { searchPage, type SearchQuery } from '../../lib/search'
 
 /** 1 ページに出す問いの数 (行は問いの数 × 件数. API の 1 回の上限は 500 行) */
 const QUERIES_PER_PAGE = 10
@@ -61,15 +61,15 @@ function SearchSummaryCard({ search }: { search: SearchResultInfo }) {
                 </span>
               </dd>
             </div>
-            <p className="text-xs text-ink-2 md:col-span-2">
+            <div className="text-xs text-ink-2 md:col-span-2">
               骨組みが検証用の問い {evaluation.queries.toLocaleString()} 枚で数えた評価 (上位{' '}
               {evaluation.k} 件). 比べる相手は{evaluation.baseline ?? '写真を縮めた画素'}です
-            </p>
+            </div>
           </>
         ) : (
-          <p className="text-xs text-ink-2 md:col-span-2">
+          <div className="text-xs text-ink-2 md:col-span-2">
             索引の写真に種類が無いので評価はありません. 並んだ写真と近さを見て確かめます
-          </p>
+          </div>
         )}
       </dl>
     </Card>
@@ -123,18 +123,22 @@ function QueryRow({ resultId, query }: { resultId: string; query: SearchQuery })
 
 /** 検索の結果: 待ち時間と評価, 問いごとの似た写真 */
 export function SearchCards({ result, search }: { result: Result; search: SearchResultInfo }) {
-  const [page, setPage] = useState(0)
-  // 1 ページは問いの数 × 件数の行 (並べられない問いは 1 行なので, 少し多めに読んで問いで切る)
+  // ページごとの初めの行の位置 (問いの境目で切るので, 読んだページから次の位置が決まる)
+  const [starts, setStarts] = useState<number[]>([0])
+  const page = starts.length - 1
+  const offset = starts[page] ?? 0
+  // 1 ページは問いの数 × 件数の行 (並べられない問いは 1 行. 読んだ行は問いの境目で切る)
   const perQuery = Math.max(1, Math.min(search.k, search.items))
   const limit = Math.min(500, QUERIES_PER_PAGE * perQuery)
   const rows = useQuery({
-    queryKey: ['search-rows', result.id, page, limit],
-    queryFn: () => api.rows(result.id, { offset: page * limit, limit }),
+    queryKey: ['search-rows', result.id, offset, limit],
+    queryFn: () => api.rows(result.id, { offset, limit }),
     placeholderData: keepPreviousData,
   })
   const total = rows.data?.total ?? 0
-  const pages = Math.max(1, Math.ceil(total / limit))
-  const queries = rows.data ? groupQueries(rows.data.rows) : []
+  const shown = rows.data ? searchPage(rows.data.rows, offset, total) : null
+  const queries = shown?.queries ?? []
+  const next = shown?.next ?? null
   return (
     <>
       <SearchSummaryCard search={search} />
@@ -154,15 +158,18 @@ export function SearchCards({ result, search }: { result: Result; search: Search
                 <QueryRow key={`${index}:${query.path}`} resultId={result.id} query={query} />
               ))}
             </ul>
-            {pages > 1 && (
+            {(page > 0 || next !== null) && (
               <div className="flex items-center justify-end gap-2 border-t border-line px-4 py-2 text-sm">
-                <Button disabled={page === 0} onClick={() => setPage(page - 1)}>
+                <Button disabled={page === 0} onClick={() => setStarts(starts.slice(0, -1))}>
                   前へ
                 </Button>
-                <span>
-                  {page + 1} / {pages}
+                <span aria-live="polite">
+                  {page + 1} ページ目 (行 {offset + 1} から, 全 {total.toLocaleString()} 行)
                 </span>
-                <Button disabled={page + 1 >= pages} onClick={() => setPage(page + 1)}>
+                <Button
+                  disabled={next === null}
+                  onClick={() => next !== null && setStarts([...starts, next])}
+                >
                   次へ
                 </Button>
               </div>

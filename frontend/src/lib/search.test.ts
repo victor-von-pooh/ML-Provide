@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { groupQueries } from './search'
+import { groupQueries, searchPage } from './search'
 
 describe('groupQueries', () => {
   it('問いごとに順位の順でまとめ, 並べられない問いは写真無しの 1 件にする', () => {
@@ -70,5 +70,30 @@ describe('groupQueries', () => {
       { ...row, rank: 1 },
     ])
     expect(queries).toHaveLength(2)
+  })
+})
+
+describe('searchPage', () => {
+  const ok = (path: string, rank: number) => ({ path, status: 'ok', rank, item: `${path}-${rank}` })
+  const skipped = (path: string) => ({ path, status: 'skipped', reason: '読めません', rank: null })
+
+  it('後ろに行が残るときは最後の問いを次のページに回し, 次の位置を問いの境目にする', () => {
+    // 問い a (2 件), 読めない b (1 行), c の 1 件目までを読んだ (c は途中)
+    const rows = [ok('a', 1), ok('a', 2), skipped('b'), ok('c', 1)]
+    const page = searchPage(rows, 0, 10)
+    expect(page.queries.map((q) => q.path)).toEqual(['a', 'b'])
+    expect(page.next).toBe(3)
+  })
+
+  it('最後のページは全ての問いを出し, 次の位置は無い', () => {
+    const page = searchPage([ok('c', 1), ok('c', 2)], 3, 5)
+    expect(page.queries.map((q) => q.path)).toEqual(['c'])
+    expect(page.next).toBeNull()
+  })
+
+  it('問いが 1 つだけのページは切れていても出して先へ進む', () => {
+    const page = searchPage([ok('a', 1), ok('a', 2)], 0, 10)
+    expect(page.queries).toHaveLength(1)
+    expect(page.next).toBe(2)
   })
 })

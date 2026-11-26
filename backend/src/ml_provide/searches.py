@@ -13,9 +13,13 @@ router = APIRouter(prefix="/api")
 # 縮小画像の長い辺の上限 (画素)
 PHOTO_SIDE = 256
 
-# 縮小画像を作る写真のファイルの大きさの上限 (バイト. 大きな画像で記憶を
-# 使い切らないため)
+# 縮小画像を作る写真のファイルの大きさと画素の数の上限 (大きな画像と, 小さな
+# ファイルで画素の多い画像で記憶を使い切らないため)
 PHOTO_BYTES = 50_000_000
+PHOTO_PIXELS = 25_000_000
+
+# 縮小画像を作る写真の形式 (他の形式の読み込みの道具を呼ばないため)
+PHOTO_FORMATS = ("PNG", "JPEG", "WEBP", "GIF", "BMP", "TIFF")
 
 
 def inside_file(base: Path, given: str) -> Optional[Path]:
@@ -60,21 +64,28 @@ def thumbnail(path: Path) -> bytes:
     Raises
     ----------
     HTTPException
-        大きすぎるファイルと, 画像として読めない場合は 400
+        大きすぎるファイルか画像と, 決めた形式の画像として読めない場合は
+        400
     """
-    # 画像の読み込みと縮小 (向きと透明度は RGB にそろえる)
+    # 画像の大きさを見てから中身を読み, 縮める (透明度は RGB にそろえる)
     from PIL import Image, UnidentifiedImageError
 
     if path.stat().st_size > PHOTO_BYTES:
         raise HTTPException(400, f"{path.name} が大きすぎて縮められません")
     try:
-        with Image.open(path) as image:
+        with Image.open(path, formats=PHOTO_FORMATS) as image:
+            width, height = image.size
+            if width * height > PHOTO_PIXELS:
+                raise HTTPException(
+                    400, f"{path.name} の画素が多すぎて縮められません"
+                )
             image.thumbnail((PHOTO_SIDE, PHOTO_SIDE))
             buffer = io.BytesIO()
             image.convert("RGB").save(buffer, format="PNG")
-    except (UnidentifiedImageError, OSError, ValueError) as error:
+    except (UnidentifiedImageError, Image.DecompressionBombError, OSError,
+            ValueError) as error:
         raise HTTPException(
-            400, f"{path.name} を画像として読めません ({error})"
+            400, f"{path.name} を画像として読めません"
         ) from error
     data = buffer.getvalue()
 

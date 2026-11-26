@@ -160,6 +160,13 @@ def test_search_predict_and_photos(
                        params={"side": "other", "path": "q_red.png"})
     assert photo.status_code == 422
 
+    # 画素の多すぎる写真 (小さなファイル) は中身を読まずに断る
+    Image.new("L", (6000, 5000)).save(tmp_path / "photos" / "huge.png")
+    photo = client.get(f"/api/results/{result_id}/search-photo",
+                       params={"side": "item", "path": "huge.png"})
+    assert photo.status_code == 400
+    assert "画素が多すぎ" in photo.json()["detail"]
+
 
 def test_search_predict_errors(
     client: TestClient, tmp_path: Path  # noqa: F811

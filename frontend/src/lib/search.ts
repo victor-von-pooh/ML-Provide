@@ -59,3 +59,30 @@ export function groupQueries(rows: Record<string, unknown>[]): SearchQuery[] {
   }
   return queries
 }
+
+/** 1 ページの問い (問いの境目で切る) と, 次のページの初めの行の位置 */
+export interface SearchPage {
+  queries: SearchQuery[]
+  /** 次のページの初めの行の位置 (最後のページなら null) */
+  next: number | null
+}
+
+/**
+ * offset の行から読んだ行を, 問いの境目で切った 1 ページにする. 後ろに行が残るときは, 最後の問い
+ * (途中で切れているかもしれない) を次のページに回す. ただし問いが 1 つしか無いページは, 切れていても
+ * そのまま出して先へ進む (件数が 1 ページの行より多い場合)
+ */
+export function searchPage(
+  rows: Record<string, unknown>[],
+  offset: number,
+  total: number,
+): SearchPage {
+  const queries = groupQueries(rows)
+  const end = offset + rows.length
+  if (end >= total || queries.length <= 1) {
+    return { queries, next: end >= total ? null : end }
+  }
+  const last = queries.pop()
+  const used = rows.length - (last ? Math.max(1, last.items.length) : 0)
+  return { queries, next: offset + used }
+}
