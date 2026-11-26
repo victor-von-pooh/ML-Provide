@@ -238,6 +238,8 @@ def test_vector_bundle(tmp_path: Path, client: TestClient) -> None:
     assert description["pretrained"] == []
     assert description["pretrained_warnings"] == []
     assert bundle["model_loaded"] is False
+    # 問題の設定を読む種類の一式 (ベクトルの出力) は, 問題の設定の欄を出す
+    assert bundle["uses_problem"] is True
 
     # 決め方と意思決定は断る
     url = f"/api/bundles/{bundle['id']}/predict"

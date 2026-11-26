@@ -5,11 +5,7 @@
 
 ## 優先度 高
 
-### 検索の一式の問題の設定の欄をそろえる
-- 何を: 検索の一式 (版 15) の画面の「問題の設定」の欄と `GET /api/bundles/{id}/problem` を, 並べるの一式と同じく出さずに読まないか, 既製のモデルの一式と同じく作り方が既製のモデルをそのままの問題の設定を候補に出してつなぐかに決め, docs/DESIGN.md の「検索の一式 (一式の版 15)」に書く. つなぐなら, submodule の ML-Quest を検索の判断 (`action.decision` の `type: search`) を知る版に上げる
-- なぜ: 今は読まない一式の種類 (`problem_state` と画面の `BundlePage`) に `search` が無く, 候補は列の予測の問題の設定だけを探すので, 似た写真を探すの問題の設定は候補に出ない. 骨組みの写しが指す元の問題の設定を選ぶと, submodule の ML-Quest が検索の判断を知らないので「action.decision の type は quantity, select, triage, none, treat, price, order のどれかにしてください」の 422 で断り, 欄が出るのにつなげない
-- 終わりの条件: 検索の一式の画面で, 問題の設定の欄が決めたとおりに出ないか, 似た写真を探すの問題の設定が候補に出てつながり, docs/DESIGN.md に書いてある
-- つながり: docs/DESIGN.md の「9. 問題の設定とのつなぎ」
+無し
 
 ## 優先度 中
 

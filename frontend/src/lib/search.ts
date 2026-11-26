@@ -1,3 +1,7 @@
+/** 検索の一式の画面に問題の設定の欄が無い理由 */
+export const SEARCH_NO_PROBLEM =
+  '問題の設定の欄はありません. 返す件数と待ち時間の上限は, 一式を作るときに問題の設定から写してあります'
+
 /** 表の 1 行 (問いと順位ごと) */
 export interface SearchRow {
   path: string

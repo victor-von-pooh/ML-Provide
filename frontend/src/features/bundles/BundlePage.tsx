@@ -92,6 +92,7 @@ import {
   rankUsers,
   reactionRuleText,
 } from '../../lib/ranking'
+import { SEARCH_NO_PROBLEM } from '../../lib/search'
 import { classesText, licenseAlert, preprocessText, READY_UNSUPPORTED } from '../../lib/ready'
 import { fromForm, toForm, withCleared, type RulesForm } from '../../lib/rules'
 import { AnomalyEvaluationsTable } from '../results/AnomalyCards'
@@ -1636,6 +1637,7 @@ function SearchPredictCard({
           件の問いの待ち時間を出します
           {search.max_latency_ms !== null &&
             ` (待ち時間の上限 ${search.max_latency_ms.toLocaleString()} ms を超えた問いを数えます)`}
+          . {SEARCH_NO_PROBLEM}
         </p>
         {kProblem && (
           <p role="alert" className="text-xs text-critical-text">
@@ -1665,24 +1667,16 @@ export function BundlePage() {
   const client = useQueryClient()
   const bundle = useQuery({ queryKey: ['bundles', id], queryFn: () => api.bundle(id) })
   const results = useQuery({ queryKey: ['results', id], queryFn: () => api.results(id) })
-  // 雑音だけの一式, 並べるの一式, 群分けの一式, 異常の度合いの一式, 効果の一式, 値段の一式, 需要の一式は, 問題の設定の結論と意思決定を扱わないので問題の設定を読まない
-  // (既製のモデルの一式は読み, 結論の決め方だけを既定にする).
-  // 種類は一式か一覧の読んだ値から. 分からない間は一式と並べて読む (推論の欄を 1 往復早く出すため.
+  // 問題の設定の欄を出さない一式 (雑音だけ, 並べる, 群分け, 異常の度合い, 効果, 値段, 需要, 検索) は問題の設定を読まない.
+  // 出すかは API が一式の種類から決めた値 (種類の並びを API の 1 か所に置くため) を, 一式か一覧の読んだ値から取る.
+  // 分からない間は一式と並べて読む (推論の欄を 1 往復早く出すため.
   // 読まない種類の一式なら, サーバーは問題の設定を読まずに空の状態を返す)
   const listed = client.getQueryData<Bundle[]>(['bundles'])?.find((item) => item.id === id)
-  const kind = bundle.data?.description?.kind ?? listed?.description?.kind
-  const noise =
-    kind === 'noise' ||
-    kind === 'rank' ||
-    kind === 'group' ||
-    kind === 'anomaly' ||
-    kind === 'uplift' ||
-    kind === 'price' ||
-    kind === 'demand'
+  const noProblem = (bundle.data?.uses_problem ?? listed?.uses_problem) === false
   const problem = useQuery({
     queryKey: ['bundle-problem', id],
     queryFn: () => api.bundleProblem(id),
-    enabled: !noise,
+    enabled: !noProblem,
   })
   const remove = useMutation({
     mutationFn: () => api.deleteBundle(id),
@@ -1744,12 +1738,12 @@ export function BundlePage() {
               target={data.description.target_info}
               warnings={data.description.pretrained_warnings}
             />
-            {!noise && problem.isPending && (
+            {!noProblem && problem.isPending && (
               <p role="status" className="text-xs text-ink-3">
                 問題の設定を読んでいます…
               </p>
             )}
-            {!noise && problem.error && (
+            {!noProblem && problem.error && (
               <ErrorBox error={problem.error} live={false}>
                 <p className="mt-1 text-xs text-ink-2">
                   推論の既定は一式の既定値です.{' '}
@@ -1763,7 +1757,7 @@ export function BundlePage() {
                 </p>
               </ErrorBox>
             )}
-            {!noise && problem.data && (
+            {!noProblem && problem.data && (
               <ProblemCard
                 bundleId={data.id}
                 state={problem.data}
@@ -1776,11 +1770,11 @@ export function BundlePage() {
             ) : data.description.rank ? (
               <RankPredictCard bundle={data} rank={data.description.rank} />
             ) : (
-              (noise || !problem.isPending) && (
+              (noProblem || !problem.isPending) && (
                 <PredictCard
                   bundle={data}
                   description={data.description}
-                  linked={noise ? null : (problem.data?.linked ?? null)}
+                  linked={noProblem ? null : (problem.data?.linked ?? null)}
                 />
               )
             )}

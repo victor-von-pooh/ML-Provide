@@ -5,8 +5,8 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import type { Bundle, Description, ProblemState } from '../../api/types'
 import { BundlePage } from './BundlePage'
 
-/** データの種類だけを変えた一式 (表の分類か雑音だけ) */
-function makeBundle(id: string, kind: string): Bundle {
+/** データの種類だけを変えた一式 (表の分類か雑音だけ. 問題の設定の欄を出すかは API の値) */
+function makeBundle(id: string, kind: string, usesProblem: boolean): Bundle {
   const description = {
     path: `/bundles/${id}`,
     name: id,
@@ -41,6 +41,7 @@ function makeBundle(id: string, kind: string): Bundle {
     ok: true,
     error: null,
     description,
+    uses_problem: usesProblem,
   }
 }
 
@@ -49,8 +50,8 @@ const problem: ProblemState = { path: null, linked: null, error: null, hint: nul
 // 一式の読み込みはテストで終える時を決める
 const pending: Array<() => void> = []
 const bundles: Record<string, Bundle> = {
-  t1: makeBundle('t1', 'table'),
-  n1: makeBundle('n1', 'noise'),
+  t1: makeBundle('t1', 'table', true),
+  n1: makeBundle('n1', 'noise', false),
 }
 const bundleProblem = vi.fn((_id: string) => Promise.resolve(problem))
 
@@ -95,7 +96,7 @@ describe('一式の画面の問題の設定の読み込み', () => {
     expect(await screen.findByRole('heading', { name: 't1' })).toBeInTheDocument()
   })
 
-  it('一覧で雑音だけと分かる一式は, 問題の設定を読まない', async () => {
+  it('一覧で問題の設定の欄を出さないと分かる一式は, 問題の設定を読まない', async () => {
     renderPage('n1', [bundles.n1 as Bundle])
     await waitFor(() => expect(pending).toHaveLength(1))
     pending[0]?.()

@@ -26,7 +26,7 @@ from ml_provide.cache import (
     remember_warnings,
 )
 from ml_provide.previews import PREVIEW_LIMIT, array_preview, dtype_problem
-from ml_provide.problem_files import linked_guard
+from ml_provide.problem_files import linked_guard, uses_problem
 from ml_provide.procedures import missing_procedure, registered
 from ml_provide.ready import FetchError, make_ready, preview_ready
 from ml_provide.reasons import read_input, row_reason
@@ -334,15 +334,23 @@ def bundle_view(entry: dict[str, Any]) -> dict[str, Any]:
     Returns
     ----------
     view: dict[str, Any]
-        登録, ok, error, 説明 (読めない場合は None)
+        登録, ok, error, 説明 (読めない場合は None), uses_problem (問題
+        の設定の欄を出すか)
     """
     # 消えた一式や壊れた一式は理由付き
     view: dict[str, Any] = {
-        **entry, "ok": True, "error": None, "model_loaded": False
+        **entry, "ok": True, "error": None, "model_loaded": False,
+        "uses_problem": True,
     }
     try:
         description, loaded = describe(str(entry["path"]))
-        view.update(description=description, model_loaded=loaded)
+        kind = description.get("kind")
+        view.update(
+            description=description, model_loaded=loaded,
+            uses_problem=uses_problem(
+                kind if isinstance(kind, str) else None
+            ),
+        )
     except Exception as error:
         message = join_hints(
             unit_hint(error), missing_procedure(str(entry["path"]))
