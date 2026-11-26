@@ -883,7 +883,8 @@ def link_problem(
     Raises
     ----------
     HTTPException
-        無い場所は 404, 推論に渡せない問題の設定は 422
+        無い場所は 404, 問題の設定を使わない種類の一式につなぐ場合は 400,
+        推論に渡せない問題の設定は 422
     """
     # つなぐ前に, 読めて推論に渡せることの確認
     entry = find_bundle(request, bundle_id)
@@ -895,6 +896,11 @@ def link_problem(
             raise HTTPException(404, "一式が見つかりません") from error
         state = problem_state(entry, store.home)
         return state
+    # 問題の設定を使わない種類の一式 (並べる, 検索など) にはつながない
+    if not uses_problem(bundle_kind(str(entry["path"]))):
+        raise HTTPException(
+            400, "この一式は問題の設定を使わないので, つなげません"
+        )
     path = problem_file(str(body.path))
     problem = read_problem(path)
     linked_view(entry, path, problem)
