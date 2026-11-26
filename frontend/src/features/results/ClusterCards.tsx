@@ -141,8 +141,10 @@ export function ClusterSummaryTable({
 }
 
 /**
- * 群の代表の行の表. 群ごとに中心に近い順の行 (順位, 行の位置, 距離, 群を作る列の値).
- * 行の無い群も 1 行で並べる. onPick を渡すと, 行に「行を見る」を出す
+ * 群の代表の行の表. 群ごとに中心に近い順の行 (順位, 行の位置, 距離, 群の要約の列の値).
+ * 既製の埋め込みの群分けの一式 (版 10) の写真の場所 (path) のような, 群を作る列に無い
+ * 値は群を作る列の前に並べる. 行の無い群も 1 行で並べる. onPick を渡すと, 行に
+ * 「行を見る」を出す
  */
 export function ClusterRepresentativesTable({
   groups,
@@ -162,8 +164,18 @@ export function ClusterRepresentativesTable({
   const numeric = new Set(
     columns.filter((name) => featureHeading(name, summary) === `${name} (平均)`),
   )
+  // 群を作る列に無い値の列 (写真の場所など. 初めに出た順) と, 群を作る列
+  const extra: string[] = []
+  for (const item of groups) {
+    for (const line of item.rows) {
+      for (const name of Object.keys(line.values)) {
+        if (!columns.includes(name) && !extra.includes(name)) extra.push(name)
+      }
+    }
+  }
+  const shown = [...extra, ...columns]
   // 群の列の後ろの列の数 (行の無い群の 1 行を横に伸ばす)
-  const span = 3 + columns.length + (onPick ? 1 : 0)
+  const span = 3 + shown.length + (onPick ? 1 : 0)
   return (
     <div className="max-h-[32rem] overflow-auto">
       <table className="w-full text-sm">
@@ -182,7 +194,7 @@ export function ClusterRepresentativesTable({
             <th scope="col" className="px-3 py-2 text-right font-normal">
               距離
             </th>
-            {columns.map((name) => (
+            {shown.map((name) => (
               <th
                 key={name}
                 scope="col"
@@ -227,7 +239,7 @@ export function ClusterRepresentativesTable({
                     <td className="tabular px-3 py-1.5 text-right">
                       {formatValue(line.distance, true)}
                     </td>
-                    {columns.map((name) => (
+                    {shown.map((name) => (
                       <td
                         key={name}
                         className="max-w-64 truncate px-3 py-1.5"

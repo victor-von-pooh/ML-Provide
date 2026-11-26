@@ -29,7 +29,9 @@ function bundleSummary(bundle: Bundle): string {
     const form = description.output?.form ?? ''
     const role = description.role ?? 'predict'
     const roleLabel = ROLE_LABELS[role] ?? role
-    return `${kind}から${FORM_LABELS[form] ?? form} (${roleLabel})`
+    // 既製の埋め込みの群分けは既製のモデルの出どころも添える
+    const library = description.ready ? ` (${description.ready.library})` : ''
+    return `${kind}${library}から${FORM_LABELS[form] ?? form} (${roleLabel})`
   }
   // 既製のモデルは種類が多い (ImageNet は 1000) ので数と先頭だけ
   if (description.kind === 'ready') {

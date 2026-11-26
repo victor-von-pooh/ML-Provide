@@ -146,6 +146,12 @@ uv run python ../frontend/e2e/make_demand.py "$WORK/demand"
 PYTHONPATH="$E2E_DIR${PYTHONPATH:+:$PYTHONPATH}" \
   uv run python ../frontend/e2e/make_search.py "$WORK/search"
 
+# 既製の埋め込みの群分けの骨組みと同じ形の成果物から, 既製の埋め込みの群分けの一式 (版 10.
+# ML-Inference の make_group_bundle) を作り, 群に分ける新しい商品の写真を書く
+# (作り物の出どころの e2e_ready を読む)
+PYTHONPATH="$E2E_DIR${PYTHONPATH:+:$PYTHONPATH}" \
+  uv run python ../frontend/e2e/make_group_ready.py "$WORK/group-ready"
+
 # 既製のモデルの一式で推論する画像 (赤, 緑, 青と, 読めないファイル)
 uv run python - "$WORK/ready-images" <<'PY'
 import sys

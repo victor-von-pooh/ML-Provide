@@ -191,7 +191,7 @@ describe('群分けの結果の画面', () => {
   it('群の代表の行を群の要約と並べ, 件数を変え, 行を見るで 1 行に絞る', async () => {
     renderPage()
     const table = await screen.findByRole('table', {
-      name: '群の代表の行 (群ごとに中心に近い順の行, 距離, 群を作る列の値)',
+      name: '群の代表の行 (群ごとに中心に近い順の行, 距離, 群の要約の列の値)',
     })
     expect(
       within(table)
@@ -217,7 +217,7 @@ describe('群分けの結果の画面', () => {
     expect(screen.getByText('代表の行を求めています')).toBeInTheDocument()
     expect(
       screen.queryByRole('table', {
-        name: '群の代表の行 (群ごとに中心に近い順の行, 距離, 群を作る列の値)',
+        name: '群の代表の行 (群ごとに中心に近い順の行, 距離, 群の要約の列の値)',
       }),
     ).not.toBeInTheDocument()
     await waitFor(() => expect(representativesCall).toHaveBeenLastCalledWith('r1', 1))
@@ -225,7 +225,7 @@ describe('群分けの結果の画面', () => {
       expect(
         within(
           screen.getByRole('table', {
-            name: '群の代表の行 (群ごとに中心に近い順の行, 距離, 群を作る列の値)',
+            name: '群の代表の行 (群ごとに中心に近い順の行, 距離, 群の要約の列の値)',
           }),
         )
           .getAllByRole('row')

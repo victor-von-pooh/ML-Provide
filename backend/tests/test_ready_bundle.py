@@ -949,3 +949,97 @@ def test_ready_vector_and_group_bundles(
     response = client.post("/api/bundles", json={"path": str(copy)})
     assert response.status_code == 400
     assert "99" in response.json()["detail"]
+
+
+def test_ready_group_result(tmp_path: Path, client: TestClient) -> None:
+    """
+    既製の埋め込みの群分けの一式 (版 10) で写真を推論した結果が, 群の要約,
+    群の安定性, 群の代表の写真と群を作る列の記録を持ち, 読み直しても同じ
+    ことを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        一時ディレクトリ
+    client: TestClient
+        作り物の出どころを足したクライアント
+
+    Returns
+    ----------
+    None
+    """
+    # 赤とそれ以外の 2 つの群の一式の登録と, 写真のディレクトリの推論
+    images = write_images(tmp_path / "images")
+    artifacts = write_group_artifacts(tmp_path, images)
+    ml_inference.make_group_bundle(
+        tmp_path / "group", artifacts, data=images, license=LICENSE
+    )
+    response = client.post(
+        "/api/bundles", json={"path": str(tmp_path / "group")}
+    )
+    assert response.status_code == 201, response.text
+    bundle_id = response.json()["id"]
+    response = client.post(
+        f"/api/bundles/{bundle_id}/predict", json={"source": str(images)}
+    )
+    assert response.status_code == 201, response.text
+    result = response.json()
+
+    # 群の要約 (列は写真の幅と高さ. 最後は全体) と, 学習の群の安定性
+    summary = result["summary"]
+    assert (summary["rows"], summary["predicted"], summary["skipped"]) == (
+        4, 3, 1
+    )
+    groups = summary["groups"]
+    assert [row["group"] for row in groups] == [0, 1, "全体"]
+    assert [row["rows"] for row in groups] == [1, 2, 3]
+    assert groups[0]["width"] == 20 and groups[0]["height"] == 12
+    assert summary["stability"]["silhouette"] == 0.9
+    assert "学習の群の安定性" in result["sentences"][2]
+
+    # 群を作る列の記録 (写真の場所は文字のまま読む列)
+    grouping = result["grouping"]
+    assert grouping["k"] == 2
+    assert grouping["columns"] == ["width", "height"]
+    assert grouping["learned"][-1]["group"] == "全体"
+    assert "path" in grouping["texts"]
+
+    # 群の代表の写真 (結論と, 件数を変えて求めたもの) の写真の場所
+    first = summary["representatives"][0]["rows"][0]
+    assert first["values"]["path"] == "a_red.png"
+    assert set(first["values"]) == {"path", "width", "height"}
+    response = client.get(
+        f"/api/results/{result['id']}/representatives",
+        params={"count": 1},
+    )
+    assert response.status_code == 200, response.text
+    found = response.json()["groups"]
+    assert [len(item["rows"]) for item in found] == [1, 1]
+    assert found[1]["rows"][0]["values"]["path"] in (
+        "b_green.png", "c_blue.png"
+    )
+
+    # 群で絞った行と, 割り当てない写真の理由
+    rows = client.get(
+        f"/api/results/{result['id']}/rows", params={"group": 1}
+    ).json()["rows"]
+    assert sorted(row["path"] for row in rows) == [
+        "b_green.png", "c_blue.png"
+    ]
+    rows = client.get(
+        f"/api/results/{result['id']}/rows", params={"status": "skipped"}
+    ).json()["rows"]
+    assert [row["path"] for row in rows] == ["d_broken.png"]
+    assert "画像を読めません" in rows[0]["reason"]
+
+    # 読み直した結果の結論は推論の直後と同じ
+    again = client.get(f"/api/results/{result['id']}").json()
+    assert again["summary"]["groups"] == groups
+    assert again["output_form"] == "cluster"
+
+    # 写真の一式への読み込みの設定の拒否
+    response = client.post(
+        f"/api/bundles/{bundle_id}/predict",
+        json={"source": str(images), "options": {"loader": "image"}},
+    )
+    assert response.status_code == 400
