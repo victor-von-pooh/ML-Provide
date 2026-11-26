@@ -42,12 +42,17 @@ def inside_file(base: Path, given: str) -> Optional[Path]:
     Returns
     ----------
     path: Optional[Path]
-        解決したファイル (外を指す, ファイルでない場合は None)
+        解決したファイル (外を指す, ファイルでない, 場所として読めない
+        (NUL の文字を含むなど) 場合は None)
     """
     # リンクと .. を解決した後に, ディレクトリの中のファイルか
-    root = base.expanduser().resolve()
-    path = (root / given).resolve()
-    if not path.is_relative_to(root) or not path.is_file():
+    try:
+        root = base.expanduser().resolve()
+        path = (root / given).resolve()
+        found = path.is_relative_to(root) and path.is_file()
+    except (OSError, ValueError):
+        found = False
+    if not found:
         return None
 
     return path

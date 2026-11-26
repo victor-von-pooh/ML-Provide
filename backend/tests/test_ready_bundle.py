@@ -1107,7 +1107,7 @@ def test_ready_group_photos(tmp_path: Path, client: TestClient) -> None:
         assert image.size == (20, 12)
 
     # 写真の場所の外 (.., 絶対の場所, 外を指すリンク) と, 画像でない
-    # ファイルと無いファイル
+    # ファイルと無いファイルと NUL の文字を含む場所
     outside = tmp_path / "outside.png"
     Image.new("RGB", (4, 4)).save(outside)
     (images / "link.png").symlink_to(outside)
@@ -1116,6 +1116,7 @@ def test_ready_group_photos(tmp_path: Path, client: TestClient) -> None:
         (str(outside), "の中のファイルではありません"),
         ("link.png", "の中のファイルではありません"),
         ("missing.png", "の中のファイルではありません"),
+        ("a\x00.png", "の中のファイルではありません"),
         ("d_broken.png", "画像として読めません"),
     ]:
         response = client.get(url, params={"path": given})
