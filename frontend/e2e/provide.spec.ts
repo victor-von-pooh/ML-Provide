@@ -1493,12 +1493,11 @@ test('検索の一式を場所で登録して問いの写真を推論し, 近い
     await expect(list.getByRole('img', { name: /^1 位の写真 blue\// })).toBeVisible()
     await expect(list.getByRole('img')).toHaveCount(2 * 4)
     await expect(list.getByText(/^並べられませんでした: 画像を読めません/)).toBeVisible()
-    // 縮小画像が読めて, 画面に出る
-    const loaded = await list
-      .getByRole('img')
-      .first()
-      .evaluate((image) => (image as HTMLImageElement).naturalWidth)
-    expect(loaded).toBeGreaterThan(0)
+    // 縮小画像が読めて, 画面に出る (読み終わるまで待つ)
+    const first = list.getByRole('img').first()
+    await expect
+      .poll(() => first.evaluate((image) => (image as HTMLImageElement).naturalWidth))
+      .toBeGreaterThan(0)
     await expect(page.getByText(/^中央値 [\d.]+ ms, 最大 [\d.]+ ms$/)).toBeVisible()
     await expect(page.getByText('5,000 ms. 超えた問い 0 枚')).toBeVisible()
 
