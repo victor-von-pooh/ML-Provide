@@ -36,7 +36,7 @@ import {
 } from '../../lib/ranking'
 import { READY_UNSUPPORTED } from '../../lib/ready'
 import { anomalySummary, triageSummary } from '../../lib/anomaly'
-import { treatSummary, upliftSummary } from '../../lib/uplift'
+import { resultK, treatSummary, upliftSummary } from '../../lib/uplift'
 import { groupColumns } from '../../lib/remeasure'
 import { rowReasonable } from '../../lib/rowReason'
 import { fromForm, toForm, type RulesForm } from '../../lib/rules'
@@ -898,9 +898,7 @@ export function ResultPage() {
               </ul>
             </details>
           )}
-          {uplift && (
-            <UpliftTerms outcome={uplift.outcome} k={uplift.top_k?.k ?? data.uplift?.k ?? 0.3} />
-          )}
+          {uplift && <UpliftTerms outcome={uplift.outcome} k={resultK(data, uplift)} />}
           {summary && <DecisionBars counts={summary} />}
         </Card>
         {/* 決め直した後は, 使った決め方で編集を作り直す */}

@@ -19,6 +19,7 @@ import {
 import { CLUSTER_NO_PROBLEM, CLUSTER_UNSUPPORTED } from '../../lib/clusters'
 import {
   budgetProblem,
+  MAX_BUDGET,
   distributionText,
   effectText,
   GROUPS_TEXT,
@@ -788,12 +789,14 @@ function PredictCard({
             <div className="max-w-xs">
               <label htmlFor="predict-budget" className="mb-1 block text-xs font-medium text-ink-2">
                 配る数の上限 (
-                {uplift.budget === null ? '一式に既定なし' : `既定は一式の ${uplift.budget} 件`})
+                {uplift.budget === null ? '一式に既定なし' : `既定は一式の ${uplift.budget} 件`}.{' '}
+                {MAX_BUDGET.toLocaleString()} 件まで)
               </label>
               <input
                 id="predict-budget"
                 type="number"
                 min={1}
+                max={MAX_BUDGET}
                 value={budget}
                 onChange={(event) => setBudget(event.target.value)}
                 className="h-8 w-full rounded-lg border border-line bg-surface px-2 text-sm"

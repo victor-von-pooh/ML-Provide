@@ -19,6 +19,7 @@ import {
   liftText,
   PREMISE_TEXT,
   QINI_TEXT,
+  resultK,
   topText,
   TREATED_PAGE,
   treatSummary,
@@ -46,7 +47,13 @@ function NumberCell({ children }: { children: React.ReactNode }) {
  * 結論の文に初めて出る言葉 (効果, 処置の群と対照の群, Qini の曲線と係数, 上位 K 割) の説明と,
  * 無作為に配った記録を前提にした見積もりという前提
  */
-export function UpliftTerms({ outcome, k }: { outcome: string | null | undefined; k: number }) {
+export function UpliftTerms({
+  outcome,
+  k,
+}: {
+  outcome: string | null | undefined
+  k: number | null
+}) {
   return (
     <dl
       aria-label="言葉の説明"
@@ -333,7 +340,7 @@ export function UpliftEvaluationsView({
 }: {
   evaluations: Record<string, UpliftEvaluation>
   curves: Record<string, QiniCurve>
-  k: number
+  k: number | null
 }) {
   const entries = Object.entries(evaluations ?? {})
   const lines = Object.entries(curves ?? {})
@@ -360,7 +367,7 @@ export function UpliftEvaluationsView({
                 <Heading right>Qini の係数</Heading>
                 <Heading right>{topText(k)} の効果の差</Heading>
                 <Heading right>全ての行の結果の差</Heading>
-                <Heading right>効果の見積もりの平均</Heading>
+                <Heading right>全ての行の効果 (見積もり) の平均</Heading>
               </tr>
             </thead>
             <tbody>
@@ -383,7 +390,9 @@ export function UpliftEvaluationsView({
           <p className="mt-2 text-xs text-ink-3">
             全ての行の結果の差は, 分割の処置の群の結果の平均 − 対照の群の結果の平均
             (誰にでも配ったときの効果) です. {topText(k)} の効果の差がこれより大きいほど,
-            効果の高い行を選べています
+            効果の高い行を選べています. 全ての行の効果 (見積もり)
+            の平均は一式が見積もった効果の分割の平均で,
+            全ての行の結果の差に近いほど見積もりの大きさが合っています
           </p>
         </div>
       )}
@@ -437,7 +446,7 @@ function DistributionRow({ label, found }: { label: string; found: EffectDistrib
 }
 
 /** 効果の分布 (新しい行と学習用の行) と効果の高い上位 K 割 */
-function DistributionCard({ summary, k }: { summary: UpliftSummary; k: number }) {
+function DistributionCard({ summary, k }: { summary: UpliftSummary; k: number | null }) {
   const top = summary.top_k
   return (
     <Card title="効果の分布">
@@ -516,7 +525,9 @@ function TopRowsCard({ summary }: { summary: UpliftSummary }) {
                 <tr key={row.row} className="border-b border-line">
                   <NumberCell>{index + 1}</NumberCell>
                   <NumberCell>{row.row}</NumberCell>
-                  <td className="px-3 py-1.5 font-mono text-xs">{formatNumber(row.id)}</td>
+                  <td className="px-3 py-1.5 font-mono text-xs">
+                    {row.id === null ? '–' : String(row.id)}
+                  </td>
                   <NumberCell>{formatValue(row.effect)}</NumberCell>
                   <NumberCell>{formatValue(row.treated)}</NumberCell>
                   <NumberCell>{formatValue(row.control)}</NumberCell>
@@ -594,7 +605,9 @@ function TreatedCard({ result }: { result: Result }) {
                         <tr key={row.row} className="border-b border-line">
                           <NumberCell>{formatNumber(row.rank)}</NumberCell>
                           <NumberCell>{row.row}</NumberCell>
-                          <td className="px-3 py-1.5 font-mono text-xs">{formatNumber(row.id)}</td>
+                          <td className="px-3 py-1.5 font-mono text-xs">
+                            {row.id === null ? '–' : String(row.id)}
+                          </td>
                           <NumberCell>{formatValue(row.effect)}</NumberCell>
                           <NumberCell>{formatValue(row.treated)}</NumberCell>
                           <NumberCell>{formatValue(row.control)}</NumberCell>
@@ -638,7 +651,7 @@ function TreatedCard({ result }: { result: Result }) {
 
 /** 効果の結果の, 効果の分布, 実験の評価と Qini の曲線, 上位の行, 配る行 */
 export function UpliftCards({ result, summary }: { result: Result; summary: UpliftSummary }) {
-  const k = result.uplift?.k ?? summary.top_k?.k ?? 0.3
+  const k = resultK(result, summary)
   return (
     <>
       <DistributionCard summary={summary} k={k} />

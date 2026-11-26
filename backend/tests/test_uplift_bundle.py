@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
+import ml_inference
 import pytest
 from fastapi.testclient import TestClient
 from test_bundle_v3 import register
@@ -162,11 +163,17 @@ def test_uplift_bundle(client: TestClient, uplift_files: Path) -> None:
     assert [row["rank"] for row in page["rows"]] == [3, 4, 5]
     assert page["total"] == 8 and page["offset"] == 2
 
-    # 結果を読み直しても曲線は残る
+    # 読み直した結果の曲線
     again = client.get(f"/api/results/{result['id']}").json()
     assert again["uplift"] == result["uplift"]
 
-    # 配る数の上限を変えると配る行が変わる
+    # 一式の Qini の曲線の値のままの写し
+    found = ml_inference.describe_bundle(
+        ml_inference.load_bundle(uplift_files / "bundle")
+    )["uplift"]
+    assert result["uplift"]["curves"] == found["curves"]
+
+    # 上限を変えた後の配る行
     response = client.post(url, json={
         "source": table, "decision": {"type": "treat", "budget": 3}
     })
@@ -179,7 +186,7 @@ def test_uplift_bundle(client: TestClient, uplift_files: Path) -> None:
     ]
     assert fewer["budget"] == 3
 
-    # 上限が効果の正の行より多いと, 効果の正の行だけを配る
+    # 上限が効果の正の行より多い場合の配る行
     response = client.post(url, json={
         "source": table, "decision": {"type": "treat", "budget": 1000}
     })
@@ -256,6 +263,11 @@ def test_uplift_refusals(client: TestClient, uplift_files: Path) -> None:
     for extra in ({"rules": {"min_confidence": 0.5}}, {"forecast": True},
                   {"decision": {"type": "triage", "capacity": 3}},
                   {"decision": {"type": "treat", "budget": 0}},
+                  {"decision": {"type": "treat", "budget": 2.5}},
+                  {"decision": {"type": "treat", "budget": "3"}},
+                  {"decision": {"type": "treat", "budget": True}},
+                  {"decision": {"type": "treat", "budget": 100_001}},
+                  {"decision": {"type": "treat", "budget": 1e21}},
                   {"decision": {"type": "treat", "budget": 3,
                                 "cost": 1}},
                   {"k": 3}):
@@ -263,6 +275,17 @@ def test_uplift_refusals(client: TestClient, uplift_files: Path) -> None:
         assert response.status_code == 400, extra
     response = client.post(url, json={"source": table, "forecast": True})
     assert "配る判断" in response.json()["detail"]
+    response = client.post(url, json={
+        "source": table, "decision": {"type": "treat", "budget": 100_001}
+    })
+    assert "100,000 件まで" in response.json()["detail"]
+
+    # 上限の境界の 100,000 件は通る
+    response = client.post(url, json={
+        "source": table, "decision": {"type": "treat", "budget": 100_000}
+    })
+    assert response.status_code == 201, response.text
+    assert response.json()["decision"]["summary"]["budget"] == 100_000
 
     # 結論の出し直し, 決め直し, たどり直しと人の確認は使えない
     result = client.post(url, json={"source": table}).json()
@@ -277,6 +300,13 @@ def test_uplift_refusals(client: TestClient, uplift_files: Path) -> None:
     assert client.get(
         f"/api/results/{result['id']}/treated?limit=501"
     ).status_code == 422
+
+    # 英数字とハイフンの外の結果の id と, 無い結果の id
+    for name in ("..", "a_b", "x.y"):
+        response = client.get(f"/api/results/{name}/treated")
+        assert response.status_code in (404, 400), name
+    response = client.get("/api/results/missing-1/treated")
+    assert response.status_code == 404
 
 
 def test_treated_only_uplift(client: TestClient) -> None:

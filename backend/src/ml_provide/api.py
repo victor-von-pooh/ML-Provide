@@ -108,6 +108,9 @@ KEPT_CONCLUSIONS = frozenset({"table", "ranking", "cluster", "effect"})
 # 返す件数の上限)
 MAX_CAPACITY = 1000
 
+# 効果の一式で, 配る数の上限の上限 (JSON の整数を丸めずに渡せる大きさ)
+MAX_BUDGET = 100_000
+
 # 並べるの一式だけに渡せる欄を, ほかの一式に渡したときの文
 RANK_ONLY = (
     "利用者の並び, 並べる件数, 前に反応した品物の表, 正解の反応の表は, "
@@ -1178,7 +1181,7 @@ def predict(
         rules = None
     elif bundle.from_uplift:
         # 効果の一式は配る判断だけ (省くと一式の既定)
-        decision = uplift_decision(body)
+        decision = uplift_decision(bundle, body)
         rules = None
     elif not bundle.column_output:
         # 列の出力でない一式は件数だけ (決め方と意思決定は使えないもの)
@@ -1327,12 +1330,16 @@ def anomaly_decision(
     return decision
 
 
-def uplift_decision(body: PredictRequest) -> Optional[dict[str, Any]]:
+def uplift_decision(
+    bundle: ml_inference.Bundle, body: PredictRequest
+) -> Optional[dict[str, Any]]:
     """
     効果の一式に渡す配る判断を確かめる関数
 
     Parameters
     ----------
+    bundle: ml_inference.Bundle
+        効果の一式
     body: PredictRequest
         推論の要求
 
@@ -1345,7 +1352,8 @@ def uplift_decision(body: PredictRequest) -> Optional[dict[str, Any]]:
     Raises
     ----------
     HTTPException
-        結論の決め方か何段も先の予測を渡した場合は 400
+        結論の決め方か何段も先の予測を渡した場合と, 配る数の上限が
+        MAX_BUDGET を超える場合は 400
     """
     # 結論の決め方と何段も先の予測は使えないもの
     given = any(v is not None for v in (body.rules or {}).values())
@@ -1356,6 +1364,15 @@ def uplift_decision(body: PredictRequest) -> Optional[dict[str, Any]]:
             "です"
         )
     decision = body.decision
+    found = bundle.info.get("decision") if decision is None else decision
+    budget = (found or {}).get("budget") if isinstance(found, dict) else None
+    if isinstance(budget, (int, float)) and not isinstance(budget, bool) and (
+        budget > MAX_BUDGET
+    ):
+        raise HTTPException(
+            400, f"配る数の上限は {MAX_BUDGET:,} 件までにしてください (今は "
+            f"{budget:,} 件)"
+        )
 
     return decision
 
@@ -1375,7 +1392,7 @@ def uplift_meta(bundle: Any) -> Optional[dict[str, Any]]:
         curves (分割ごとの rows, fraction, qini, random の並び), outcome
         (binary か amount), k. 効果の一式でなければ None
     """
-    # 一式の登録を消しても, 結果の画面に曲線を出せるように写す
+    # 一式の登録を消した後も結果の画面に曲線を出すための写し
     if not bundle.from_uplift:
         return None
     found = bundle.info["uplift"]
@@ -1408,7 +1425,7 @@ def grouping_meta(
         全体), texts (値が全て文字の元の列. 読み直すときに文字で読む).
         群分けの一式でなければ None
     """
-    # 一式を消しても, 学習のときの群の大きさと比べられるように写す
+    # 一式を消した後も学習のときの群の大きさと比べるための写し
     if not bundle.from_group:
         return None
     group = bundle.info["group"]

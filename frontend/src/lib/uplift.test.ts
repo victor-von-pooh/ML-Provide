@@ -1,5 +1,12 @@
 import type { Result } from '../api/types'
-import { budgetProblem, distributionText, topText, treatSummary, upliftSummary } from './uplift'
+import {
+  budgetProblem,
+  distributionText,
+  resultK,
+  topText,
+  treatSummary,
+  upliftSummary,
+} from './uplift'
 
 describe('効果の欄と結果', () => {
   it('上位 K 割を % で書く (小数の誤差を出さない)', () => {
@@ -7,13 +14,14 @@ describe('効果の欄と結果', () => {
     expect(topText(0.25)).toBe('上位 25 %')
     expect(topText(0.125)).toBe('上位 12.5 %')
     expect(topText(1)).toBe('上位 100 %')
+    expect(topText(null)).toBe('上位 – %')
   })
 
-  it('配る数の上限は 1 以上の整数だけ', () => {
+  it('配る数の上限は 1 から 100,000 の整数だけ', () => {
     expect(budgetProblem('8')).toBeNull()
-    expect(budgetProblem(' 5000 ')).toBeNull()
-    for (const text of ['', '0', '2.5', '-1', 'a'])
-      expect(budgetProblem(text)).toMatch(/1 以上の整数/)
+    expect(budgetProblem(' 100000 ')).toBeNull()
+    for (const text of ['', '0', '2.5', '-1', 'a', '100001', '1e21'])
+      expect(budgetProblem(text)).toMatch(/1 から 100,000 の整数/)
   })
 
   it('効果の結果と配る判断のまとめだけを読む', () => {
@@ -32,6 +40,18 @@ describe('効果の欄と結果', () => {
     expect(treatSummary(result)?.budget).toBe(3)
     expect(upliftSummary({ ...result, kind: 'anomaly' })).toBeNull()
     expect(treatSummary({ ...result, decision: null })).toBeNull()
+    const blank = { ...result.decision!, summary: null } as unknown as Result['decision']
+    expect(treatSummary({ ...result, decision: blank })).toBeNull()
+  })
+
+  it('K は一式から写した K, 無ければ結論の K, どちらも無ければ null', () => {
+    const summary = { top_k: { k: 0.2, rows: 1, mean: 0, lowest: 0 } } as never
+    const base = { kind: 'uplift' } as Result
+    expect(resultK({ ...base, uplift: { k: 0.25, outcome: 'binary', curves: {} } }, summary)).toBe(
+      0.25,
+    )
+    expect(resultK(base, summary)).toBe(0.2)
+    expect(resultK(base, { top_k: null } as never)).toBeNull()
   })
 
   it('学習用の行の効果の分布の文', () => {

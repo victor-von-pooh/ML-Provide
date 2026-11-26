@@ -14,6 +14,7 @@ ML-Quest の効果の見積もりの骨組みが実験に書く成果物と同�
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -67,7 +68,7 @@ def coupon_rows(seed: int = 0, customers: int = CUSTOMERS) -> pd.DataFrame:
     return frame
 
 
-def uplift_spec() -> dict:
+def uplift_spec() -> dict[str, Any]:
     """
     列の数に合わせた 2 つの予測のモデルの定義を返す関数
 
@@ -77,7 +78,7 @@ def uplift_spec() -> dict:
 
     Returns
     ----------
-    spec: dict
+    spec: dict[str, Any]
         ML-ModelControl の同梱の例 tabular_uplift の入力の幅を変えたもの
     """
     # 入力の幅と, 2 つの枝の最初の全結合の入力の幅
@@ -128,7 +129,9 @@ def train_model(x: np.ndarray, t: np.ndarray, y: np.ndarray) -> torch.nn.Module:
     return model
 
 
-def estimate(model: torch.nn.Module, x: np.ndarray) -> dict:
+def estimate(
+    model: torch.nn.Module, x: np.ndarray
+) -> dict[str, np.ndarray]:
     """
     骨組みと同じ式で, 行ごとの 2 つの群の予測と効果を求める関数
 
@@ -141,7 +144,7 @@ def estimate(model: torch.nn.Module, x: np.ndarray) -> dict:
 
     Returns
     ----------
-    found: dict
+    found: dict[str, np.ndarray]
         treated, control, effect の float64 の配列 (確率と確率の差)
     """
     # それぞれをシグモイドで確率にしてからの差
@@ -155,7 +158,9 @@ def estimate(model: torch.nn.Module, x: np.ndarray) -> dict:
     return found
 
 
-def qini_curve(effect: np.ndarray, t: np.ndarray, y: np.ndarray) -> dict:
+def qini_curve(
+    effect: np.ndarray, t: np.ndarray, y: np.ndarray
+) -> dict[str, list[float]]:
     """
     効果の高い順の Qini の曲線と, でたらめに配る線を求める関数
 
@@ -170,7 +175,7 @@ def qini_curve(effect: np.ndarray, t: np.ndarray, y: np.ndarray) -> dict:
 
     Returns
     ----------
-    curve: dict
+    curve: dict[str, list[float]]
         rows, fraction, qini, random の並び (先頭は 0 の点)
     """
     # 上位の行の群ごとの数と結果の和 (Y_t − Y_c × n_t / n_c)
@@ -190,7 +195,7 @@ def qini_curve(effect: np.ndarray, t: np.ndarray, y: np.ndarray) -> dict:
 
 
 def evaluation(effect: np.ndarray, t: np.ndarray, y: np.ndarray,
-               curve: dict) -> dict:
+               curve: dict[str, list[float]]) -> dict[str, Any]:
     """
     分割の Qini の係数と上位 K 割の効果の差を求める関数
 
@@ -202,16 +207,16 @@ def evaluation(effect: np.ndarray, t: np.ndarray, y: np.ndarray,
         処置なら 1, 対照なら 0
     y: np.ndarray
         結果
-    curve: dict
+    curve: dict[str, list[float]]
         qini_curve の曲線
 
     Returns
     ----------
-    row: dict
+    row: dict[str, Any]
         rows, treated, control, k, qini, uplift_at_k, effect, estimated
     """
     # 理想の並びは処置の群の結果, 対照の群の結果の符号を変えた値の並び
-    def area(found: dict) -> float:
+    def area(found: dict[str, list[float]]) -> float:
         values = np.asarray(found["qini"])
         return float(((values[1:] + values[:-1]) / 2).sum())
 

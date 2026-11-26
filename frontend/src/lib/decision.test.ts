@@ -1,6 +1,25 @@
 import { baselineText, fromDecisionForm, toDecisionForm, visibleFields } from './decision'
 
 describe('意思決定の編集', () => {
+  it('欄の無い型 (効果の一式の配る判断) は意思決定しない欄として読む', () => {
+    const treat = { type: 'treat', budget: 8 } as unknown as Parameters<typeof toDecisionForm>[0]
+    const form = toDecisionForm(treat)
+    expect(form).toEqual({ type: '', positive: '', values: {} })
+    expect(visibleFields(form)).toEqual([])
+    expect(fromDecisionForm(form, []).decision).toBeNull()
+  })
+
+  it('欄のある型の読み方は変わらない', () => {
+    expect(toDecisionForm({ type: 'triage', capacity: 3 })).toMatchObject({
+      type: 'triage',
+      values: { capacity: '3' },
+    })
+    expect(toDecisionForm({ type: 'quantity', under_cost: 3, over_cost: 1 })).toMatchObject({
+      type: 'quantity',
+      values: { under_cost: '3', over_cost: '1' },
+    })
+  })
+
   it('数と列の名前を分けて渡す', () => {
     const form = {
       type: 'quantity' as const,

@@ -127,7 +127,7 @@ const treated = vi.fn((_id: string, offset: number, _limit: number): Promise<Tre
     offset,
     rows: [
       { row: 2, id: 'c12', rank: 1, effect: 0.75, treated: 0.9, control: 0.15 },
-      { row: 0, id: 'c10', rank: 2, effect: 0.5, treated: 0.7, control: 0.2 },
+      { row: 0, id: 10234, rank: 2, effect: 0.5, treated: 0.7, control: 0.2 },
     ],
   }),
 )
@@ -187,6 +187,9 @@ describe('効果の結果の画面', () => {
     const list = await screen.findByRole('table', { name: /^配る行/ })
     expect(within(list).getAllByRole('row')).toHaveLength(3)
     expect(within(list).getAllByRole('row')[1]).toHaveTextContent('c12')
+    // 数の行の id も桁区切りを付けずにそのまま
+    expect(within(list).getAllByRole('row')[2]).toHaveTextContent('10234')
+    expect(within(list).getAllByRole('row')[2]).not.toHaveTextContent('10,234')
     expect(treated).toHaveBeenCalledWith('r1', 0, 100)
     expect(screen.getByText(/効果の高い順に 2 件に配る/)).toBeInTheDocument()
     expect(screen.getByText('効果を見積もった')).toBeInTheDocument()

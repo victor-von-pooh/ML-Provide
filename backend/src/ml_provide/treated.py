@@ -41,7 +41,7 @@ def get_treated(
     HTTPException
         効果の結果でない場合は 400
     """
-    # 配る行を順位の順に (順位の欠けた行は後ろ)
+    # 配る行の順位順 (順位の欠けた行は後ろ)
     place, meta = find_result_meta(request, result_id)
     if meta.get("kind") != "uplift":
         raise HTTPException(400, "配る行は効果の一式の結果だけで使えます")
@@ -68,7 +68,7 @@ def get_treated(
             part.index, part.to_dict("records"), strict=True
         )
     ]
-    # (JSON に書けない値を残さないための, 書いての読み直し)
+    # JSON に書ける値にそろえるための読み直し
     treated: dict[str, Any] = json.loads(json.dumps(
         {"id": column, "budget": decided.get("budget"),
          "total": int(len(chosen)), "offset": offset, "rows": rows},
