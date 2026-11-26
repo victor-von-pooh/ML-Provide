@@ -108,6 +108,53 @@ export interface Description {
   price?: PriceInfo | null
   /** 需要の一式 (版 14) の列, 先の期間, 学んだ水準, 発注の損と上限, 学習用の分割の要約, 実験の評価 */
   demand?: DemandInfo | null
+  /** 検索の一式 (版 15) の索引の大きさ, 返す件数の既定, 待ち時間の上限, 骨組みの評価 */
+  search?: SearchInfo | null
+}
+
+/** 検索の一式の骨組みの評価 (検証用の問いの Recall@K と NDCG@K と, 比べる相手) */
+export interface SearchEvaluation {
+  split: string
+  queries: number
+  k: number
+  recall_at_k: number
+  ndcg_at_k: number
+  recall_at_k_baseline: number
+  ndcg_at_k_baseline: number
+  recall_at_k_diff: number
+  ndcg_at_k_diff: number
+  baseline: string | null
+}
+
+/** 検索の一式の search の欄 (ML-Inference の describe_bundle の search) */
+export interface SearchInfo {
+  /** 索引の写真の数 */
+  items: number
+  /** 埋め込みの幅 */
+  width: number
+  /** 返す件数の既定 */
+  k: number
+  /** 1 件の問いの待ち時間の上限 (ミリ秒. 無ければ null) */
+  max_latency_ms: number | null
+  /** 索引の写真に種類があるか */
+  labeled: boolean
+  /** 索引の写真のディレクトリ (無ければ null) */
+  root: string | null
+  /** 骨組みの評価 (種類が無ければ null) */
+  evaluation: SearchEvaluation | null
+}
+
+/** 検索の結果の, 件数, 索引, 待ち時間, 評価 */
+export interface SearchResultInfo {
+  k: number
+  items: number
+  max_latency_ms: number | null
+  labeled: boolean
+  evaluation: SearchEvaluation | null
+  /** 並べた問いの待ち時間の中央値と最大 (無ければ null) */
+  latency: { median: number; max: number } | null
+  /** 上限を超えた問いの数 (上限が無ければ null) */
+  over_latency: number | null
 }
 
 /** 需要の一式の実験の 1 つの分割の評価 */
@@ -1040,6 +1087,8 @@ export interface Result {
   price?: { step: number; elasticity: ElasticityDistribution | null } | null
   /** 需要の結果の, 予測した行の水準ごとの分位点の平均と分位点の幅の分布 */
   demand?: DemandQuantiles | null
+  /** 検索の結果の件数, 索引, 待ち時間, 評価 */
+  search?: SearchResultInfo | null
 }
 
 /** 結果どうしの比べ (GET /api/results/compare) */

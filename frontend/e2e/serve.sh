@@ -141,6 +141,11 @@ uv run python ../frontend/e2e/make_price.py "$WORK/price"
 # ML-Inference の make_demand_bundle) を作り, 発注の数を決める新しい日ごとの記録の表を書く
 uv run python ../frontend/e2e/make_demand.py "$WORK/demand"
 
+# 似た写真を探す骨組みと同じ形の成果物から, 検索の一式 (版 15. ML-Inference の
+# make_search_bundle) を作り, 問いの写真を書く (作り物の出どころの e2e_ready を読む)
+PYTHONPATH="$E2E_DIR${PYTHONPATH:+:$PYTHONPATH}" \
+  uv run python ../frontend/e2e/make_search.py "$WORK/search"
+
 # 既製のモデルの一式で推論する画像 (赤, 緑, 青と, 読めないファイル)
 uv run python - "$WORK/ready-images" <<'PY'
 import sys

@@ -33,6 +33,7 @@ import {
   RANK_UNSUPPORTED,
   rankColumnsText,
   rankRowColumns,
+  SEARCH_UNSUPPORTED,
 } from '../../lib/ranking'
 import { READY_UNSUPPORTED } from '../../lib/ready'
 import { anomalySummary, triageSummary } from '../../lib/anomaly'
@@ -48,6 +49,7 @@ import { ArtifactCard } from './ArtifactCard'
 import { UpliftCards, UpliftTerms } from './UpliftCards'
 import { PriceCards, PriceTerms } from './PriceCards'
 import { DemandCards, DemandTerms } from './DemandCards'
+import { SearchCards } from './SearchCards'
 import {
   ClusterRepresentativesTable,
   ClusterStabilityView,
@@ -246,8 +248,9 @@ function RowsTable({
   const manyProbabilities = probabilities.length > MAX_PROBABILITY_COLUMNS
   // 表の出力の結果は作った表 (件の番号と種の後に列の符号化の順の列)
   const table = result.output_form === 'table' && !!result.table_columns
-  // 並べるの結果は利用者と順位ごとの品物と点数 (見出しと状態は日本語)
-  const ranking = result.output_form === 'ranking'
+  // 並べるの結果は利用者と順位ごとの品物と点数 (見出しと状態は日本語. 検索の結果は問いと順位ごと
+  // の写真の列のまま)
+  const ranking = result.output_form === 'ranking' && !result.search
   const headings = ranking
     ? RANK_HEADINGS
     : grouped
@@ -829,8 +832,10 @@ export function ResultPage() {
   const column = data.column_output !== false
   // 既製のモデルの一式の結果は, 意思決定, たどり直し, 外れ方の確かめを使えない
   const readyModel = data.kind === 'ready'
+  // 検索の結果は問いの写真ごとの近い写真 (数えるのは問いの数)
+  const search = data.search ?? null
   // 並べるの結果は利用者ごとの上位の品物 (数えるのは利用者の人数)
-  const ranking = data.output_form === 'ranking'
+  const ranking = data.output_form === 'ranking' && !search
   // 群分けの結果は行ごとの群 (結論は群の要約と学習の群の安定性)
   const grouped = data.output_form === 'cluster'
   // 異常の度合いの結果は行ごとの度合い (結論は度合いの分布と上位の行, 意思決定は人の確認への振り分け)
@@ -917,6 +922,8 @@ export function ResultPage() {
         {readyModel && <p className="text-xs text-ink-2">{READY_UNSUPPORTED}</p>}
         {ranking && <p className="text-xs text-ink-2">{RANK_UNSUPPORTED}</p>}
         {ranking && <RankingCard result={data} />}
+        {search && <p className="text-xs text-ink-2">{SEARCH_UNSUPPORTED}</p>}
+        {search && <SearchCards result={data} search={search} />}
         {grouped && <p className="text-xs text-ink-2">{CLUSTER_UNSUPPORTED}</p>}
         {grouped && (
           <ClusterCards
@@ -956,50 +963,64 @@ export function ResultPage() {
         {summary && (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <StatTile
-              label={ranking ? '利用者' : demand ? '商品' : '行'}
+              label={search ? '問いの写真' : ranking ? '利用者' : demand ? '商品' : '行'}
               value={summary.rows.toLocaleString()}
             />
             <StatTile
               label={
-                ranking
-                  ? '並べた利用者'
-                  : grouped
-                    ? '割り当てた'
-                    : anomaly
-                      ? '度合いを出した'
-                      : uplift
-                        ? '効果を見積もった'
-                        : priced
-                          ? '売れた数を予測した'
-                          : demand
-                            ? '需要を予測した'
-                            : column
-                              ? '予測した'
-                              : '推論した'
+                search
+                  ? '並べた問い'
+                  : ranking
+                    ? '並べた利用者'
+                    : grouped
+                      ? '割り当てた'
+                      : anomaly
+                        ? '度合いを出した'
+                        : uplift
+                          ? '効果を見積もった'
+                          : priced
+                            ? '売れた数を予測した'
+                            : demand
+                              ? '需要を予測した'
+                              : column
+                                ? '予測した'
+                                : '推論した'
               }
               value={summary.predicted.toLocaleString()}
             />
             <StatTile
               label={
-                ranking
-                  ? '並べられなかった利用者'
-                  : grouped
-                    ? '割り当てられなかった'
-                    : anomaly
-                      ? '度合いを出せなかった'
-                      : uplift
-                        ? '効果を出せなかった'
-                        : priced
-                          ? '予測できなかった'
-                          : demand
-                            ? '需要を予測できなかった'
-                            : column
-                              ? '予測しなかった'
-                              : '推論しなかった'
+                search
+                  ? '並べられなかった問い'
+                  : ranking
+                    ? '並べられなかった利用者'
+                    : grouped
+                      ? '割り当てられなかった'
+                      : anomaly
+                        ? '度合いを出せなかった'
+                        : uplift
+                          ? '効果を出せなかった'
+                          : priced
+                            ? '予測できなかった'
+                            : demand
+                              ? '需要を予測できなかった'
+                              : column
+                                ? '予測しなかった'
+                                : '推論しなかった'
               }
               value={summary.skipped.toLocaleString()}
             />
-            {ranking ? (
+            {search ? (
+              <StatTile
+                label="返した件数"
+                value={`${search.k} 件`}
+                hint={
+                  search.over_latency === null
+                    ? '待ち時間の上限なし'
+                    : `上限を超えた問い ${search.over_latency} 枚`
+                }
+              />
+            ) : ranking ? (
               <StatTile label="並べた件数" value={`${summary.k ?? data.ranking?.k ?? '–'} 件`} />
             ) : grouped ? (
               <StatTile label="群の数" value={`${summary.k ?? data.grouping?.k ?? '–'} 個`} />

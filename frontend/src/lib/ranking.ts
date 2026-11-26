@@ -78,3 +78,7 @@ export function reactionRuleText(columns: RankColumns): string {
 export function metricText(value: number): string {
   return value.toFixed(3)
 }
+
+/** 検索の結果で使えない機能の説明 */
+export const SEARCH_UNSUPPORTED =
+  '検索の結果は問いの写真ごとの近い写真の一覧なので, 結論の決め方, 意思決定の編集, たどり直し, 外れ方の確かめ, 列の効きは使えません'

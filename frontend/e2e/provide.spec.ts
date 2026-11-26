@@ -1468,3 +1468,50 @@ test('既製のモデルの一式を下見して作り, ライセンスの警告
     await page.request.delete(`/api/bundles/${id}`)
   }
 })
+
+test('検索の一式を場所で登録して問いの写真を推論し, 近い順の写真と待ち時間と評価を見て, 件数を変えると並ぶ写真の数が変わる', async ({
+  page,
+}) => {
+  const root = path.resolve(import.meta.dirname, '.work', 'search')
+  const bundle = { id: await registerFresh(page.request, path.join(root, 'bundle')) }
+  try {
+    // 一式の画面: 既製のモデルの出どころと, 索引, 返す件数, 待ち時間の上限, 骨組みの評価
+    await page.goto(`/bundles/${bundle.id}`)
+    await expect(page.getByText(/^登録した写真 9 枚の埋め込み/)).toBeVisible()
+    await expect(page.getByText('5,000 ms (守る指標. 1 件の問いあたり)')).toBeVisible()
+    await expect(page.getByText(/Recall@K 1\.000, NDCG@K 1\.000/)).toBeVisible()
+    await expect(page.getByLabel(/^返す件数 K/)).toHaveValue('3')
+
+    // 問いの写真を推論して, 問いごとの近い写真を見る
+    await page.getByLabel(/^問いの写真/).fill(path.join(root, 'queries'))
+    await page.getByRole('button', { name: '探す' }).click()
+    await expect(
+      page.getByText(/^問いの写真 3 枚のうち 2 枚に, 索引の写真 9 枚から近い順に上位 3 件/),
+    ).toBeVisible({ timeout: 30_000 })
+    const list = page.getByRole('list', { name: '問いごとの似た写真' })
+    await expect(list.getByRole('img', { name: /^1 位の写真 red\// })).toBeVisible()
+    await expect(list.getByRole('img', { name: /^1 位の写真 blue\// })).toBeVisible()
+    await expect(list.getByRole('img')).toHaveCount(2 * 4)
+    await expect(list.getByText(/^並べられませんでした: 画像を読めません/)).toBeVisible()
+    // 縮小画像が読めて, 画面に出る
+    const loaded = await list
+      .getByRole('img')
+      .first()
+      .evaluate((image) => (image as HTMLImageElement).naturalWidth)
+    expect(loaded).toBeGreaterThan(0)
+    await expect(page.getByText(/^中央値 [\d.]+ ms, 最大 [\d.]+ ms$/)).toBeVisible()
+    await expect(page.getByText('5,000 ms. 超えた問い 0 枚')).toBeVisible()
+
+    // 件数を 1 にすると問いごとに 1 枚
+    await page.goto(`/bundles/${bundle.id}`)
+    await page.getByLabel(/^問いの写真/).fill(path.join(root, 'queries'))
+    await page.getByLabel(/^返す件数 K/).fill('1')
+    await page.getByRole('button', { name: '探す' }).click()
+    await expect(page.getByText(/近い順に上位 1 件/)).toBeVisible({ timeout: 30_000 })
+    await expect(
+      page.getByRole('list', { name: '問いごとの似た写真' }).getByRole('img'),
+    ).toHaveCount(2 * 2)
+  } finally {
+    await page.request.delete(`/api/bundles/${bundle.id}`)
+  }
+})
