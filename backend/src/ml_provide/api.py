@@ -1433,15 +1433,15 @@ def price_decision(
 
 
 def price_meta(
-    bundle: Any, frame: pd.DataFrame
+    bundle: ml_inference.Bundle, frame: pd.DataFrame
 ) -> Optional[dict[str, Any]]:
     """
     値段の結果に残す, 予測した行の弾力性の分布と弾力性の上げ幅を返す関数
 
     Parameters
     ----------
-    bundle: Any
-        読んだ一式 (ML-Inference の Bundle)
+    bundle: ml_inference.Bundle
+        読んだ一式
     frame: pd.DataFrame
         推論の直後の予測の表
 
@@ -1452,7 +1452,7 @@ def price_meta(
         counted, mean, min, p10, p50, p90, max, negative. 数えた行が無ければ
         None). 値段の一式でなければ None
     """
-    # ML-Inference の結論は弾力性の平均だけなので, 分布は予測の表から
+    # 弾力性の分布 (ML-Inference の結論は平均だけなので予測の表から数える)
     if not bundle.from_price:
         return None
     values = pd.to_numeric(

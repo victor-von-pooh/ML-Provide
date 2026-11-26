@@ -211,7 +211,7 @@ def test_price_bundle(client: TestClient, price_files: Path) -> None:
     again = client.get(f"/api/results/{result['id']}").json()
     assert again["price"] == result["price"]
 
-    # 上限を広げると, 上限の中で選び, 上限を超える候補の方が良い行は減る
+    # 上限を広げたときの, 上限の中の選び方と, 上限を超える候補の方が良い行の減少
     response = client.post(url, json={
         "source": table, "decision": {
             "type": "price", "candidates": [-0.1, 0, 0.1, 0.2],
@@ -324,7 +324,7 @@ def test_price_refusals(client: TestClient, price_files: Path) -> None:
     })
     assert "20 個まで" in response.json()["detail"]
 
-    # 候補の数の境界の 20 個は通る
+    # 候補の数の境界 (20 個) を含む推論
     response = client.post(url, json={
         "source": table,
         "decision": {"type": "price", "candidates": many[:20],
@@ -332,7 +332,7 @@ def test_price_refusals(client: TestClient, price_files: Path) -> None:
     })
     assert response.status_code == 201, response.text
 
-    # 結論の出し直し, 決め直し, たどり直し, 人の確認, 配る行は使えない
+    # 使えない欄 (結論の出し直し, 決め直し, たどり直し, 人の確認, 配る行)
     result = client.post(url, json={"source": table}).json()
     for name, body in (("conclude", {"rules": {}}),
                        ("decide", {"decision": None}), ("backtest", None)):

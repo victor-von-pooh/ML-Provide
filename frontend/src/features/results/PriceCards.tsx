@@ -124,7 +124,7 @@ export function PriceEvaluationsView({
             <Heading right>利益の差</Heading>
             <Heading right>利益の比</Heading>
             <Heading right>値段を変える商品</Heading>
-            <Heading right>上限</Heading>
+            <Heading right>変える幅の上限</Heading>
           </tr>
         </thead>
         <tbody>
@@ -187,7 +187,7 @@ function ProfitCard({ result, decided }: { result: Result; decided: PriceDecisio
             <dd>
               <span className="tabular font-semibold">{formatNumber(decided.limited)} 行</span>
               <span className="block text-xs text-ink-3">
-                上限は守る指標なので, 上限を超える候補は選びません.
+                上限は値段を急に大きく変えないための決まりなので, 上限を超える候補は選びません.
                 多ければ上限を広げたときの利益を推論し直して比べられます
               </span>
             </dd>
@@ -240,7 +240,8 @@ function ElasticityCard({
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <caption className="sr-only">
-              弾力性の分布 (予測した行の平均, 最小, 10 % 点, 中央, 90 % 点, 最大, 負の行)
+              弾力性の分布 (予測した行の平均, 最小, 10 % 点, 中央, 90 % 点, 最大,
+              弾力性が負の行の割合)
             </caption>
             <thead className="text-xs text-ink-3">
               <tr className="border-b border-line">
@@ -251,7 +252,7 @@ function ElasticityCard({
                 <Heading right>中央</Heading>
                 <Heading right>90 % 点</Heading>
                 <Heading right>最大</Heading>
-                <Heading right>負の行</Heading>
+                <Heading right>弾力性が負の行の割合</Heading>
               </tr>
             </thead>
             <tbody>

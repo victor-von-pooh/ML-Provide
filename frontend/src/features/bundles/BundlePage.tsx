@@ -354,7 +354,13 @@ function PriceRows({
         <span className="tabular">{limitText(price.max_change)}</span>
         <span className="block text-xs text-ink-2">{MAX_CHANGE_TEXT}</span>
       </Row>
-      <Row label="実験の今の値段">{CURRENT_LABELS[price.current] ?? price.current}</Row>
+      <Row label="実験の今の値段">
+        {CURRENT_LABELS[price.current] ?? price.current}
+        <span className="block text-xs text-ink-2">
+          実験で弾力性と利益を数えるときの今の値段 (商品ごとの記録の値段の中央値, または行の値段)
+          です
+        </span>
+      </Row>
       <Row label="学習用の分割">
         商品 {formatNumber(price.train.products)}, 値段を変える商品{' '}
         {formatNumber(price.train.changed)}, 弾力性の平均{' '}
@@ -363,9 +369,11 @@ function PriceRows({
       </Row>
       {price.check && (
         <Row label="元の表での確かめ">
-          学習の元の表の {price.check.rows.toLocaleString()} 個の鍵で一式が値段を選び直し,{' '}
-          {(price.check.agreement * 100).toFixed(1)} % が実験の選んだ割合と合う (1
-          行あたりの見込みの利益の差の最大 {formatNumber(price.check.max_diff)})
+          学習の元の表の {price.check.rows.toLocaleString()}{' '}
+          {price.product ? '商品 (商品の id の列で照らした)' : '行 (行の id の列で照らした)'}{' '}
+          で一式が値段を選び直し, {(price.check.agreement * 100).toFixed(1)} %
+          が実験の選んだ割合と合う (1 行あたりの見込みの利益の差の最大{' '}
+          {formatNumber(price.check.max_diff)})
         </Row>
       )}
     </>
@@ -960,7 +968,7 @@ function PredictCard({
                 />
                 <p id="predict-candidates-note" className="mt-1 text-xs text-ink-3">
                   {parsedCandidates.problem
-                    ? `既定は一式の ${candidatesInput(price.candidates)}`
+                    ? `一式の既定は ${candidatesText(price.candidates)}`
                     : `% では ${candidatesText(parsedCandidates.values)} (既定は一式の ${candidatesText(price.candidates)})`}
                 </p>
               </div>
@@ -983,7 +991,7 @@ function PredictCard({
                 />
                 <p id="predict-max-change-note" className="mt-1 text-xs text-ink-3">
                   {parsedMaxChange.value === null
-                    ? `既定は一式の ${price.max_change}`
+                    ? `一式の既定は ${limitText(price.max_change)} (省けません)`
                     : `% では ${limitText(parsedMaxChange.value)} (既定は一式の ${limitText(price.max_change)})`}
                 </p>
               </div>

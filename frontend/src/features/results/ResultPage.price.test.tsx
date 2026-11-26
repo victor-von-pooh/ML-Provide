@@ -165,7 +165,7 @@ describe('値段の結果の画面', () => {
       expect(within(glossary).getByText(term)).toBeInTheDocument()
     expect(glossary).toHaveTextContent('原価の列 unit_cost')
     expect(glossary).toHaveTextContent('値段を 1 % 上げたとき')
-    expect(glossary).toHaveTextContent('変える幅の上限は, 選んでよい割合の絶対値の上限')
+    expect(glossary).toHaveTextContent('変える幅の上限は, 選んでよい値上げと値下げの大きさの限度')
     expect(glossary).toHaveTextContent('試しに値段を変えた記録を前提')
 
     // 利益の比べと上限を超える候補の方が良い行
