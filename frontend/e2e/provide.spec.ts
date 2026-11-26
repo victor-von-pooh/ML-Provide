@@ -1263,6 +1263,70 @@ test('効果の一式を場所で登録して推論し, 効果の上位から配
   }
 })
 
+test('値段の一式を場所で登録して推論し, 選んだ値段と利益の比べと弾力性を見て, 上限を変えると選ぶ値段が上限の中に収まる', async ({
+  page,
+}) => {
+  const root = path.resolve(import.meta.dirname, '.work', 'price')
+  const bundle = { id: await registerFresh(page.request, path.join(root, 'bundle')) }
+  try {
+    // 一式の画面: 列と言葉の説明, 値段の候補と上限, 実験の評価. 問題の設定と意思決定の欄は無い
+    await page.goto(`/bundles/${bundle.id}`)
+    await expect(page.getByText(/^値段の決め方と前処理のレシピ/)).toBeVisible()
+    await expect(page.getByText('-10 %, 0 %, +10 %, +20 %').first()).toBeVisible()
+    await expect(page.getByRole('table', { name: /^実験の評価/ })).toContainText('検証用')
+    await expect(page.getByRole('region', { name: '意思決定' })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: '問題の設定' })).toHaveCount(0)
+    await expect(page.getByLabel(/^値段の候補/)).toHaveValue('-0.1, 0, 0.1, 0.2')
+    await expect(page.getByLabel(/^変える幅の上限/)).toHaveValue('0.1')
+
+    // 新しい商品の値段を既定の候補と上限 (10 %) で選ぶ
+    const products = path.join(root, 'products.csv')
+    await page.getByLabel(/^値段を選ぶ商品の表/).fill(products)
+    await page.getByRole('button', { name: '推論する' }).click()
+    await expect(page.getByText(/^7 行のうち 6 行の売れた数/)).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByLabel('言葉の説明')).toContainText('弾力性は, 値段を 1 % 上げたとき')
+    await expect(page.getByLabel('言葉の説明')).toContainText('変える幅の上限は')
+    await expect(
+      page
+        .getByRole('table', { name: /^弾力性の分布/ })
+        .getByRole('row')
+        .nth(1),
+    ).toContainText('予測した行 (6 行)')
+    await expect(page.getByRole('table', { name: /^実験の評価/ })).toContainText('テスト用')
+    const limited = page.getByText('上限を超える候補の方が利益の大きい行').locator('xpath=..')
+    await expect(limited).toBeVisible()
+    const list = page.getByRole('table', { name: /^選んだ値段/ })
+    await expect(list.getByRole('row')).toHaveCount(7)
+    const changes = await list
+      .getByRole('row')
+      .evaluateAll((rows) => rows.slice(1).map((row) => row.children[5]?.textContent ?? ''))
+    for (const change of changes) expect(['-10 %', '0 %', '+10 %']).toContain(change)
+    await expect(list).not.toContainText('p99')
+
+    // 上限を 20 % に広げて推論し直すと, 選ぶ割合は 20 % の中で, 上限を超える候補の方が良い行は 0
+    await page.goto(`/bundles/${bundle.id}`)
+    await page.getByLabel(/^値段を選ぶ商品の表/).fill(products)
+    await page.getByLabel(/^変える幅の上限/).fill('0.2')
+    await expect(page.getByText(/^% では ±20 %/)).toBeVisible()
+    await page.getByRole('button', { name: '推論する' }).click()
+    await expect(page.getByText(/変える幅の上限 0\.2\)/)).toBeVisible({ timeout: 30_000 })
+    await expect(
+      page
+        .getByText('上限を超える候補の方が利益の大きい行')
+        .locator('xpath=following-sibling::dd[1]'),
+    ).toContainText('0 行')
+    const wide = page.getByRole('table', { name: /^選んだ値段/ })
+    await expect(wide.getByRole('row')).toHaveCount(7)
+    const wider = await wide
+      .getByRole('row')
+      .evaluateAll((rows) => rows.slice(1).map((row) => row.children[5]?.textContent ?? ''))
+    for (const change of wider) expect(['-10 %', '0 %', '+10 %', '+20 %']).toContain(change)
+    await expect(page.getByRole('heading', { name: /^意思決定/ })).toHaveCount(0)
+  } finally {
+    await page.request.delete(`/api/bundles/${bundle.id}`)
+  }
+})
+
 test('既製のモデルの一式を下見して作り, ライセンスの警告と重みの置き場を見て, 画像の種類を推論する', async ({
   page,
 }) => {

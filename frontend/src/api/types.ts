@@ -104,6 +104,126 @@ export interface Description {
   anomaly?: AnomalyInfo | null
   /** 効果の一式 (版 12) の効果の決め方, 列, 配る数の上限, 学習用の行の効果の分布, 実験の評価と Qini の曲線 */
   uplift?: UpliftInfo | null
+  /** 値段の一式 (版 13) の列, 値段の候補と変える幅の上限, 学習用の分割の要約, 実験の評価 */
+  price?: PriceInfo | null
+}
+
+/** 値段の一式の実験の 1 つの分割の評価 */
+export interface PriceEvaluation {
+  rows: number
+  products: number
+  /** 記録の値段での売れた数の予測の平均絶対誤差と二乗平均平方根誤差 */
+  mae: number
+  rmse: number
+  /** 弾力性の平均 (%. 数えた行が無ければ null) */
+  elasticity: number | null
+  elasticity_counted: number
+  /** 選んだ値段の見込みの利益の和と今の値段での和, 差と比 (今の和が 0 以下なら比は null) */
+  profit: number
+  current_profit: number
+  profit_gain: number
+  profit_ratio: number | null
+  /** 値段を変える商品の数 */
+  changed: number
+  max_change: number
+}
+
+/** 値段の一式の price の欄 */
+export interface PriceInfo {
+  /** 予測に使う列 (前処理の後の列. 最後が値段の列) */
+  features: string[]
+  price: string
+  units: string
+  cost: string | null
+  product: string | null
+  id: string
+  /** 今の値段に対する変える割合の候補 */
+  candidates: number[]
+  max_change: number
+  /** 弾力性を数える値段の上げ幅 (割合) */
+  elasticity_step: number
+  /** 実験の今の値段の決め方 (median か row) */
+  current: string
+  /** 実験の選んだ値段の表の行の数 */
+  rows: number
+  train: { products: number; changed: number; elasticity: number | null }
+  evaluations: Record<string, PriceEvaluation>
+  /** 元の表で選んだ値段と実験の選んだ値段の比べ (比べられた場合だけ) */
+  check: { rows: number; agreement: number; max_diff: number } | null
+}
+
+/** 弾力性の分布 (結果の price の欄) */
+export interface ElasticityDistribution {
+  counted: number
+  mean: number
+  min: number
+  p10: number
+  p50: number
+  p90: number
+  max: number
+  /** 弾力性が負の行の割合 */
+  negative: number
+}
+
+/** 値段の結果のまとめ (ML-Inference の値段の結論) */
+export interface PriceSummary extends Counts {
+  id: string | null
+  product: string | null
+  /** 予測の表の原価の列 (原価の列が無い一式か表に無ければ null) */
+  cost: string | null
+  /** 今の値段での予測した数 (予測した行が無ければ null) */
+  units: { mean: number; total: number } | null
+  /** 弾力性の平均 (数える行が無ければ null) と数えた行 */
+  elasticity: { mean: number | null; counted: number } | null
+  train: PriceInfo['train']
+  evaluations: Record<string, PriceEvaluation>
+  /** 渡した表の売れた数で数えた誤差 (数えなければ null) */
+  measured: { rows: number; excluded: number; mae: number; rmse: number } | null
+}
+
+/** 上限の中で利益が最も大きい値段を選ぶ判断のまとめ (意思決定の結果の summary) */
+export interface PriceDecisionSummary {
+  rows: number
+  undecided: number
+  changed: number
+  raised: number
+  lowered: number
+  total: number
+  current_total: number
+  gain: number
+  /** total / current_total (current_total が 0 以下なら null) */
+  ratio: number | null
+  candidates: number[]
+  max_change: number
+  /** 上限を超える候補の方が見込みの利益の大きい行の数 */
+  limited: number
+}
+
+/** 選んだ値段の 1 行 (GET /api/results/{id}/prices) */
+export interface PriceRow {
+  row: number
+  id: string | number | boolean | null
+  product_id: string | number | boolean | null
+  current_price: number | null
+  cost: number | null
+  change: number | null
+  price: number | null
+  units: number | null
+  price_units: number | null
+  current_profit: number | null
+  profit: number | null
+  elasticity: number | null
+}
+
+/** 選んだ値段 (見込みの利益の差の大きい順. offset から) */
+export interface PriceRows {
+  id: string | null
+  product: string | null
+  candidates: number[] | null
+  max_change: number | null
+  total: number
+  offset: number
+  rows: PriceRow[]
 }
 
 /** 効果の分布 (学習用の行は rows も) */
@@ -777,6 +897,8 @@ export interface Result {
   grouping?: GroupingInfo | null
   /** 効果の結果の, 一式の実験の Qini の曲線, 結果の種類, K */
   uplift?: { curves: Record<string, QiniCurve>; outcome: string; k: number } | null
+  /** 値段の結果の, 予測した行の弾力性の分布 (数えた行が無ければ null) と弾力性の上げ幅 */
+  price?: { step: number; elasticity: ElasticityDistribution | null } | null
 }
 
 /** 結果どうしの比べ (GET /api/results/compare) */

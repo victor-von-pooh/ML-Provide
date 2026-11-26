@@ -30,6 +30,25 @@ import {
   UPLIFT_NO_PROBLEM,
   UPLIFT_UNSUPPORTED,
 } from '../../lib/uplift'
+import {
+  candidatesInput,
+  candidatesText,
+  CHANGE_TEXT,
+  changeText,
+  costText,
+  CURRENT_LABELS,
+  elasticityText,
+  limitText,
+  MAX_CANDIDATES,
+  MAX_CHANGE_TEXT,
+  outsideCandidates,
+  parseCandidates,
+  parseMaxChange,
+  PRICE_NO_PROBLEM,
+  PRICE_TEXT,
+  PRICE_UNSUPPORTED,
+  UNITS_TEXT,
+} from '../../lib/price'
 import { formatNumber, KIND_LABELS, TASK_LABELS } from '../../lib/format'
 import { fromDecisionForm, toDecisionForm, type DecisionForm } from '../../lib/decision'
 import {
@@ -54,6 +73,7 @@ import { classesText, licenseAlert, preprocessText, READY_UNSUPPORTED } from '..
 import { fromForm, toForm, withCleared, type RulesForm } from '../../lib/rules'
 import { AnomalyEvaluationsTable } from '../results/AnomalyCards'
 import { UpliftEvaluationsView } from '../results/UpliftCards'
+import { PriceEvaluationsView, PriceTerms } from '../results/PriceCards'
 import { ClusterStabilityView, ClusterSummaryTable } from '../results/ClusterCards'
 import { CompareResultsCard, MAX_COMPARE } from '../results/CompareResultsCard'
 import { DecisionEditor } from '../results/DecisionEditor'
@@ -281,6 +301,85 @@ function UpliftRows({
   )
 }
 
+/** 値段の一式 (版 13) の列, 前処理, 値段の候補と変える幅の上限, 学習用の分割の要約, 確かめ */
+function PriceRows({
+  price,
+  steps,
+}: {
+  price: NonNullable<Description['price']>
+  steps: string[]
+}) {
+  return (
+    <>
+      <Row label="データ">
+        値段の決め方と前処理のレシピ (データセットなし.
+        推論は表の行ごとに候補の値段で売れた数を予測し, 値段を選ぶ)
+      </Row>
+      <Row label={`予測に使う列 (${price.features.length})`}>
+        <span className="font-mono text-xs">{price.features.join(', ')}</span>
+        <span className="block text-xs text-ink-2">
+          推論する表に学習のときと同じ前処理をかけた後の列です. 最後が値段の列です
+        </span>
+      </Row>
+      <Row label="値段の列">
+        <span className="font-mono text-xs">{price.price}</span>
+        <span className="block text-xs text-ink-2">{PRICE_TEXT}</span>
+      </Row>
+      <Row label="売れた数の列">
+        <span className="font-mono text-xs">{price.units}</span>
+        <span className="block text-xs text-ink-2">
+          {UNITS_TEXT}. 推論する表には要りません. あれば記録の値段での予測の誤差を数え直します
+        </span>
+      </Row>
+      <Row label="原価の列">
+        <span className="font-mono text-xs">{price.cost ?? 'なし'}</span>
+        <span className="block text-xs text-ink-2">{costText(price.cost)}</span>
+      </Row>
+      {price.product && (
+        <Row label="商品の id の列">
+          <span className="font-mono text-xs">{price.product}</span>
+        </Row>
+      )}
+      <Row label="行の id の列">
+        <span className="font-mono text-xs">{price.id}</span>
+      </Row>
+      <Row label="前処理">
+        <span className="font-mono text-xs">{steps.join(' → ') || 'なし'}</span>
+      </Row>
+      <Row label="値段の候補 (変える割合)">
+        <span className="tabular">{candidatesText(price.candidates)}</span>
+        <span className="block text-xs text-ink-2">{CHANGE_TEXT}</span>
+      </Row>
+      <Row label="変える幅の上限">
+        <span className="tabular">{limitText(price.max_change)}</span>
+        <span className="block text-xs text-ink-2">{MAX_CHANGE_TEXT}</span>
+      </Row>
+      <Row label="実験の今の値段">
+        {CURRENT_LABELS[price.current] ?? price.current}
+        <span className="block text-xs text-ink-2">
+          実験で弾力性と利益を数えるときの今の値段 (商品ごとの記録の値段の中央値, または行の値段)
+          です
+        </span>
+      </Row>
+      <Row label="学習用の分割">
+        商品 {formatNumber(price.train.products)}, 値段を変える商品{' '}
+        {formatNumber(price.train.changed)}, 弾力性の平均{' '}
+        {price.train.elasticity === null ? '–' : `${formatNumber(price.train.elasticity)} %`}
+        <span className="block text-xs text-ink-2">{elasticityText(price.elasticity_step)}</span>
+      </Row>
+      {price.check && (
+        <Row label="元の表での確かめ">
+          学習の元の表の {price.check.rows.toLocaleString()}{' '}
+          {price.product ? '商品 (商品の id の列で照らした)' : '行 (行の id の列で照らした)'}{' '}
+          で一式が値段を選び直し, {(price.check.agreement * 100).toFixed(1)} %
+          が実験の選んだ割合と合う (1 行あたりの見込みの利益の差の最大{' '}
+          {formatNumber(price.check.max_diff)})
+        </Row>
+      )}
+    </>
+  )
+}
+
 /** 群分けの一式の, 学習のときの群の要約と群の安定性 */
 function GroupLearnedCard({ group }: { group: NonNullable<Description['group']> }) {
   return (
@@ -337,6 +436,8 @@ function DescriptionView({ description }: { description: Description }) {
   const anomaly = description.anomaly
   // 効果の一式は効果の決め方と前処理のレシピ (入力は見積もりに使う列を前処理したもの)
   const uplift = description.uplift
+  // 値段の一式は値段の決め方と前処理のレシピ (入力は予測に使う列を前処理したもの)
+  const price = description.price
   const unit = items ? '件' : '行'
   return (
     <dl className="text-sm">
@@ -356,6 +457,8 @@ function DescriptionView({ description }: { description: Description }) {
         <AnomalyRows anomaly={anomaly} steps={description.steps} />
       ) : uplift ? (
         <UpliftRows uplift={uplift} steps={description.steps} />
+      ) : price ? (
+        <PriceRows price={price} steps={description.steps} />
       ) : noise ? (
         <Row label="データ">雑音だけ (データセットなし. 推論は件数と種から作る)</Row>
       ) : (
@@ -370,13 +473,13 @@ function DescriptionView({ description }: { description: Description }) {
           {classesText(description.classes)}
         </Row>
       )}
-      {description.features.length > 0 && !anomaly && !uplift && (
+      {description.features.length > 0 && !anomaly && !uplift && !price && (
         <Row label={`学習に使う列 (${description.features.length})`}>
           <span className="font-mono text-xs">{description.features.join(', ')}</span>
         </Row>
       )}
       {description.text_column && <Row label="文の列">{description.text_column}</Row>}
-      {!items && !noise && !ready && !rank && !group && !anomaly && !uplift && (
+      {!items && !noise && !ready && !rank && !group && !anomaly && !uplift && !price && (
         <>
           <Row label="読み込み">
             <span className="font-mono text-xs">
@@ -392,7 +495,7 @@ function DescriptionView({ description }: { description: Description }) {
           </Row>
         </>
       )}
-      {!rank && !group && !anomaly && !uplift && (
+      {!rank && !group && !anomaly && !uplift && !price && (
         <Row label="モデルの入力">
           <span className="font-mono text-xs">
             {inputs
@@ -481,6 +584,17 @@ function PredictCard({
   const [budget, setBudget] = useState(() =>
     String(description.decision?.budget ?? uplift?.budget ?? ''),
   )
+  // 値段の一式は行の表のファイルと, 値段の候補と変える幅の上限 (値段の判断だけ. 欄は割合の小数)
+  const price = description.price
+  const priceDefaults = String(description.decision?.type) === 'price' ? description.decision : null
+  const [candidates, setCandidates] = useState(() =>
+    candidatesInput((priceDefaults?.candidates as number[] | undefined) ?? price?.candidates ?? []),
+  )
+  const [maxChange, setMaxChange] = useState(() =>
+    String(priceDefaults?.max_change ?? price?.max_change ?? ''),
+  )
+  const parsedCandidates = parseCandidates(candidates)
+  const parsedMaxChange = parseMaxChange(maxChange)
   const info = useQuery({ queryKey: ['info'], queryFn: api.info, staleTime: Infinity })
   const maxSamples = info.data?.max_samples ?? 1000
   const [count, setCount] = useState('4')
@@ -521,6 +635,10 @@ function PredictCard({
   if (capacityError) problems.push(capacityError)
   const budgetError = uplift ? budgetProblem(budget) : null
   if (budgetError) problems.push(budgetError)
+  if (price) {
+    if (parsedCandidates.problem) problems.push(parsedCandidates.problem)
+    if (parsedMaxChange.problem) problems.push(parsedMaxChange.problem)
+  }
   if (noise) {
     const number = Number(count)
     if (!/^\d+$/.test(count.trim()) || number < 1 || number > maxSamples)
@@ -544,25 +662,34 @@ function PredictCard({
             ? { source: source.trim(), decision: { type: 'triage', capacity: Number(capacity) } }
             : uplift
               ? { source: source.trim(), decision: { type: 'treat', budget: Number(budget) } }
-              : !column
-                ? mode === 'texts'
-                  ? { texts: texts.split('\n') }
-                  : { source: source.trim() }
-                : readyModel
-                  ? { source: source.trim(), rules: withCleared(rules) }
-                  : mode === 'texts'
-                    ? {
-                        texts: texts.split('\n'),
-                        rules: withCleared(rules),
-                        decision: decision ?? {},
-                      }
-                    : {
-                        source: source.trim(),
-                        rules: withCleared(rules),
-                        forecast: canForecast && ahead,
-                        // 意思決定しない場合は空 (省くと一式の既定値になる)
-                        decision: decision ?? {},
-                      },
+              : price
+                ? {
+                    source: source.trim(),
+                    decision: {
+                      type: 'price',
+                      candidates: parsedCandidates.values,
+                      max_change: parsedMaxChange.value ?? 0,
+                    },
+                  }
+                : !column
+                  ? mode === 'texts'
+                    ? { texts: texts.split('\n') }
+                    : { source: source.trim() }
+                  : readyModel
+                    ? { source: source.trim(), rules: withCleared(rules) }
+                    : mode === 'texts'
+                      ? {
+                          texts: texts.split('\n'),
+                          rules: withCleared(rules),
+                          decision: decision ?? {},
+                        }
+                      : {
+                          source: source.trim(),
+                          rules: withCleared(rules),
+                          forecast: canForecast && ahead,
+                          // 意思決定しない場合は空 (省くと一式の既定値になる)
+                          decision: decision ?? {},
+                        },
       ),
     onSuccess: (result) => {
       client.invalidateQueries({ queryKey: ['results'] })
@@ -581,6 +708,8 @@ function PredictCard({
     decisionForm,
     capacity,
     budget,
+    candidates,
+    maxChange,
   ])
   const ready =
     (noise || (mode === 'texts' ? texts.trim() : source.trim())) && problems.length === 0
@@ -593,6 +722,8 @@ function PredictCard({
           if (ready) predict.mutate(formKey)
         }}
       >
+        {/* 値段の一式は, 推論の欄が値段の言葉の初めて出る所なので, 欄の上に言葉の説明と前提 */}
+        {price && <PriceTerms cost={price.cost} step={price.elasticity_step} />}
         {textual && (
           <div role="radiogroup" aria-label="推論するデータ" className="flex gap-4 text-sm">
             <label className="flex items-center gap-1">
@@ -657,7 +788,9 @@ function PredictCard({
                       ? `度合いを出す行の表 (前処理に要る元の列と行の id の列 ${anomaly.id} を持つファイル)`
                       : uplift
                         ? `効果を見積もる行の表 (前処理に要る元の列と行の id の列 ${uplift.id} を持つファイル)`
-                        : sourceLabel(description.items?.input_kind, description.kind)
+                        : price
+                          ? `値段を選ぶ商品の表 (前処理に要る元の列, 値段の列 ${price.price}, 行の id の列 ${price.id} を持つファイル)`
+                          : sourceLabel(description.items?.input_kind, description.kind)
               }
               value={source}
               onChange={setSource}
@@ -670,9 +803,11 @@ function PredictCard({
                       ? '学習のときと同じ前処理をかけ, 行ごとに異常の度合いを出します. 前処理の後に欠けた値のある行は理由を付けて飛ばします'
                       : uplift
                         ? `学習のときと同じ前処理をかけ, 行ごとに効果を見積もります. 処置の列 ${uplift.treatment} と結果の列は要りません (あれば評価を数え直します). 前処理の後に欠けた値のある行は理由を付けて飛ばします`
-                        : description.items
-                          ? '学習のときと同じ 1 件の扱いをかけます (撮影は同じ正規化も). 読めない件は理由を付けて飛ばします'
-                          : '目的の列は有っても無くてもかまいません. 学習のときと同じ読み込みで読みます'
+                        : price
+                          ? `1 行を 1 つの商品の今の状態とし, 値段の列を今の値段にして, 候補の値段ごとに売れた数を予測します. 売れた数の列 ${price.units} は要りません (あれば誤差を数え直します). 前処理の後に欠けた値のある行と, 値段か原価の読めない行は理由を付けて飛ばします`
+                          : description.items
+                            ? '学習のときと同じ 1 件の扱いをかけます (撮影は同じ正規化も). 読めない件は理由を付けて飛ばします'
+                            : '目的の列は有っても無くてもかまいません. 学習のときと同じ読み込みで読みます'
               }
             />
             {bundle.sample_input && (
@@ -813,7 +948,76 @@ function PredictCard({
             ))}
           </section>
         )}
-        {!column && !group && !anomaly && !uplift && (
+        {price && (
+          <section aria-label="値段の判断">
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <label
+                  htmlFor="predict-candidates"
+                  className="mb-1 block text-xs font-medium text-ink-2"
+                >
+                  値段の候補 (今の値段に対する変える割合の小数をカンマで区切る. 0 を含む.{' '}
+                  {MAX_CANDIDATES} 個まで)
+                </label>
+                <input
+                  id="predict-candidates"
+                  value={candidates}
+                  onChange={(event) => setCandidates(event.target.value)}
+                  aria-describedby="predict-candidates-note"
+                  className="h-8 w-full rounded-lg border border-line bg-surface px-2 font-mono text-sm"
+                />
+                <p id="predict-candidates-note" className="mt-1 text-xs text-ink-3">
+                  {parsedCandidates.problem
+                    ? `一式の既定は ${candidatesText(price.candidates)}`
+                    : `% では ${candidatesText(parsedCandidates.values)} (既定は一式の ${candidatesText(price.candidates)})`}
+                </p>
+              </div>
+              <div>
+                <label
+                  htmlFor="predict-max-change"
+                  className="mb-1 block text-xs font-medium text-ink-2"
+                >
+                  変える幅の上限 (割合の小数. 省けません)
+                </label>
+                <input
+                  id="predict-max-change"
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={maxChange}
+                  onChange={(event) => setMaxChange(event.target.value)}
+                  aria-describedby="predict-max-change-note"
+                  className="h-8 w-full rounded-lg border border-line bg-surface px-2 text-sm"
+                />
+                <p id="predict-max-change-note" className="mt-1 text-xs text-ink-3">
+                  {parsedMaxChange.value === null
+                    ? `一式の既定は ${limitText(price.max_change)} (省けません)`
+                    : `% では ${limitText(parsedMaxChange.value)} (既定は一式の ${limitText(price.max_change)})`}
+                </p>
+              </div>
+            </div>
+            {!parsedCandidates.problem &&
+              outsideCandidates(parsedCandidates.values, parsedMaxChange.value).length > 0 && (
+                <p className="mt-2 text-xs text-warning-text">
+                  上限を超える候補{' '}
+                  {outsideCandidates(parsedCandidates.values, parsedMaxChange.value)
+                    .map(changeText)
+                    .join(', ')}{' '}
+                  は選びません (利益が大きければ,
+                  結果の画面に上限を超える候補の方が利益の大きい行として数えます)
+                </p>
+              )}
+            <p className="mt-2 text-xs text-ink-2">
+              {PRICE_UNSUPPORTED}. {PRICE_NO_PROBLEM}
+            </p>
+            {problems.map((problem) => (
+              <p key={problem} role="alert" className="mt-1 text-xs text-critical-text">
+                {problem}
+              </p>
+            ))}
+          </section>
+        )}
+        {!column && !group && !anomaly && !uplift && !price && (
           <p className="text-xs text-ink-2">
             この一式の出力は{FORM_LABELS[outputForm] ?? outputForm}なので,
             結論は推論した件数だけです. 結論の決め方と意思決定は使えません
@@ -1051,7 +1255,7 @@ export function BundlePage() {
   const client = useQueryClient()
   const bundle = useQuery({ queryKey: ['bundles', id], queryFn: () => api.bundle(id) })
   const results = useQuery({ queryKey: ['results', id], queryFn: () => api.results(id) })
-  // 雑音だけの一式, 並べるの一式, 群分けの一式, 異常の度合いの一式, 効果の一式は, 問題の設定の結論と意思決定を扱わないので問題の設定を読まない
+  // 雑音だけの一式, 並べるの一式, 群分けの一式, 異常の度合いの一式, 効果の一式, 値段の一式は, 問題の設定の結論と意思決定を扱わないので問題の設定を読まない
   // (既製のモデルの一式は読み, 結論の決め方だけを既定にする).
   // 種類は一式か一覧の読んだ値から. 分からない間は一式と並べて読む (推論の欄を 1 往復早く出すため.
   // 読まない種類の一式なら, サーバーは問題の設定を読まずに空の状態を返す)
@@ -1062,7 +1266,8 @@ export function BundlePage() {
     kind === 'rank' ||
     kind === 'group' ||
     kind === 'anomaly' ||
-    kind === 'uplift'
+    kind === 'uplift' ||
+    kind === 'price'
   const problem = useQuery({
     queryKey: ['bundle-problem', id],
     queryFn: () => api.bundleProblem(id),
@@ -1174,6 +1379,11 @@ export function BundlePage() {
             {data.description.anomaly && (
               <Card title="実験の評価">
                 <AnomalyEvaluationsTable evaluations={data.description.anomaly.evaluations} />
+              </Card>
+            )}
+            {data.description.price && (
+              <Card title="実験の評価">
+                <PriceEvaluationsView evaluations={data.description.price.evaluations} />
               </Card>
             )}
             {data.description.uplift && (

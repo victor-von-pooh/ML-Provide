@@ -14,6 +14,7 @@ import type {
   PolicyExperimentRow,
   PolicyResult,
   PolicyResultRows,
+  PriceRows,
   ProblemState,
   ReadyCreateBody,
   ReadyPreview,
@@ -109,8 +110,12 @@ export const api = {
       seed?: number
       rules?: Rules
       forecast?: boolean
-      /** 効果の一式は効果の上位から配る判断 */
-      decision?: Decision | Record<string, never> | { type: 'treat'; budget: number }
+      /** 効果の一式は効果の上位から配る判断, 値段の一式は値段の判断 */
+      decision?:
+        | Decision
+        | Record<string, never>
+        | { type: 'treat'; budget: number }
+        | { type: 'price'; candidates: number[]; max_change: number }
       /** 並べるの一式の利用者 (書いた値), 件数, 前に反応した品物の表と正解の反応の表 */
       users?: string[]
       k?: number
@@ -144,6 +149,8 @@ export const api = {
     request<Representatives>(`/api/results/${id}/representatives?count=${count}`),
   treated: (id: string, offset: number, limit: number) =>
     request<TreatedRows>(`/api/results/${id}/treated?offset=${offset}&limit=${limit}`),
+  prices: (id: string, offset: number, limit: number) =>
+    request<PriceRows>(`/api/results/${id}/prices?offset=${offset}&limit=${limit}`),
   queue: (id: string) => request<ReviewQueue>(`/api/results/${id}/queue`),
   reviews: (id: string) => request<{ records: ReviewRecord[] }>(`/api/results/${id}/reviews`),
   addReview: (id: string, row: string | number, judgment: Judgment, reviewer: string) =>

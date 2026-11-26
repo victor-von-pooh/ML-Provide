@@ -37,6 +37,7 @@ import {
 import { READY_UNSUPPORTED } from '../../lib/ready'
 import { anomalySummary, triageSummary } from '../../lib/anomaly'
 import { resultK, treatSummary, upliftSummary } from '../../lib/uplift'
+import { priceDecisionSummary, priceSummary } from '../../lib/price'
 import { groupColumns } from '../../lib/remeasure'
 import { rowReasonable } from '../../lib/rowReason'
 import { fromForm, toForm, type RulesForm } from '../../lib/rules'
@@ -44,6 +45,7 @@ import { OutputNotices } from '../bundles/OutputView'
 import { AnomalyCards } from './AnomalyCards'
 import { ArtifactCard } from './ArtifactCard'
 import { UpliftCards, UpliftTerms } from './UpliftCards'
+import { PriceCards, PriceTerms } from './PriceCards'
 import {
   ClusterRepresentativesTable,
   ClusterStabilityView,
@@ -835,6 +837,9 @@ export function ResultPage() {
   // 効果の結果は行ごとの効果 (結論は効果の分布と上位の行, 意思決定は効果の上位から配る判断)
   const uplift = upliftSummary(data)
   const treat = treatSummary(data)
+  // 値段の結果は行ごとの売れた数と弾力性 (結論は弾力性と実験の評価, 意思決定は上限の中で利益が最も大きい値段)
+  const priced = priceSummary(data)
+  const chosen = priceDecisionSummary(data)
   const form = data.artifacts?.form ?? data.output_form ?? ''
   // 外れ方を種類ごとに分けられる列 (回帰と予測の一式の, 予測と判断と目的の列を除いた列)
   const target = bundle.data?.description?.target
@@ -899,6 +904,7 @@ export function ResultPage() {
             </details>
           )}
           {uplift && <UpliftTerms outcome={uplift.outcome} k={resultK(data, uplift)} />}
+          {priced && <PriceTerms cost={priced.cost} step={data.price?.step} />}
           {summary && <DecisionBars counts={summary} />}
         </Card>
         {/* 決め直した後は, 使った決め方で編集を作り直す */}
@@ -923,6 +929,7 @@ export function ResultPage() {
         )}
         {anomaly && <AnomalyCards result={data} summary={anomaly} />}
         {uplift && <UpliftCards result={data} summary={uplift} />}
+        {priced && <PriceCards result={data} summary={priced} />}
         {column && !readyModel && (
           <DecisionCard
             key={`decision:${JSON.stringify(data.decision?.decision ?? null)}`}
@@ -952,9 +959,11 @@ export function ResultPage() {
                       ? '度合いを出した'
                       : uplift
                         ? '効果を見積もった'
-                        : column
-                          ? '予測した'
-                          : '推論した'
+                        : priced
+                          ? '売れた数を予測した'
+                          : column
+                            ? '予測した'
+                            : '推論した'
               }
               value={summary.predicted.toLocaleString()}
             />
@@ -968,9 +977,11 @@ export function ResultPage() {
                       ? '度合いを出せなかった'
                       : uplift
                         ? '効果を出せなかった'
-                        : column
-                          ? '予測しなかった'
-                          : '推論しなかった'
+                        : priced
+                          ? '予測できなかった'
+                          : column
+                            ? '予測しなかった'
+                            : '推論しなかった'
               }
               value={summary.skipped.toLocaleString()}
             />
@@ -989,6 +1000,16 @@ export function ResultPage() {
                 label="配る"
                 value={`${treat?.acted ?? 0} 件`}
                 hint={treat ? `上限 ${treat.budget} 件` : '配らない'}
+              />
+            ) : priced ? (
+              <StatTile
+                label="値段を変える"
+                value={`${chosen?.changed ?? 0} 行`}
+                hint={
+                  chosen
+                    ? `上げる ${chosen.raised} 行, 下げる ${chosen.lowered} 行`
+                    : '値段を決めない'
+                }
               />
             ) : !column ? (
               <StatTile label="出力の形" value={FORM_LABELS[form] ?? form} />
