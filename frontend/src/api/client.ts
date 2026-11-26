@@ -176,6 +176,9 @@ export const api = {
   artifact: (id: string, row: number) =>
     request<ArtifactPreview>(`/api/results/${id}/artifacts/${row}`),
   artifactUrl: (id: string, row: number) => `/api/results/${id}/artifacts/${row}/file`,
+  /** 検索の結果の, 問いの写真 (query) か索引の写真 (item) の縮小画像の場所 */
+  searchPhotoUrl: (id: string, side: 'query' | 'item', path: string) =>
+    `/api/results/${id}/search-photo?${new URLSearchParams({ side, path }).toString()}`,
   deleteResult: (id: string) => request<void>(`/api/results/${id}`, { method: 'DELETE' }),
   policies: () => request<Policy[]>('/api/policies'),
   policy: (id: string) => request<Policy>(`/api/policies/${id}`),

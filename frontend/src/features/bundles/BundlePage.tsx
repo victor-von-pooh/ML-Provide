@@ -182,6 +182,46 @@ function RankRows({ rank }: { rank: NonNullable<Description['rank']> }) {
   )
 }
 
+/** 検索の一式 (版 15) の索引, 返す件数の既定, 待ち時間の上限, 骨組みの評価 */
+function SearchRows({ search }: { search: NonNullable<Description['search']> }) {
+  const evaluation = search.evaluation
+  return (
+    <>
+      <Row label="索引">
+        登録した写真 {search.items.toLocaleString()} 枚の埋め込み (幅 {search.width}.
+        推論は問いの写真から近い写真を返す)
+        <span className="block text-xs text-ink-2">
+          {search.labeled
+            ? '写真に種類 (<種類>/<写真> のディレクトリ) があり, 骨組みが種類を正解にして評価しています'
+            : '写真に種類が無いので評価はありません. 並んだ写真と近さを見て確かめます'}
+        </span>
+      </Row>
+      <Row label="返す件数の既定">{search.k} 件 (問題の設定の件数)</Row>
+      <Row label="待ち時間の上限">
+        {search.max_latency_ms === null
+          ? '決めていません'
+          : `${search.max_latency_ms.toLocaleString()} ms (守る指標. 1 件の問いあたり)`}
+      </Row>
+      {evaluation && (
+        <Row label="骨組みの評価">
+          検証用の問い {evaluation.queries.toLocaleString()} 枚, 上位 {evaluation.k} 件: Recall@K{' '}
+          {evaluation.recall_at_k.toFixed(3)}, NDCG@K {evaluation.ndcg_at_k.toFixed(3)}
+          <span className="block text-xs text-ink-2">
+            {evaluation.baseline ?? '比べる相手'}は {evaluation.recall_at_k_baseline.toFixed(3)},{' '}
+            {evaluation.ndcg_at_k_baseline.toFixed(3)} (差 {signed(evaluation.recall_at_k_diff)},{' '}
+            {signed(evaluation.ndcg_at_k_diff)})
+          </span>
+        </Row>
+      )}
+    </>
+  )
+}
+
+/** 符号付きの小数 (評価の差) */
+function signed(value: number): string {
+  return `${value >= 0 ? '+' : ''}${value.toFixed(3)}`
+}
+
 /** 群分けの一式 (版 9 と 10) の列の符号化と群の中心, 群を作る列 (版 10 は群の要約の列), 群の数 */
 function GroupRows({ group }: { group: NonNullable<Description['group']> }) {
   // 既製の埋め込みの群分けの一式 (版 10) は列を符号化しないので, 列は群の要約の列だけ
@@ -555,8 +595,9 @@ function DescriptionView({ description }: { description: Description }) {
       ) : ready ? (
         <>
           <ReadyRows ready={ready} />
-          {/* 既製の埋め込みの群分けの一式 (版 10) は群の行も */}
+          {/* 既製の埋め込みの群分けの一式 (版 10) は群の行も, 検索の一式 (版 15) は索引の行も */}
           {group && <GroupRows group={group} />}
+          {description.search && <SearchRows search={description.search} />}
         </>
       ) : rank ? (
         <RankRows rank={rank} />
@@ -1500,6 +1541,91 @@ function RankPredictCard({
   )
 }
 
+/** 検索の一式の推論の欄 (問いの写真と返す件数. 結論の決め方と意思決定は使わない) */
+function SearchPredictCard({
+  bundle,
+  search,
+}: {
+  bundle: Bundle
+  search: NonNullable<Description['search']>
+}) {
+  const navigate = useNavigate()
+  const client = useQueryClient()
+  const [source, setSource] = useState('')
+  const [k, setK] = useState(String(search.k))
+  const kProblem = rankKProblem(k)
+  const predict = useMutation({
+    // 送ったときの欄の印 (欄を変えたら前の誤りを出さないため)
+    mutationFn: (_key: string) =>
+      api.predict(bundle.id, {
+        source: source.trim(),
+        ...(k.trim() ? { k: Number(k) } : {}),
+      }),
+    onSuccess: (result) => {
+      client.invalidateQueries({ queryKey: ['results'] })
+      navigate(`/results/${result.id}`)
+    },
+  })
+  const formKey = JSON.stringify([source, k])
+  const ready = source.trim() !== '' && kProblem === null
+  return (
+    <Card title="似た写真を探す">
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (ready) predict.mutate(formKey)
+        }}
+      >
+        <PathField
+          id="search-source"
+          label="問いの写真 (画像のファイルかディレクトリ)"
+          value={source}
+          onChange={setSource}
+          pickFiles
+          hint="写真ごとに, 索引の写真から見た目の近い順に返します. 索引と中身が同じ写真は除きます"
+        />
+        <div className="max-w-xs">
+          <label htmlFor="search-k" className="mb-1 block text-xs font-medium text-ink-2">
+            返す件数 K (既定は一式の {search.k} 件. {MAX_RANK_K} 件まで)
+          </label>
+          <input
+            id="search-k"
+            type="number"
+            min={1}
+            max={MAX_RANK_K}
+            value={k}
+            onChange={(event) => setK(event.target.value)}
+            className="h-8 w-full rounded-lg border border-line bg-surface px-2 text-sm"
+          />
+        </div>
+        <p className="text-xs text-ink-2">
+          結論の決め方と意思決定の代わりに, 問いの写真ごとの近い写真の一覧と 1
+          件の問いの待ち時間を出します
+          {search.max_latency_ms !== null &&
+            ` (待ち時間の上限 ${search.max_latency_ms.toLocaleString()} ms を超えた問いを数えます)`}
+        </p>
+        {kProblem && (
+          <p role="alert" className="text-xs text-critical-text">
+            {kProblem.replace('並べる件数', '返す件数')}
+          </p>
+        )}
+        {predict.error && predict.variables === formKey && <ErrorBox error={predict.error} />}
+        <div className="flex justify-end">
+          <Button
+            type="submit"
+            variant="primary"
+            icon={Play}
+            disabled={!ready || predict.isPending}
+          >
+            {predict.isPending ? '探しています…' : '探す'}
+          </Button>
+        </div>
+      </form>
+    </Card>
+  )
+}
+
 /** 一式の説明, 推論, 過去の結果 */
 export function BundlePage() {
   const { id = '' } = useParams()
@@ -1613,7 +1739,9 @@ export function BundlePage() {
               />
             )}
             {/* 問題の設定を読み終えてから, その値を既定にして出す */}
-            {data.description.rank ? (
+            {data.description.search ? (
+              <SearchPredictCard bundle={data} search={data.description.search} />
+            ) : data.description.rank ? (
               <RankPredictCard bundle={data} rank={data.description.rank} />
             ) : (
               (noise || !problem.isPending) && (

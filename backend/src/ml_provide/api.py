@@ -1029,7 +1029,8 @@ def rank_request(
         件数が範囲の外の場合, 表が多すぎる場合は 400
     """
     # 並べるの欄は並べるの一式だけ (他の一式の入力と混ぜない)
-    given = (body.users is not None or body.k is not None
+    given = (body.users is not None
+             or (body.k is not None and not bundle.from_search)
              or body.seen is not None or body.truth is not None)
     if not bundle.from_rank:
         if given:
@@ -1198,6 +1199,10 @@ def predict(
         # 需要の一式は発注の判断だけ (省くと一式の既定)
         decision = demand_decision(body)
         rules = None
+    elif bundle.from_search:
+        # 検索の一式は返す件数の検索の判断だけ (省くと一式の search.k)
+        decision = search_decision(bundle, body)
+        rules = None
     elif not bundle.column_output:
         # 列の出力でない一式は件数だけ (決め方と意思決定は使えないもの)
         given = any(v is not None for v in (rules or {}).values())
@@ -1231,6 +1236,8 @@ def predict(
                 "k": ranked["k"],
                 "seen": None if ranked["seen"] is None else ranked["seen"][1],
             }
+            if bundle.from_search and decision:
+                extra = {"k": decision["k"]}
             result = ml_inference.infer(
                 bundle, source, rules=rules, options=body.options,
                 forecast=body.forecast, decision=decision, **extra
@@ -1267,7 +1274,8 @@ def predict(
         grouping=grouping_meta(bundle, result["frame"]),
         uplift=uplift_meta(bundle),
         price=price_meta(bundle, result["frame"]),
-        demand=demand_meta(bundle, result["frame"])
+        demand=demand_meta(bundle, result["frame"]),
+        search=search_meta(bundle, result)
     )
     # 書いた表を読み直して結論を出し直す (出し直しと同じ型の値でまとめ,
     # 日時のような列のまとめの名前が, 後の出し直しで変わらないように)
@@ -1488,6 +1496,110 @@ def price_meta(
     }
 
     return price
+
+
+def search_decision(
+    bundle: ml_inference.Bundle, body: PredictRequest
+) -> dict[str, Any]:
+    """
+    検索の一式に渡す検索の判断 (返す件数) を確かめる関数
+
+    Parameters
+    ----------
+    bundle: ml_inference.Bundle
+        検索の一式
+    body: PredictRequest
+        推論の要求 (問いの写真のファイルかディレクトリと, 件数)
+
+    Returns
+    ----------
+    decision: dict[str, Any]
+        {type: search, k} (件数を省くと一式の search.k)
+
+    Raises
+    ----------
+    HTTPException
+        写真の他の入力, 結論の決め方, 意思決定, 何段も先の予測を渡した
+        場合と, 件数が範囲の外の場合, 写真か表が多すぎる場合は 400
+    """
+    # 問いの写真だけ (文, 件数と種, 読み込みの設定と決め方は使えない)
+    given = any(v is not None for v in (body.rules or {}).values())
+    if (body.texts is not None or body.count is not None
+            or body.seed is not None or body.options or given
+            or body.decision or body.forecast):
+        raise HTTPException(
+            400, "検索の一式には, 問いの写真のファイルかディレクトリと返す"
+            "件数だけを渡してください (文, 件数と種, 読み込みの設定, 結論の"
+            "決め方, 意思決定, 何段も先の予測は使いません)"
+        )
+    if not body.source:
+        raise HTTPException(
+            400, "問いの写真のファイルかディレクトリを指定してください"
+        )
+
+    # 件数 (省くと一式の search.k) と, 書く表の行の上限
+    search = bundle.info["search"]
+    k = int(search["k"]) if body.k is None else body.k
+    if isinstance(k, bool) or not isinstance(k, int) or not (
+        1 <= k <= MAX_RANK_K
+    ):
+        raise HTTPException(
+            400, f"返す件数は 1 から {MAX_RANK_K} の整数にしてください"
+        )
+    place = Path(body.source).expanduser()
+    count = sum(1 for item in place.rglob("*") if item.is_file()) if (
+        place.is_dir()
+    ) else 1
+    if count > MAX_TEXTS:
+        raise HTTPException(
+            400, f"問いの写真は 1 回に {MAX_TEXTS:,} 枚までです (今は "
+            f"{count:,} 個のファイル)"
+        )
+    if count * min(k, int(search["items"])) > MAX_RANK_ROWS:
+        raise HTTPException(
+            400, f"問いの写真 {count:,} 枚に {k} 件ずつでは, 表が "
+            f"{MAX_RANK_ROWS:,} 行を超えます. 写真か件数を減らしてください"
+        )
+    decision = {"type": "search", "k": k}
+
+    return decision
+
+
+def search_meta(
+    bundle: ml_inference.Bundle, result: dict[str, Any]
+) -> Optional[dict[str, Any]]:
+    """
+    検索の結果に残す, 件数, 索引, 待ち時間, 評価をまとめる関数
+
+    Parameters
+    ----------
+    bundle: ml_inference.Bundle
+        一式
+    result: dict[str, Any]
+        ML-Inference の infer の結果
+
+    Returns
+    ----------
+    search: Optional[dict[str, Any]]
+        k, items, max_latency_ms, labeled, evaluation, latency (median と
+        max), over_latency (検索の一式でなければ None)
+    """
+    # 一式の search の欄と, 結論の待ち時間の要約
+    if not bundle.from_search:
+        return None
+    info = bundle.info["search"]
+    summary = result.get("summary") or {}
+    search = {
+        "k": int(summary.get("k") or info["k"]),
+        "items": int(info["items"]),
+        "max_latency_ms": info["max_latency_ms"],
+        "labeled": bool(info["labeled"]),
+        "evaluation": copy.deepcopy(info["evaluation"]),
+        "latency": summary.get("latency"),
+        "over_latency": summary.get("over_latency"),
+    }
+
+    return search
 
 
 def demand_decision(body: PredictRequest) -> Optional[dict[str, Any]]:
@@ -2118,6 +2230,7 @@ def result_view(
         "uplift": meta.get("uplift"),
         "price": meta.get("price"),
         "demand": meta.get("demand"),
+        "search": meta.get("search"),
     }
 
     return view

@@ -22,6 +22,7 @@ from ml_provide.prices import router as price_router
 from ml_provide.problems import router as problem_router
 from ml_provide.procedures import configured_modules, load_modules
 from ml_provide.reviews import router as review_router
+from ml_provide.searches import router as search_router
 from ml_provide.settings import get_data_dir
 from ml_provide.store import Store
 from ml_provide.treated import router as treated_router
@@ -375,6 +376,7 @@ def create_app(
     app.include_router(treated_router)
     app.include_router(price_router)
     app.include_router(demand_router)
+    app.include_router(search_router)
     mount_frontend(app, STATIC_DIR)
 
     return app
