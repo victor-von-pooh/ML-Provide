@@ -32,9 +32,16 @@ export const CLUSTER_HEADINGS: Record<string, string> = {
   index: '#',
   group: '群',
   distance: '距離',
-  far: '中心から遠い',
   status: '状態',
   reason: '理由',
+}
+
+/**
+ * 群に割り当てた行の表の見出し. 中心から遠いかの列 (far) の見出しは, 遠さの上限を持つ一式
+ * (版 16 と 17) の結果だけ (版 9 と 10 の結果の far は元の列のため)
+ */
+export function clusterHeadings(farred: boolean): Record<string, string> {
+  return farred ? { ...CLUSTER_HEADINGS, far: '中心から遠い' } : CLUSTER_HEADINGS
 }
 
 /** 群に割り当てた行の表の状態の日本語の名前 */
@@ -43,17 +50,19 @@ export const CLUSTER_STATUS_LABELS: Record<string, string> = {
   skipped: '割り当てられず',
 }
 
-/** 群に割り当てた行の表で, 先に並べる列 (行の位置, 群, 距離, 中心から遠いか, 状態, 理由) */
-const CLUSTER_LEAD = ['index', 'group', 'distance', 'far', 'status', 'reason']
+/** 群に割り当てた行の表で, 先に並べる列 (行の位置, 群, 距離, 状態, 理由) */
+const CLUSTER_LEAD = ['index', 'group', 'distance', 'status', 'reason']
 
 /**
  * 群に割り当てた行の表の列の並び. 行の位置, 群, 距離, 中心から遠いか (遠さの上限を持つ一式
  * だけ), 状態, 理由, 元の列の順.
  * 判断の列 (列の出力でないので割り当てた行は空) は出さない
  */
-export function clusterRowColumns(columns: string[]): string[] {
+export function clusterRowColumns(columns: string[], farred = false): string[] {
   const present = new Set(columns)
-  const ordered = CLUSTER_LEAD.filter((name) => present.has(name))
+  // 中心から遠いかの列は, 遠さの上限を持つ一式の結果だけ距離の次 (他の結果の far は元の列)
+  const lead = farred ? ['index', 'group', 'distance', 'far', 'status', 'reason'] : CLUSTER_LEAD
+  const ordered = lead.filter((name) => present.has(name))
   const placed = new Set([...ordered, 'decision'])
   return [...ordered, ...columns.filter((name) => !placed.has(name))]
 }

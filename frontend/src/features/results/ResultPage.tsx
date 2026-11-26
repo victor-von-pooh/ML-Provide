@@ -16,10 +16,10 @@ import {
   tableRowColumns,
 } from '../../lib/outputs'
 import {
-  CLUSTER_HEADINGS,
   CLUSTER_STATUS_LABELS,
   CLUSTER_UNSUPPORTED,
   clusterFar,
+  clusterHeadings,
   clusterName,
   clusterRepresentatives,
   clusterRowColumns,
@@ -270,7 +270,7 @@ function RowsTable({
   const headings = ranking
     ? RANK_HEADINGS
     : grouped
-      ? CLUSTER_HEADINGS
+      ? clusterHeadings(farred)
       : table
         ? TABLE_HEADINGS
         : null
@@ -280,7 +280,7 @@ function RowsTable({
     : ranking
       ? rankRowColumns(rows.data.columns)
       : grouped
-        ? clusterRowColumns(rows.data.columns)
+        ? clusterRowColumns(rows.data.columns, farred)
         : table
           ? tableRowColumns(rows.data.columns, result.table_columns ?? [])
           : [
@@ -1005,12 +1005,16 @@ export function ResultPage() {
           <ClusterCards
             result={data}
             onPick={(group) => {
+              // 群の全ての行を見るので, 遠さの絞りも外す
               setCluster(String(group))
+              setFar('')
               setFocusRow(null)
               document.getElementById('result-rows')?.scrollIntoView({ block: 'start' })
             }}
             onPickRow={(row, group) => {
+              // 代表の行は遠い行とは限らないので, 遠さの絞りも外す
               setCluster(String(group))
+              setFar('')
               setFocusRow(row)
               document.getElementById('result-rows')?.scrollIntoView({ block: 'start' })
             }}

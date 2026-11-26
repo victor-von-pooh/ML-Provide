@@ -188,5 +188,32 @@ describe('群の中心から遠い行のある群分けの結果の画面', () =
     )
     expect(screen.getByLabelText('群で絞る')).toHaveValue('1')
     expect(screen.getByLabelText('遠さで絞る')).toHaveValue('true')
+
+    // 遠い行を見た後の代表の行の「行を見る」は, 遠さの絞りを外して 1 行にする
+    fireEvent.click(screen.getByRole('button', { name: '行を見る (群 0 の代表の行 #0)' }))
+    await waitFor(() =>
+      expect(rowsCall).toHaveBeenLastCalledWith(
+        'r1',
+        expect.objectContaining({ group: 0, far: undefined, row: 0 }),
+      ),
+    )
+    expect(screen.getByLabelText('遠さで絞る')).toHaveValue('')
+
+    // 遠い行を見た後の群の要約の「行を見る」は, 遠さの絞りを外して群の全ての行にする
+    fireEvent.click(screen.getByRole('button', { name: '群 1 の遠い行を見る' }))
+    await waitFor(() =>
+      expect(rowsCall).toHaveBeenLastCalledWith(
+        'r1',
+        expect.objectContaining({ group: 1, far: true }),
+      ),
+    )
+    fireEvent.click(screen.getByRole('button', { name: '群 0 の行を見る' }))
+    await waitFor(() =>
+      expect(rowsCall).toHaveBeenLastCalledWith(
+        'r1',
+        expect.objectContaining({ group: 0, far: undefined, row: undefined }),
+      ),
+    )
+    expect(screen.getByLabelText('遠さで絞る')).toHaveValue('')
   })
 })

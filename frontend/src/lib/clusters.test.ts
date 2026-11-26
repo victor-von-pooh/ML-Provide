@@ -1,6 +1,7 @@
 import type { ClusterRow, Result } from '../api/types'
 import {
   clusterFar,
+  clusterHeadings,
   clusterName,
   clusterRepresentatives,
   clusterRowColumns,
@@ -48,11 +49,23 @@ describe('群分けの結果と欄', () => {
 
   it('遠さの上限を持つ一式の表は, 距離の次に中心から遠いかの列を並べる', () => {
     expect(
-      clusterRowColumns(['index', 'customer', 'status', 'reason', 'group', 'distance', 'far']),
+      clusterRowColumns(
+        ['index', 'customer', 'status', 'reason', 'group', 'distance', 'far'],
+        true,
+      ),
     ).toEqual(['index', 'group', 'distance', 'far', 'status', 'reason', 'customer'])
+    expect(clusterHeadings(true).far).toBe('中心から遠い')
     expect(farMark(true)).toBe('遠い')
     expect(farMark(false)).toBe('')
     expect(farMark(null)).toBe('')
+  })
+
+  it('遠さの上限を持たない一式の結果の far は元の列のまま (見出しも並びも変えない)', () => {
+    expect(
+      clusterRowColumns(['index', 'far', 'customer', 'status', 'reason', 'group', 'distance']),
+    ).toEqual(['index', 'group', 'distance', 'status', 'reason', 'far', 'customer'])
+    expect(clusterHeadings(false).far).toBeUndefined()
+    expect(clusterHeadings(false).group).toBe('群')
   })
 
   it('遠い行の件数は群分けの結果の結論から読み, 上限を持たない一式の結果は undefined', () => {
