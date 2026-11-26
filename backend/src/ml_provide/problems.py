@@ -22,6 +22,7 @@ from ml_provide.problem_files import (
     SHAPE_ERRORS,
     problem_file,
     read_problem,
+    uses_problem,
 )
 from ml_provide.units import unit_hint
 
@@ -759,10 +760,8 @@ def bundle_kind(path: str) -> Optional[str]:
     Returns
     ----------
     kind: Optional[str]
-        データの種類 (noise は問題の設定を読まない雑音だけの一式, rank,
-        group, anomaly, uplift, price, demand は同じく読まない並べるの一式,
-        群分けの一式, 異常の度合いの一式, 効果の一式, 値段の一式, 需要の
-        一式, ready は既製のモデルの一式. 読めない一式は None)
+        データの種類 (NO_PROBLEM_KINDS は問題の設定を読まない一式, ready
+        は既製のモデルの一式. 読めない一式は None)
     """
     # 一覧と同じ覚えた説明 (読めない一式は, 今までどおり読んで理由を出す)
     try:
@@ -793,18 +792,15 @@ def problem_state(entry: dict[str, Any], home: Path) -> dict[str, Any]:
         None), error (読めない理由), hint (つないでいない場合の候補),
         hint_note (候補が写しか元かを伝える文)
     """
-    # 雑音だけの一式, 並べるの一式, 群分けの一式, 異常の度合いの一式, 効果
-    # の一式, 値段の一式, 需要の一式は, 問題の設定の読み込みも候補の探索も
+    # 問題の設定の欄を出さない一式は, 問題の設定の読み込みも候補の探索も
     # 無し (画面が一式と並べて要求しても, 結論と意思決定に使わない設定.
-    # 並べる件数と反応の表の列は, 一式が問題の設定の rank から写した値.
-    # 群の数と列, 人の確認の件数の上限, 配る数の上限, 値段の候補と上限,
-    # 発注の損と上限は実験の成果物から写した値)
+    # 並べる件数と反応の表の列, 返す件数と待ち時間の上限は, 一式が問題の
+    # 設定から写した値. 群の数と列, 人の確認の件数の上限, 配る数の上限,
+    # 値段の候補と上限, 発注の損と上限は実験の成果物から写した値)
     text = entry.get("problem")
     state: dict[str, Any]
     kind = bundle_kind(str(entry["path"]))
-    if kind in (
-        "noise", "rank", "group", "anomaly", "uplift", "price", "demand"
-    ):
+    if not uses_problem(kind):
         state = {"path": text if isinstance(text, str) else None,
                  "linked": None, "error": None, "hint": None,
                  "hint_note": None}
@@ -887,7 +883,8 @@ def link_problem(
     Raises
     ----------
     HTTPException
-        無い場所は 404, 推論に渡せない問題の設定は 422
+        無い場所は 404, 問題の設定を使わない種類の一式につなぐ場合は 400,
+        推論に渡せない問題の設定は 422
     """
     # つなぐ前に, 読めて推論に渡せることの確認
     entry = find_bundle(request, bundle_id)
@@ -899,6 +896,11 @@ def link_problem(
             raise HTTPException(404, "一式が見つかりません") from error
         state = problem_state(entry, store.home)
         return state
+    # 問題の設定を使わない種類の一式 (並べる, 検索など) にはつながない
+    if not uses_problem(bundle_kind(str(entry["path"]))):
+        raise HTTPException(
+            400, "この一式は問題の設定を使わないので, つなげません"
+        )
     path = problem_file(str(body.path))
     problem = read_problem(path)
     linked_view(entry, path, problem)

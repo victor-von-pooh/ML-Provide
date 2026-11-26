@@ -121,6 +121,19 @@ def test_search_predict_and_photos(
     assert described["description"]["kind"] == "search"
     assert described["description"]["search"]["items"] == 6
 
+    # 問題の設定の欄は出さず, 問題の設定も読まない (件数と待ち時間の上限
+    # は一式が問題の設定から写して持つため)
+    assert described["uses_problem"] is False
+    listed = client.get("/api/bundles").json()
+    assert [item["uses_problem"] for item in listed] == [False]
+    state = client.get(f"/api/bundles/{bundle_id}/problem").json()
+    assert state == {"path": None, "linked": None, "error": None,
+                     "hint": None, "hint_note": None}
+    refused = client.put(f"/api/bundles/{bundle_id}/problem",
+                         json={"path": str(tmp_path / "problem.yaml")})
+    assert refused.status_code == 400
+    assert "問題の設定を使わない" in refused.json()["detail"]
+
     # 赤い問いの写真で, 件数を変えて推論
     queries = tmp_path / "queries"
     write_image(queries / "q_red.png", (210, 30, 25))

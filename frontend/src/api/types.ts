@@ -1037,6 +1037,8 @@ export interface Bundle {
   description: Description | null
   /** モデルを組み立てたか (学習済みの重みの警告は組み立てた後に分かる) */
   model_loaded?: boolean
+  /** 問題の設定の欄を出すか (一式の種類から API が決める) */
+  uses_problem?: boolean
 }
 
 export interface DecisionCount {

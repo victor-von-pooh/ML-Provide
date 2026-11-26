@@ -1478,12 +1478,17 @@ test('検索の一式を場所で登録して問いの写真を推論し, 近い
   const root = path.resolve(import.meta.dirname, '.work', 'search')
   const bundle = { id: await registerFresh(page.request, path.join(root, 'bundle')) }
   try {
-    // 一式の画面: 既製のモデルの出どころと, 索引, 返す件数, 待ち時間の上限, 骨組みの評価
+    // 一式の画面: 既製のモデルの出どころと, 索引, 返す件数, 待ち時間の上限, 骨組みの評価. 問題の設定の欄は無い
     await page.goto(`/bundles/${bundle.id}`)
     await expect(page.getByText(/^登録した写真 9 枚の埋め込み/)).toBeVisible()
     await expect(page.getByText('5,000 ms (守る指標. 1 件の問いあたり)')).toBeVisible()
     await expect(page.getByText(/Recall@K 1\.000, NDCG@K 1\.000/)).toBeVisible()
     await expect(page.getByLabel(/^返す件数 K/)).toHaveValue('3')
+    // 問題の設定の欄は無く, 無い理由 (件数と上限は一式が写して持つ) を書く
+    await expect(
+      page.getByText(/問題の設定の欄はありません. 返す件数と待ち時間の上限/),
+    ).toBeVisible()
+    await expect(page.getByRole('heading', { name: /^問題の設定/ })).toHaveCount(0)
 
     // 問いの写真を推論して, 問いごとの近い写真を見る
     await page.getByLabel(/^問いの写真/).fill(path.join(root, 'queries'))

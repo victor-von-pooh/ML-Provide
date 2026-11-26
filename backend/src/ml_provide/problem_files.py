@@ -21,6 +21,33 @@ SHAPE_ERRORS = (ValueError, TypeError, AttributeError, KeyError)
 # 問題の設定のファイルの拡張子
 SUFFIXES = (".yaml", ".yml")
 
+# 問題の設定の欄を出さず, 問題の設定を読まない一式の種類 (雑音だけ,
+# 並べる, 群分け, 異常の度合い, 効果, 値段, 需要, 検索. 結論と意思決定に
+# 問題の設定を使わず, 件数や上限は一式が問題の設定か実験の成果物から写す)
+NO_PROBLEM_KINDS = frozenset({
+    "noise", "rank", "group", "anomaly", "uplift", "price", "demand",
+    "search",
+})
+
+
+def uses_problem(kind: Optional[str]) -> bool:
+    """
+    一式の種類から, 問題の設定の欄を出すかを返す関数
+
+    Parameters
+    ----------
+    kind: Optional[str]
+        一式の説明のデータの種類 (読めない一式は None)
+
+    Returns
+    ----------
+    uses: bool
+        問題の設定の欄を出すか (種類の分からない一式は出す)
+    """
+    uses = kind not in NO_PROBLEM_KINDS
+
+    return uses
+
 
 def problem_file(text: str) -> Path:
     """
