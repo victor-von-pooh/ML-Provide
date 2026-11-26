@@ -1577,12 +1577,13 @@ test('既製の埋め込みの群分けの一式を場所で登録して商品�
       page.getByText(/写真を縮めた画素をそのまま k-means で分けた群/).first(),
     ).toBeVisible()
 
-    // 群の代表の行は写真の場所を持つ
+    // 群の代表の行は写真の縮小画像と場所を持つ
     const representatives = page.getByRole('table', {
       name: '群の代表の行 (群ごとに中心に近い順の行, 距離, 群の要約の列の値)',
     })
     await expect(representatives.locator('thead th')).toHaveText([
       '群',
+      '写真',
       '順位',
       '#',
       '距離',
@@ -1592,6 +1593,20 @@ test('既製の埋め込みの群分けの一式を場所で登録して商品�
       '行を見る',
     ])
     await expect(representatives).toContainText('n2_green.png')
+    // 赤 3 枚, 緑 1 枚, 青 2 枚の縮小画像が読めて, 画面に出る (読み終わるまで待つ)
+    await representatives.scrollIntoViewIfNeeded()
+    const photos = representatives.getByRole('img')
+    await expect(photos).toHaveCount(6)
+    await expect(
+      representatives.getByRole('img', { name: '群 1 の 1 番目の代表の写真 n2_green.png' }),
+    ).toBeVisible()
+    await expect
+      .poll(() =>
+        photos.evaluateAll((images) =>
+          images.every((image) => (image as HTMLImageElement).naturalWidth > 0),
+        ),
+      )
+      .toBe(true)
 
     // 群 1 (緑) の写真だけを見て, 読めない写真は理由を出す
     const rows = page.getByRole('table', { name: '群に割り当てた行 (行ごとの群と距離)' })

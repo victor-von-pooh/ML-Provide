@@ -179,6 +179,17 @@ export function representativeValue(value: unknown, numeric: boolean): unknown {
   return value
 }
 
+/** 推論した写真の縮小画像を読める結果か (既製の埋め込みの群分けの一式の結果だけ) */
+export function hasGroupPhotos(result: Result): boolean {
+  return result.output_form === 'cluster' && result.grouping?.photos === true
+}
+
+/** 代表の行の写真の場所 (値の path). 場所が空でない文字で無ければ null */
+export function photoPath(values: Record<string, unknown>): string | null {
+  const path = values.path
+  return typeof path === 'string' && path !== '' ? path : null
+}
+
 /**
  * 群分けの結論の群の中心から遠い行の件数 (summary.far). 遠さの上限を持たない一式
  * (版 9 と 10) の結果と群分けでない結果は undefined

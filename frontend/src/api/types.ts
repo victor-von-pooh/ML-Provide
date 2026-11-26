@@ -772,6 +772,8 @@ export interface GroupingInfo {
   texts?: string[]
   /** 一式の群の中心から遠い行の上限の写し (版 16 と 17 の一式の結果だけ) */
   far?: GroupFar
+  /** 推論した写真の縮小画像を読める印 (既製の埋め込みの群分けの一式の結果だけ) */
+  photos?: boolean
 }
 
 /** 反応の表 (前に反応した品物と正解の反応) の列の名前 */

@@ -10,6 +10,8 @@ import {
   diffText,
   farMark,
   featureHeading,
+  hasGroupPhotos,
+  photoPath,
   quantileText,
   scoreText,
   stabilityLines,
@@ -77,6 +79,21 @@ describe('群分けの結果と欄', () => {
     expect(clusterFar({ ...none, output_form: 'cluster' })).toBeUndefined()
     expect(quantileText(0.99)).toBe('99 % 点')
     expect(quantileText(0.995)).toBe('99.5 % 点')
+  })
+
+  it('写真の縮小画像は写真を群に分けた結果だけで, 場所は空でない文字の path', () => {
+    const grouping = { k: 2, columns: [], learned: [] }
+    const photos = { output_form: 'cluster', grouping: { ...grouping, photos: true } }
+    expect(hasGroupPhotos(photos as unknown as Result)).toBe(true)
+    expect(hasGroupPhotos({ ...photos, output_form: 'class' } as unknown as Result)).toBe(false)
+    expect(hasGroupPhotos({ output_form: 'cluster', grouping } as unknown as Result)).toBe(false)
+    expect(hasGroupPhotos({ output_form: 'cluster', grouping: null } as unknown as Result)).toBe(
+      false,
+    )
+    expect(photoPath({ path: 'red/a.png', width: 4 })).toBe('red/a.png')
+    expect(photoPath({ path: '' })).toBeNull()
+    expect(photoPath({ path: 3 })).toBeNull()
+    expect(photoPath({ width: 4 })).toBeNull()
   })
 
   it('列の特徴の見出しは, 数の列は平均, 種類の列は最も多い値 (行の無い群の null は見ない)', () => {

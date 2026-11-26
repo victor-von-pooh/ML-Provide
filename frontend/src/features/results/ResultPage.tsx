@@ -27,6 +27,7 @@ import {
   DEFAULT_REPRESENTATIVES,
   FAR_FILTERS,
   farMark,
+  hasGroupPhotos,
   quantileText,
   REPRESENTATIVE_COUNTS,
 } from '../../lib/clusters'
@@ -663,6 +664,7 @@ function RepresentativesCard({
   // (選んだ件数と違う件数の表を出さないため)
   const groups = useKept ? kept : asked.data?.groups
   const columns = result.grouping?.columns ?? []
+  const photos = hasGroupPhotos(result)
   return (
     <Card
       title="群の代表の行"
@@ -692,6 +694,7 @@ function RepresentativesCard({
         (距離は群の中心までの埋め込みの空間の距離. 小さいほど群らしい行).
         群の平均や最も多い値と並べて, 群を具体的な行で解釈できます. 「行を見る」で,
         割り当てた行の表をその行だけにします
+        {photos && '. 写真の縮小画像で, 群らしい写真を見て何の群かを解釈できます'}
       </p>
       {!useKept && asked.error && <ErrorBox error={asked.error} live={false} />}
       {groups ? (
@@ -701,6 +704,7 @@ function RepresentativesCard({
             columns={columns}
             summary={clusterRows(result)}
             onPick={onPick}
+            photoUrl={photos ? (path) => api.groupPhotoUrl(result.id, path) : undefined}
             caption="群の代表の行 (群ごとに中心に近い順の行, 距離, 群の要約の列の値)"
           />
         ) : (

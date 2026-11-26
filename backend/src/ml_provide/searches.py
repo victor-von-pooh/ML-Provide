@@ -1,6 +1,12 @@
+"""
+写真の縮小画像を返す API (検索の結果と, 既製の埋め込みの群分けの結果)
+
+画面から送る写真の場所は, 結果に記録した写真の場所の中だけを読む
+"""
+
 import io
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
@@ -45,6 +51,71 @@ def inside_file(base: Path, given: str) -> Optional[Path]:
         return None
 
     return path
+
+
+def source_file(meta: dict[str, Any], given: str) -> Optional[Path]:
+    """
+    結果の推論した写真の場所 (source_path) の中のファイルを返す関数
+
+    Parameters
+    ----------
+    meta: dict[str, Any]
+        result.yaml の中身
+    given: str
+        結果の表の path の値
+
+    Returns
+    ----------
+    path: Optional[Path]
+        解決したファイル (外を指す, ファイルでない場合は None)
+
+    Raises
+    ----------
+    HTTPException
+        写真の場所の記録が無い場合は 400
+    """
+    # ディレクトリならその中, ファイルならそのファイルだけ
+    source = meta.get("source_path")
+    if not source:
+        raise HTTPException(400, "推論した写真の場所が記録にありません")
+    base = Path(str(source))
+    found = inside_file(base, given) if base.is_dir() else (
+        base.resolve() if base.is_file() and given == base.name else None
+    )
+
+    return found
+
+
+def photo_response(found: Optional[Path], given: str) -> Response:
+    """
+    解決した写真の縮小画像の応答を返す関数
+
+    Parameters
+    ----------
+    found: Optional[Path]
+        解決したファイル (場所の外なら None)
+    given: str
+        画面から送った写真の場所 (誤りの文に使う)
+
+    Returns
+    ----------
+    response: Response
+        縮小画像の PNG
+
+    Raises
+    ----------
+    HTTPException
+        場所の外を指す場合と, 画像として読めない場合は 400
+    """
+    # 縮小画像は同じ結果の同じ写真なら変わらないので手元に置かせる
+    if found is None:
+        raise HTTPException(
+            400, f"{given} は写真の場所の中のファイルではありません"
+        )
+    response = Response(thumbnail(found), media_type="image/png",
+                        headers={"Cache-Control": "private, max-age=3600"})
+
+    return response
 
 
 def thumbnail(path: Path) -> bytes:
@@ -128,13 +199,7 @@ def get_search_photo(
     if not meta.get("search"):
         raise HTTPException(400, "検索の結果ではありません")
     if side == "query":
-        source = meta.get("source_path")
-        if not source:
-            raise HTTPException(400, "問いの写真の場所が記録にありません")
-        base = Path(str(source))
-        found = inside_file(base, path) if base.is_dir() else (
-            base.resolve() if base.is_file() and path == base.name else None
-        )
+        found = source_file(meta, path)
     else:
         # 索引の写真は一式の search.root の中だけ
         entry = get_store(request).find(str(meta.get("bundle_id")))
@@ -148,11 +213,45 @@ def get_search_photo(
         if not root:
             raise HTTPException(400, "一式に索引の写真の場所がありません")
         found = inside_file(Path(str(root)), path)
-    if found is None:
-        raise HTTPException(
-            400, f"{path} は写真の場所の中のファイルではありません"
-        )
-    response = Response(thumbnail(found), media_type="image/png",
-                        headers={"Cache-Control": "private, max-age=3600"})
+    response = photo_response(found, path)
+
+    return response
+
+
+@router.get("/results/{result_id}/group-photo")
+def get_group_photo(
+    request: Request, result_id: str,
+    path: str = Query(..., min_length=1, max_length=4096)
+) -> Response:
+    """
+    既製の埋め込みの群分けの結果の, 推論した写真の縮小画像を返す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    result_id: str
+        結果の id
+    path: str
+        結果の表の path の値
+
+    Returns
+    ----------
+    response: Response
+        縮小画像の PNG
+
+    Raises
+    ----------
+    HTTPException
+        既製の埋め込みの群分けの結果でない場合, 写真の場所が無い場合,
+        場所の外を指す場合, 画像として読めない場合は 400
+    """
+    # 写真を群に分けた結果 (grouping.photos) の推論した写真の中だけ
+    _, meta = find_result_meta(request, result_id)
+    if meta.get("output_form") != "cluster" or not (
+        (meta.get("grouping") or {}).get("photos")
+    ):
+        raise HTTPException(400, "写真を群に分けた結果ではありません")
+    response = photo_response(source_file(meta, path), path)
 
     return response
