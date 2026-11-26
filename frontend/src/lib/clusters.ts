@@ -6,7 +6,7 @@ export const CLUSTER_UNSUPPORTED =
 
 /** 群分けの一式の画面に問題の設定の欄が無い理由 */
 export const CLUSTER_NO_PROBLEM =
-  '問題の設定の欄はありません. 群の数と群を作る列は, 一式を作るときに学習の実験から写してあります'
+  '問題の設定の欄はありません. 群の数と群を作る列は, 一式を作るときに学習の実験 (既製の埋め込みの群分けは骨組みの成果物) から写してあります'
 
 /** 群の要約の最後の行の名前 (ML-EDA と ML-Inference と同じ) */
 export const ALL_ROWS = '全体'

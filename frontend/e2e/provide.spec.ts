@@ -1515,3 +1515,81 @@ test('検索の一式を場所で登録して問いの写真を推論し, 近い
     await page.request.delete(`/api/bundles/${bundle.id}`)
   }
 })
+
+test('既製の埋め込みの群分けの一式を場所で登録して商品の写真を群に分け, 群の要約と群の安定性と代表の写真を見る', async ({
+  page,
+}) => {
+  const root = path.resolve(import.meta.dirname, '.work', 'group-ready')
+  const bundle = { id: await registerFresh(page.request, path.join(root, 'bundle')) }
+  try {
+    // 一式の画面: 既製のモデルの出どころと前処理, 群の要約の列, 群の数, 学習の群の安定性
+    await page.goto(`/bundles/${bundle.id}`)
+    await expect(page.getByRole('heading', { name: '商品の写真の群' })).toBeVisible()
+    await expect(page.getByText('e2e の colors (重み V1)')).toBeVisible()
+    await expect(page.getByText('群の要約の列 (2)')).toBeVisible()
+    await expect(page.getByText(/^3 個 \(学習で 12 行を分けた\. 埋め込みの幅 3\)/)).toBeVisible()
+    await expect(
+      page.getByRole('table', { name: '学習の群の安定性 (モデル, 比べる相手, 差)' }),
+    ).toContainText('0.960')
+    await expect(page.getByRole('region', { name: '意思決定' })).toHaveCount(0)
+
+    // 新しい商品の写真のディレクトリを群に分ける
+    await page.getByLabel(/^群に分ける写真/).fill(path.join(root, 'new'))
+    await page.getByRole('button', { name: '推論する' }).click()
+
+    // 結果: 件数の文, 群の要約 (写真の幅と高さ), 群の安定性
+    await expect(
+      page.getByText('6 行のうち 5 行を 3 個の群に割り当てた (1 行は割り当てられず)'),
+    ).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText(/^学習の群の安定性 \(種を変えて作り直す, 5 回\)/)).toBeVisible()
+    const summary = page.getByRole('table', {
+      name: '群の要約 (群ごとの件数, 割合, 安定性, 列の特徴と全体)',
+    })
+    await expect(summary.locator('thead th')).toHaveText([
+      '群',
+      '件数',
+      '割合',
+      '学習のときの割合',
+      '安定性',
+      'width (平均)',
+      'height (平均)',
+      '行を見る',
+    ])
+    await expect(summary.locator('tbody tr')).toHaveCount(4)
+    await expect(summary.locator('tbody tr').nth(1)).toContainText('20.0%')
+    await expect(summary.locator('tbody tr').nth(3)).toContainText('全体')
+    const stability = page.getByRole('table', { name: '学習の群の安定性 (モデル, 比べる相手, 差)' })
+    await expect(stability.locator('tbody tr').nth(2)).toContainText('+0.230')
+    await expect(
+      page.getByText(/写真を縮めた画素をそのまま k-means で分けた群/).first(),
+    ).toBeVisible()
+
+    // 群の代表の行は写真の場所を持つ
+    const representatives = page.getByRole('table', {
+      name: '群の代表の行 (群ごとに中心に近い順の行, 距離, 群を作る列の値)',
+    })
+    await expect(representatives.locator('thead th')).toHaveText([
+      '群',
+      '順位',
+      '#',
+      '距離',
+      'path',
+      'width',
+      'height',
+      '行を見る',
+    ])
+    await expect(representatives).toContainText('n2_green.png')
+
+    // 群 1 (緑) の写真だけを見て, 読めない写真は理由を出す
+    const rows = page.getByRole('table', { name: '群に割り当てた行 (行ごとの群と距離)' })
+    await page.getByRole('button', { name: '群 1 の行を見る' }).click()
+    await expect(rows.locator('tbody tr')).toHaveCount(1)
+    await expect(rows.locator('tbody tr').first()).toContainText('n2_green.png')
+    await page.getByLabel('群で絞る').selectOption('')
+    await page.getByLabel('状態で絞る').selectOption('skipped')
+    await expect(rows.locator('tbody tr')).toHaveCount(1)
+    await expect(rows.locator('tbody tr').first()).toContainText('画像を読めません')
+  } finally {
+    await page.request.delete(`/api/bundles/${bundle.id}`)
+  }
+})

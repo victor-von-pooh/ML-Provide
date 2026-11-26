@@ -218,7 +218,21 @@ describe('群分けの一式の画面', () => {
     expect(
       screen.getByRole('table', { name: '学習の群の安定性 (モデル, 比べる相手, 差)' }),
     ).toBeInTheDocument()
-    expect(screen.getByLabelText(/^群に割り当てる行の表/)).toBeVisible()
+    // 推論の欄は写真のファイルかディレクトリで, 列の符号化の文は出さない
+    expect(screen.queryByLabelText(/^群に割り当てる行の表/)).not.toBeInTheDocument()
+    expect(screen.getByText(/既製のモデルの埋め込みを最も近い群の中心に割り当てます/)).toBeVisible()
+    expect(screen.queryByText(/同じ式で列を符号化し/)).not.toBeInTheDocument()
     expect(bundleProblem).not.toHaveBeenCalled()
+  })
+
+  it('既製の埋め込みの群分けの一式 (版 10) は写真のディレクトリを渡して群に分ける', async () => {
+    current = photos
+    predict.mockResolvedValue({ id: 'r2' })
+    show()
+    fireEvent.change(await screen.findByLabelText(/^群に分ける写真/), {
+      target: { value: '/data/photos' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '推論する' }))
+    await waitFor(() => expect(predict).toHaveBeenCalledWith('g2', { source: '/data/photos' }))
   })
 })
