@@ -22,6 +22,7 @@ from ml_provide.procedures import configured_modules, load_modules
 from ml_provide.reviews import router as review_router
 from ml_provide.settings import get_data_dir
 from ml_provide.store import Store
+from ml_provide.treated import router as treated_router
 from ml_provide.units import configured_units, load_unit_modules
 
 # ビルド済みの画面を置く場所 (パッケージの中)
@@ -369,6 +370,7 @@ def create_app(
     app.include_router(policy_router)
     app.include_router(policy_result_router)
     app.include_router(review_router)
+    app.include_router(treated_router)
     mount_frontend(app, STATIC_DIR)
 
     return app

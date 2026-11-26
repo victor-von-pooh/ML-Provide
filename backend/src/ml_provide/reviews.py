@@ -79,17 +79,18 @@ def plain_value(value: Any) -> Any:
 
 def acted_rows(frame: pd.DataFrame) -> pd.Series:
     """
-    予測の表の, 人の確認に回した行の印を返す関数
+    予測の表の, 行動する行 (人の確認に回すか配る行) の印を返す関数
 
     Parameters
     ----------
     frame: pd.DataFrame
-        異常の度合いの結果の予測の表
+        異常の度合いか効果の結果の予測の表
 
     Returns
     ----------
     acted: pd.Series
-        行ごとの真偽 (action の列の無い, 振り分けていない結果は全て偽)
+        行ごとの真偽 (action の列の無い, 振り分けも配りもしていない結果は
+        全て偽)
     """
     # 読み直した action は真偽か欠損 (予測しなかった行)
     # (Python と NumPy の真偽と, 文字で読んだ真偽の同じ扱い)

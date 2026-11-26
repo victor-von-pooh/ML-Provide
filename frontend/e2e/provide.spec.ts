@@ -1204,6 +1204,65 @@ test('異常の度合いの一式を場所で登録して推論し, 人の確認
   }
 })
 
+test('効果の一式を場所で登録して推論し, 効果の上位から配る行と Qini の曲線を見て, 上限を変えると配る行が変わる', async ({
+  page,
+}) => {
+  const root = path.resolve(import.meta.dirname, '.work', 'uplift')
+  const bundle = { id: await registerFresh(page.request, path.join(root, 'bundle')) }
+  try {
+    // 一式の画面: 効果の決め方, 配る数の上限, 実験の評価と曲線. 問題の設定と意思決定の欄は無い
+    await page.goto(`/bundles/${bundle.id}`)
+    await expect(page.getByText(/2 つの予測の差 \(T-learner\)/)).toBeVisible()
+    await expect(page.getByText(/8 件 \(実験の評価は上位 30 %\)/)).toBeVisible()
+    await expect(
+      page.getByRole('table', { name: /^実験の評価 \(分割ごとの Qini の係数/ }),
+    ).toContainText('検証用')
+    await expect(page.getByRole('img', { name: /^検証用の Qini の曲線/ })).toBeVisible()
+    await expect(page.getByRole('region', { name: '意思決定' })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: '問題の設定' })).toHaveCount(0)
+
+    // 新しい顧客の効果を見積もり, 上位 5 件に配る
+    const customers = path.join(root, 'customers.csv')
+    await page.getByLabel(/^効果を見積もる行の表/).fill(customers)
+    await page.getByLabel(/^配る数の上限/).fill('5')
+    await page.getByRole('button', { name: '推論する' }).click()
+    await expect(page.getByText(/^40 行のうち 39 行の効果/)).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText(/^効果の高い順に 5 件に配る/)).toBeVisible()
+    await expect(page.getByLabel('言葉の説明')).toContainText('処置の群は')
+    await expect(page.getByLabel('言葉の説明')).toContainText('Qini の曲線は')
+    await expect(page.getByText(/^効果の高い上位 30 % \(11 行\):/)).toBeVisible()
+    await expect(
+      page
+        .getByRole('table', { name: /^効果の分布/ })
+        .getByRole('row')
+        .nth(1),
+    ).toContainText('新しい行 (39 行)')
+    await expect(page.getByRole('img', { name: /^テスト用の Qini の曲線/ })).toBeVisible()
+    const list = page.getByRole('table', { name: /^配る行/ })
+    await expect(list.getByRole('row')).toHaveCount(6)
+    const first = (await list.getByRole('row').nth(1).textContent()) ?? ''
+    await expect(
+      page
+        .getByRole('table', { name: /^効果の上位の行/ })
+        .getByRole('row')
+        .nth(1),
+    ).toContainText(first.match(/c\d+/)?.[0] ?? '-')
+
+    // 上限を 2 件に変えて推論し直すと, 配る行が上位 2 件になる
+    await page.goto(`/bundles/${bundle.id}`)
+    await page.getByLabel(/^効果を見積もる行の表/).fill(customers)
+    await page.getByLabel(/^配る数の上限/).fill('2')
+    await page.getByRole('button', { name: '推論する' }).click()
+    await expect(page.getByText(/^効果の高い順に 2 件に配る/)).toBeVisible({ timeout: 30_000 })
+    const fewer = page.getByRole('table', { name: /^配る行/ })
+    await expect(fewer.getByRole('row')).toHaveCount(3)
+    await expect(fewer.getByRole('row').nth(1)).toHaveText(first)
+    await expect(page.getByRole('heading', { name: /^意思決定/ })).toHaveCount(0)
+  } finally {
+    await page.request.delete(`/api/bundles/${bundle.id}`)
+  }
+})
+
 test('既製のモデルの一式を下見して作り, ライセンスの警告と重みの置き場を見て, 画像の種類を推論する', async ({
   page,
 }) => {

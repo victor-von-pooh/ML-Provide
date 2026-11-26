@@ -101,12 +101,15 @@ RANK_TABLES = {".csv": ",", ".tsv": "\t", ".parquet": None}
 MAX_REPRESENTATIVES = 20
 
 # 推論の後に表を読み直して結論を出し直さない出力の形 (表の出力, 並べる,
-# 群分け. infer の結論のまま残す. 異常の度合いの一式も同じ)
-KEPT_CONCLUSIONS = frozenset({"table", "ranking", "cluster"})
+# 群分け, 効果. infer の結論のまま残す. 異常の度合いの一式も同じ)
+KEPT_CONCLUSIONS = frozenset({"table", "ranking", "cluster", "effect"})
 
 # 異常の度合いの一式で, 人の確認に回す件数の上限 (確認の待ち行列を 1 度に
 # 返す件数の上限)
 MAX_CAPACITY = 1000
+
+# 効果の一式で, 配る数の上限の上限 (JSON の整数を丸めずに渡せる大きさ)
+MAX_BUDGET = 100_000
 
 # 並べるの一式だけに渡せる欄を, ほかの一式に渡したときの文
 RANK_ONLY = (
@@ -1176,6 +1179,10 @@ def predict(
         # 異常の度合いの一式は振り分けだけ (省くと一式の既定)
         decision = anomaly_decision(bundle, body)
         rules = None
+    elif bundle.from_uplift:
+        # 効果の一式は配る判断だけ (省くと一式の既定)
+        decision = uplift_decision(bundle, body)
+        rules = None
     elif not bundle.column_output:
         # 列の出力でない一式は件数だけ (決め方と意思決定は使えないもの)
         given = any(v is not None for v in (rules or {}).values())
@@ -1242,17 +1249,18 @@ def predict(
         pretrained_warnings=warned,
         table_columns=table_columns(bundle),
         ranking=ranking,
-        grouping=grouping_meta(bundle, result["frame"])
+        grouping=grouping_meta(bundle, result["frame"]),
+        uplift=uplift_meta(bundle)
     )
     # 書いた表を読み直して結論を出し直す (出し直しと同じ型の値でまとめ,
     # 日時のような列のまとめの名前が, 後の出し直しで変わらないように)
     # (書き出しの途中で失敗した結果は, 壊れたまま残さずに削除)
     result_id, place = get_store(request).new_result_dir()
     meta = {k: v for k, v in result.items() if k != "frame"}
-    # (表の出力, 並べる, 群分け, 異常の度合いの結果は infer の結論のまま.
-    # 表の出力の件数は数え直しても同じ件数. 並べるの利用者ごとの数え方,
-    # 群分けの群の要約と群の安定性, 異常の度合いの分布と上位の行は件数
-    # だけの結論に無い中身)
+    # (表の出力, 並べる, 群分け, 異常の度合い, 効果の結果は infer の結論の
+    # まま. 表の出力の件数は数え直しても同じ件数. 並べるの利用者ごとの
+    # 数え方, 群分けの群の要約と群の安定性, 異常の度合いと効果の分布と
+    # 上位の行は件数だけの結論に無い中身)
     # (出し直しは書いた result.yaml を読んで渡す. 予測の表を読む列の型
     # column_types は write_result が書くときに決めるため)
     try:
@@ -1322,6 +1330,81 @@ def anomaly_decision(
     return decision
 
 
+def uplift_decision(
+    bundle: ml_inference.Bundle, body: PredictRequest
+) -> Optional[dict[str, Any]]:
+    """
+    効果の一式に渡す配る判断を確かめる関数
+
+    Parameters
+    ----------
+    bundle: ml_inference.Bundle
+        効果の一式
+    body: PredictRequest
+        推論の要求
+
+    Returns
+    ----------
+    decision: Optional[dict[str, Any]]
+        渡す配る判断 (None は一式の既定, 空の辞書は配らない. 型と項目は
+        ML-Inference が確かめる)
+
+    Raises
+    ----------
+    HTTPException
+        結論の決め方か何段も先の予測を渡した場合と, 配る数の上限が
+        MAX_BUDGET を超える場合は 400
+    """
+    # 結論の決め方と何段も先の予測は使えないもの
+    given = any(v is not None for v in (body.rules or {}).values())
+    if given or body.forecast:
+        raise HTTPException(
+            400, "効果の一式には, 結論の決め方と何段も先の予測を使えません. "
+            "意思決定は効果の上位から配る判断 ({type: treat, budget}) だけ"
+            "です"
+        )
+    decision = body.decision
+    found = bundle.info.get("decision") if decision is None else decision
+    budget = (found or {}).get("budget") if isinstance(found, dict) else None
+    if isinstance(budget, (int, float)) and not isinstance(budget, bool) and (
+        budget > MAX_BUDGET
+    ):
+        raise HTTPException(
+            400, f"配る数の上限は {MAX_BUDGET:,} 件までにしてください (今は "
+            f"{budget:,} 件)"
+        )
+
+    return decision
+
+
+def uplift_meta(bundle: Any) -> Optional[dict[str, Any]]:
+    """
+    効果の結果に残す, 実験の Qini の曲線, 結果の種類, K を返す関数
+
+    Parameters
+    ----------
+    bundle: Any
+        読んだ一式 (ML-Inference の Bundle)
+
+    Returns
+    ----------
+    uplift: Optional[dict[str, Any]]
+        curves (分割ごとの rows, fraction, qini, random の並び), outcome
+        (binary か amount), k. 効果の一式でなければ None
+    """
+    # 一式の登録を消した後も結果の画面に曲線を出すための写し
+    if not bundle.from_uplift:
+        return None
+    found = bundle.info["uplift"]
+    uplift = {
+        "curves": copy.deepcopy(found.get("curves") or {}),
+        "outcome": str(found["outcome"]),
+        "k": float(found["k"]),
+    }
+
+    return uplift
+
+
 def grouping_meta(
     bundle: Any, frame: pd.DataFrame
 ) -> Optional[dict[str, Any]]:
@@ -1342,7 +1425,7 @@ def grouping_meta(
         全体), texts (値が全て文字の元の列. 読み直すときに文字で読む).
         群分けの一式でなければ None
     """
-    # 一式を消しても, 学習のときの群の大きさと比べられるように写す
+    # 一式を消した後も学習のときの群の大きさと比べるための写し
     if not bundle.from_group:
         return None
     group = bundle.info["group"]
@@ -1826,6 +1909,7 @@ def result_view(
         "table_columns": meta.get("table_columns"),
         "ranking": meta.get("ranking"),
         "grouping": meta.get("grouping"),
+        "uplift": meta.get("uplift"),
     }
 
     return view

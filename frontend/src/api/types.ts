@@ -102,6 +102,139 @@ export interface Description {
   group?: GroupInfo | null
   /** 異常の度合いの一式 (版 11) の度合いの決め方, 列, 件数の上限, 正常の行の分布, 実験の評価 */
   anomaly?: AnomalyInfo | null
+  /** 効果の一式 (版 12) の効果の決め方, 列, 配る数の上限, 学習用の行の効果の分布, 実験の評価と Qini の曲線 */
+  uplift?: UpliftInfo | null
+}
+
+/** 効果の分布 (学習用の行は rows も) */
+export interface EffectDistribution {
+  rows?: number
+  mean: number
+  min: number
+  p10: number
+  p50: number
+  p90: number
+  max: number
+  /** 効果が 0 より大きい行の割合 */
+  positive: number
+}
+
+/** 実験の 1 つの分割の Qini の係数と上位 K 割の効果の差 */
+export interface UpliftEvaluation {
+  rows: number
+  /** 処置の群と対照の群の行の数 */
+  treated: number
+  control: number
+  k: number
+  qini: number
+  /** 上位 K 割の効果の差 (上位に片方の群が無ければ null) */
+  uplift_at_k: number | null
+  /** 分割の全ての行の結果の差 (処置の群 − 対照の群) */
+  effect: number
+  /** 効果の見積もりの平均 */
+  estimated: number
+}
+
+/** 実験の 1 つの分割の Qini の曲線 (列ごとの値の並び) */
+export interface QiniCurve {
+  rows: number[]
+  fraction: number[]
+  qini: number[]
+  random: number[]
+}
+
+/** 効果の一式の uplift の欄 */
+export interface UpliftInfo {
+  /** t_learner (処置の群と対照の群の 2 つの予測の差) */
+  learner: string
+  /** binary (結果が起きたか) か amount (量) */
+  outcome: string
+  /** 見積もりに使う列 (前処理の後の列) */
+  features: string[]
+  id: string
+  /** 処置の列 */
+  treatment: string
+  /** 配る数の上限 (無ければ null) */
+  budget: number | null
+  /** 評価の上位 K 割の K (0 より大きく 1 以下) */
+  k: number
+  /** 実験の行ごとの効果の表の行の数 */
+  rows: number
+  train: EffectDistribution
+  evaluations: Record<string, UpliftEvaluation>
+  curves: Record<string, QiniCurve>
+  /** 元の表の効果と実験の効果の比べ (表を渡して作った場合だけ) */
+  check: { rows: number; agreement: number; max_diff: number } | null
+}
+
+/** 効果の上位の 1 行 (ML-Inference の効果の結論の top) */
+export interface UpliftTopRow {
+  row: number
+  id: string | number | boolean | null
+  effect: number
+  treated: number
+  control: number
+}
+
+/** 渡した表の処置と結果で数え直した評価 */
+export interface UpliftMeasured {
+  rows: number
+  treated: number
+  control: number
+  /** 処置か結果を読めずに除いた行の数 */
+  excluded: number
+  k: number
+  qini: number
+  uplift_at_k: number | null
+  effect: number
+}
+
+/** 効果の結果のまとめ (ML-Inference の効果の結論) */
+export interface UpliftSummary extends Counts {
+  outcome: string
+  id: string | null
+  /** 予測した行の効果の分布 (予測した行が無ければ null) */
+  distribution: EffectDistribution | null
+  train: EffectDistribution
+  /** 効果の高い上位 K 割 (行が 0 なら null) */
+  top_k: { k: number; rows: number; mean: number; lowest: number } | null
+  top: UpliftTopRow[]
+  evaluations: Record<string, UpliftEvaluation>
+  measured: UpliftMeasured | null
+}
+
+/** 効果の上位から配る判断のまとめ (意思決定の結果の summary) */
+export interface TreatSummary {
+  rows: number
+  acted: number
+  budget: number
+  /** 配る行の最も低い効果 (配る行が無ければ null) */
+  lowest: number | null
+  /** 配る行の効果の和 */
+  gain: number
+  /** 効果が正なのに上限で配らない行の数 */
+  left_positive: number
+  /** 上限の中で効果が 0 以下で配らない行の数 */
+  nonpositive: number
+}
+
+/** 配る 1 行 (GET /api/results/{id}/treated) */
+export interface TreatedRow {
+  row: number
+  id: string | number | boolean | null
+  rank: number | null
+  effect: number | null
+  treated: number | null
+  control: number | null
+}
+
+/** 配る行 (効果の高い順. offset から) */
+export interface TreatedRows {
+  id: string | null
+  budget: number | null
+  total: number
+  offset: number
+  rows: TreatedRow[]
 }
 
 /** 学習用の正常の行の度合いの分布 */
@@ -642,6 +775,8 @@ export interface Result {
   ranking?: RankingInfo | null
   /** 群分けの結果の群を作る列と学習のときの群の要約 */
   grouping?: GroupingInfo | null
+  /** 効果の結果の, 一式の実験の Qini の曲線, 結果の種類, K */
+  uplift?: { curves: Record<string, QiniCurve>; outcome: string; k: number } | null
 }
 
 /** 結果どうしの比べ (GET /api/results/compare) */
