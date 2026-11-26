@@ -1,4 +1,4 @@
-import { Fragment } from 'react'
+import { Fragment, useState } from 'react'
 
 import type {
   ClusterFar,
@@ -11,6 +11,7 @@ import {
   clusterName,
   diffText,
   featureHeading,
+  photoPath,
   representativeValue,
   scoreText,
   stabilityLines,
@@ -146,16 +147,60 @@ export function ClusterSummaryTable({
 }
 
 /**
+ * 代表の写真の縮小画像. 画面に入るときに読み, 読めない写真は画像の代わりに「読めません」を出す
+ */
+function PhotoThumb({ src, alt }: { src: string; alt: string }) {
+  // 読めなかった画像の場所 (場所が変われば読み直す)
+  const [failed, setFailed] = useState<string | null>(null)
+  if (failed === src) {
+    return (
+      <span
+        role="img"
+        aria-label={`${alt} (読めません)`}
+        className="flex size-16 items-center justify-center rounded-lg border border-line bg-surface-2 text-xs text-ink-3"
+      >
+        読めません
+      </span>
+    )
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      loading="lazy"
+      onError={() => setFailed(src)}
+      className="size-16 rounded-lg border border-line object-cover"
+    />
+  )
+}
+
+/** 代表の行の写真の縮小画像 (場所の無い行は –) */
+function RepresentativePhoto({
+  path,
+  photoUrl,
+  alt,
+}: {
+  path: string | null
+  photoUrl: (path: string) => string
+  alt: string
+}) {
+  if (path === null) return <span className="text-ink-3">–</span>
+  return <PhotoThumb src={photoUrl(path)} alt={`${alt} ${path}`} />
+}
+
+/**
  * 群の代表の行の表. 群ごとに中心に近い順の行 (順位, 行の位置, 距離, 群の要約の列の値).
  * 既製の埋め込みの群分けの一式 (版 10) の写真の場所 (path) のような, 群を作る列に無い
  * 値は群を作る列の前に並べる. 行の無い群も 1 行で並べる. onPick を渡すと, 行に
- * 「行を見る」を出す
+ * 「行を見る」を出す. photoUrl を渡すと (写真を群に分けた結果), 群の列の次に写真の
+ * 縮小画像を出す
  */
 export function ClusterRepresentativesTable({
   groups,
   columns,
   summary,
   onPick,
+  photoUrl,
   caption,
 }: {
   groups: ClusterRepresentatives[]
@@ -163,6 +208,8 @@ export function ClusterRepresentativesTable({
   /** 群の要約の行 (数の列を見分ける. 平均の列) */
   summary: ClusterRow[]
   onPick?: (row: number, group: number) => void
+  /** 写真の場所から縮小画像の URL を作る (写真を群に分けた結果だけ) */
+  photoUrl?: (path: string) => string
   caption: string
 }) {
   // 数の列 (群の要約の見出しが平均の列)
@@ -180,7 +227,7 @@ export function ClusterRepresentativesTable({
   }
   const shown = [...extra, ...columns]
   // 群の列の後ろの列の数 (行の無い群の 1 行を横に伸ばす)
-  const span = 3 + shown.length + (onPick ? 1 : 0)
+  const span = 3 + shown.length + (onPick ? 1 : 0) + (photoUrl ? 1 : 0)
   return (
     <div className="max-h-[32rem] overflow-auto">
       <table className="w-full text-sm">
@@ -190,6 +237,11 @@ export function ClusterRepresentativesTable({
             <th scope="col" className="px-4 py-2 text-left font-normal">
               群
             </th>
+            {photoUrl && (
+              <th scope="col" className="px-3 py-2 text-left font-normal">
+                写真
+              </th>
+            )}
             <th scope="col" className="px-3 py-2 text-right font-normal">
               順位
             </th>
@@ -238,6 +290,15 @@ export function ClusterRepresentativesTable({
                       >
                         {clusterName(item.group)}
                       </th>
+                    )}
+                    {photoUrl && (
+                      <td className="px-3 py-1.5">
+                        <RepresentativePhoto
+                          path={photoPath(line.values)}
+                          photoUrl={photoUrl}
+                          alt={`${clusterName(item.group)} の ${order + 1} 番目の代表の写真`}
+                        />
+                      </td>
                     )}
                     <td className="tabular px-3 py-1.5 text-right">{order + 1}</td>
                     <td className="tabular px-3 py-1.5 text-right">{line.row}</td>

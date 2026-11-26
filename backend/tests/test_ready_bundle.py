@@ -1055,3 +1055,96 @@ def test_ready_group_result(tmp_path: Path, client: TestClient) -> None:
         json={"source": str(images), "options": {"loader": "image"}},
     )
     assert response.status_code == 400
+
+
+def test_ready_group_photos(tmp_path: Path, client: TestClient) -> None:
+    """
+    既製の埋め込みの群分けの結果の写真の縮小画像が, 推論した写真の
+    ディレクトリの中の画像だけを返すことを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        一時ディレクトリ
+    client: TestClient
+        作り物の出どころを足したクライアント
+
+    Returns
+    ----------
+    None
+    """
+    # 群分けの一式と埋め込みの一式の登録と, 写真のディレクトリの推論
+    images = write_images(tmp_path / "images")
+    artifacts = write_group_artifacts(tmp_path, images)
+    ml_inference.make_group_bundle(
+        tmp_path / "group", artifacts, data=images, license=LICENSE
+    )
+    ids = {}
+    for name in ("embedder", "group"):
+        response = client.post(
+            "/api/bundles", json={"path": str(tmp_path / name)}
+        )
+        assert response.status_code == 201, response.text
+        ids[name] = response.json()["id"]
+    results = {}
+    for name in ("embedder", "group"):
+        response = client.post(
+            f"/api/bundles/{ids[name]}/predict",
+            json={"source": str(images)},
+        )
+        assert response.status_code == 201, response.text
+        results[name] = response.json()
+    result = results["group"]
+    assert result["grouping"]["photos"] is True
+    url = f"/api/results/{result['id']}/group-photo"
+
+    # 代表の写真の縮小画像 (PNG. 大きさは元のまま)
+    first = result["summary"]["representatives"][0]["rows"][0]
+    response = client.get(url, params={"path": first["values"]["path"]})
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"] == "image/png"
+    with Image.open(io.BytesIO(response.content)) as image:
+        assert image.size == (20, 12)
+
+    # 写真の場所の外 (.., 絶対の場所, 外を指すリンク) と, 画像でない
+    # ファイルと無いファイルと NUL の文字を含む場所
+    outside = tmp_path / "outside.png"
+    Image.new("RGB", (4, 4)).save(outside)
+    (images / "link.png").symlink_to(outside)
+    for given, word in [
+        ("../outside.png", "の中のファイルではありません"),
+        (str(outside), "の中のファイルではありません"),
+        ("link.png", "の中のファイルではありません"),
+        ("missing.png", "の中のファイルではありません"),
+        ("a\x00.png", "の中のファイルではありません"),
+        ("d_broken.png", "画像として読めません"),
+    ]:
+        response = client.get(url, params={"path": given})
+        assert response.status_code == 400, given
+        assert word in response.json()["detail"]
+
+    # 1 枚の写真の推論は, その写真だけ
+    response = client.post(
+        f"/api/bundles/{ids['group']}/predict",
+        json={"source": str(images / "a_red.png")},
+    )
+    assert response.status_code == 201, response.text
+    single = f"/api/results/{response.json()['id']}/group-photo"
+    path = client.get(
+        f"/api/results/{response.json()['id']}/rows"
+    ).json()["rows"][0]["path"]
+    assert client.get(single, params={"path": path}).status_code == 200
+    response = client.get(single, params={"path": "b_green.png"})
+    assert response.status_code == 400
+
+    # 写真を群に分けた結果でないものと, 無い結果
+    response = client.get(
+        f"/api/results/{results['embedder']['id']}/group-photo",
+        params={"path": "a_red.png"},
+    )
+    assert response.status_code == 400
+    assert "群に分けた結果ではありません" in response.json()["detail"]
+    response = client.get(
+        "/api/results/none/group-photo", params={"path": "a_red.png"}
+    )
+    assert response.status_code == 404

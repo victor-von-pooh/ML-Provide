@@ -181,6 +181,8 @@ export const api = {
   /** 検索の結果の, 問いの写真 (query) か索引の写真 (item) の縮小画像の場所 */
   searchPhotoUrl: (id: string, side: 'query' | 'item', path: string) =>
     `/api/results/${id}/search-photo?${new URLSearchParams({ side, path }).toString()}`,
+  groupPhotoUrl: (id: string, path: string) =>
+    `/api/results/${id}/group-photo?${new URLSearchParams({ path }).toString()}`,
   deleteResult: (id: string) => request<void>(`/api/results/${id}`, { method: 'DELETE' }),
   policies: () => request<Policy[]>('/api/policies'),
   policy: (id: string) => request<Policy>(`/api/policies/${id}`),

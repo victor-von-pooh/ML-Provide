@@ -1744,7 +1744,8 @@ def grouping_meta(
         k, columns (群を作る列), learned (学習のときの群の要約の行. 最後は
         全体), texts (値が全て文字の元の列. 読み直すときに文字で読む) と,
         群の中心から遠い行の上限を持つ一式 (版 16 と 17) は far (上限の
-        写し). 群分けの一式でなければ None
+        写し), 既製の埋め込みの群分けの一式 (版 10 と 17) は photos (写真
+        の縮小画像を読める印. true). 群分けの一式でなければ None
     """
     # 一式を消した後も学習のときの群の大きさと比べるための写し
     if not bundle.from_group:
@@ -1759,6 +1760,9 @@ def grouping_meta(
     # 上限を持たない一式 (版 9 と 10) の結果は今までの形のまま
     if group.get("far") is not None:
         grouping["far"] = copy.deepcopy(group["far"])
+    # 写真を群に分けた結果だけが, 推論した写真の縮小画像を読める
+    if bundle.from_ready:
+        grouping["photos"] = True
 
     return grouping
 
