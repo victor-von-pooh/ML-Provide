@@ -137,6 +137,10 @@ uv run python ../frontend/e2e/make_uplift.py "$WORK/uplift"
 # make_price_bundle) を作り, 値段を選ぶ新しい商品の表を書く
 uv run python ../frontend/e2e/make_price.py "$WORK/price"
 
+# 時間をまたぐ量の判断の学習のスクリプトと同じ成果物の見本の実験から, 需要の一式 (版 14.
+# ML-Inference の make_demand_bundle) を作り, 発注の数を決める新しい日ごとの記録の表を書く
+uv run python ../frontend/e2e/make_demand.py "$WORK/demand"
+
 # 既製のモデルの一式で推論する画像 (赤, 緑, 青と, 読めないファイル)
 uv run python - "$WORK/ready-images" <<'PY'
 import sys

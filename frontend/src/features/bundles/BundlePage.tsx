@@ -49,6 +49,23 @@ import {
   PRICE_UNSUPPORTED,
   UNITS_TEXT,
 } from '../../lib/price'
+import {
+  baselineText,
+  DEMAND_NO_PROBLEM,
+  DEMAND_UNSUPPORTED,
+  demandText,
+  HOLDING_TEXT,
+  levelsText,
+  levelText,
+  MAX_ORDER_TEXT,
+  outsideLevel,
+  parseCost,
+  parseMaxOrder,
+  QUANTILE_TEXT,
+  SHORTAGE_TEXT,
+  stockText,
+  tauOf,
+} from '../../lib/demand'
 import { formatNumber, KIND_LABELS, TASK_LABELS } from '../../lib/format'
 import { fromDecisionForm, toDecisionForm, type DecisionForm } from '../../lib/decision'
 import {
@@ -74,6 +91,7 @@ import { fromForm, toForm, withCleared, type RulesForm } from '../../lib/rules'
 import { AnomalyEvaluationsTable } from '../results/AnomalyCards'
 import { UpliftEvaluationsView } from '../results/UpliftCards'
 import { PriceEvaluationsView, PriceTerms } from '../results/PriceCards'
+import { DemandEvaluationsView, DemandTerms } from '../results/DemandCards'
 import { ClusterStabilityView, ClusterSummaryTable } from '../results/ClusterCards'
 import { CompareResultsCard, MAX_COMPARE } from '../results/CompareResultsCard'
 import { DecisionEditor } from '../results/DecisionEditor'
@@ -380,6 +398,95 @@ function PriceRows({
   )
 }
 
+/** 需要の一式 (版 14) の列, 前処理, 先の期間と学んだ水準, 発注の損と上限, 学習用の分割の要約, 確かめ */
+function DemandRows({
+  demand,
+  steps,
+}: {
+  demand: NonNullable<Description['demand']>
+  steps: string[]
+}) {
+  return (
+    <>
+      <Row label="データ">
+        需要の決め方と前処理のレシピ (データセットなし.
+        推論は日ごとの記録の表の商品ごとに先の期間の需要の分位点を予測し, 発注の数を決める)
+      </Row>
+      <Row label={`予測に使う列 (${demand.features.length})`}>
+        <span className="font-mono text-xs">{demand.features.join(', ')}</span>
+        <span className="block text-xs text-ink-2">
+          推論する表に学習のときと同じ前処理 (過去の売れた数の列を日ごとにずらすなど)
+          をかけた後の列です
+        </span>
+      </Row>
+      <Row label="商品の id の列">
+        <span className="font-mono text-xs">{demand.product}</span>
+      </Row>
+      <Row label="日付の列">
+        <span className="font-mono text-xs">{demand.date}</span>
+        <span className="block text-xs text-ink-2">
+          日ごとの記録です. 商品ごとに最も遅い日を発注を決める日とします
+        </span>
+      </Row>
+      <Row label="売れた数の列">
+        <span className="font-mono text-xs">{demand.units}</span>
+        <span className="block text-xs text-ink-2">
+          日ごとの売れた数です. 過去の売れた数の列と前の期間の合計に使います
+          (発注を決める日の値は要りません)
+        </span>
+      </Row>
+      <Row label="在庫の数の列">
+        <span className="font-mono text-xs">{demand.stock ?? 'なし'}</span>
+        <span className="block text-xs text-ink-2">{stockText(demand.stock)}</span>
+      </Row>
+      <Row label="行の id の列">
+        <span className="font-mono text-xs">{demand.id}</span>
+      </Row>
+      <Row label="前処理">
+        <span className="font-mono text-xs">{steps.join(' → ') || 'なし'}</span>
+      </Row>
+      <Row label="先の期間">
+        <span className="tabular">{demand.horizon} 日</span>
+        <span className="block text-xs text-ink-2">{demandText(demand.horizon)}</span>
+      </Row>
+      <Row label={`学んだ水準 (${demand.levels.length})`}>
+        <span className="tabular">{levelsText(demand.levels)}</span>
+        <span className="block text-xs text-ink-2">{QUANTILE_TEXT}</span>
+      </Row>
+      <Row label="品切れの損と売れ残りの損">
+        <span className="tabular">
+          {formatNumber(demand.shortage_cost)} と {formatNumber(demand.holding_cost)} (水準 τ{' '}
+          {levelText(tauOf(demand.shortage_cost, demand.holding_cost))})
+        </span>
+        <span className="block text-xs text-ink-2">
+          {SHORTAGE_TEXT}. {HOLDING_TEXT}
+        </span>
+      </Row>
+      <Row label="発注の数の上限">
+        <span className="tabular">{formatNumber(demand.max_order)}</span>
+        <span className="block text-xs text-ink-2">{MAX_ORDER_TEXT}</span>
+      </Row>
+      {demand.train && (
+        <Row label="学習用の分割">
+          行 {formatNumber(demand.train.rows)}, 商品 {formatNumber(demand.train.products)},
+          先の期間の需要の平均{' '}
+          {demand.train.demand_mean === null ? '–' : formatNumber(demand.train.demand_mean)}
+        </Row>
+      )}
+      {demand.check && (
+        <Row label="元の表での確かめ">
+          学習の元の表の {demand.check.rows.toLocaleString()} 行 (商品と発注を決める日で照らした)
+          で一式が発注の数を決め直し, {(demand.check.agreement * 100).toFixed(1)} %
+          が実験の発注の数と合う (水準 τ の分位点の差の最大 {formatNumber(demand.check.max_diff)}
+          {demand.check.pinball_loss !== null &&
+            `. 分位点の損失 ${formatNumber(demand.check.pinball_loss)}`}
+          )
+        </Row>
+      )}
+    </>
+  )
+}
+
 /** 群分けの一式の, 学習のときの群の要約と群の安定性 */
 function GroupLearnedCard({ group }: { group: NonNullable<Description['group']> }) {
   return (
@@ -438,6 +545,8 @@ function DescriptionView({ description }: { description: Description }) {
   const uplift = description.uplift
   // 値段の一式は値段の決め方と前処理のレシピ (入力は予測に使う列を前処理したもの)
   const price = description.price
+  // 需要の一式は需要の決め方と前処理のレシピ (入力は予測に使う列を前処理したもの)
+  const demand = description.demand
   const unit = items ? '件' : '行'
   return (
     <dl className="text-sm">
@@ -459,6 +568,8 @@ function DescriptionView({ description }: { description: Description }) {
         <UpliftRows uplift={uplift} steps={description.steps} />
       ) : price ? (
         <PriceRows price={price} steps={description.steps} />
+      ) : demand ? (
+        <DemandRows demand={demand} steps={description.steps} />
       ) : noise ? (
         <Row label="データ">雑音だけ (データセットなし. 推論は件数と種から作る)</Row>
       ) : (
@@ -473,29 +584,37 @@ function DescriptionView({ description }: { description: Description }) {
           {classesText(description.classes)}
         </Row>
       )}
-      {description.features.length > 0 && !anomaly && !uplift && !price && (
+      {description.features.length > 0 && !anomaly && !uplift && !price && !demand && (
         <Row label={`学習に使う列 (${description.features.length})`}>
           <span className="font-mono text-xs">{description.features.join(', ')}</span>
         </Row>
       )}
       {description.text_column && <Row label="文の列">{description.text_column}</Row>}
-      {!items && !noise && !ready && !rank && !group && !anomaly && !uplift && !price && (
-        <>
-          <Row label="読み込み">
-            <span className="font-mono text-xs">
-              {description.reading.loader ?? '自動'}{' '}
-              {Object.keys(description.reading.options).length > 0 &&
-                `(${optionsText(description.reading.options)})`}
-            </span>
-          </Row>
-          <Row label="前処理">
-            <span className="font-mono text-xs">
-              {[...description.steps, ...description.item_steps].join(' → ') || 'なし'}
-            </span>
-          </Row>
-        </>
-      )}
-      {!rank && !group && !anomaly && !uplift && !price && (
+      {!items &&
+        !noise &&
+        !ready &&
+        !rank &&
+        !group &&
+        !anomaly &&
+        !uplift &&
+        !price &&
+        !demand && (
+          <>
+            <Row label="読み込み">
+              <span className="font-mono text-xs">
+                {description.reading.loader ?? '自動'}{' '}
+                {Object.keys(description.reading.options).length > 0 &&
+                  `(${optionsText(description.reading.options)})`}
+              </span>
+            </Row>
+            <Row label="前処理">
+              <span className="font-mono text-xs">
+                {[...description.steps, ...description.item_steps].join(' → ') || 'なし'}
+              </span>
+            </Row>
+          </>
+        )}
+      {!rank && !group && !anomaly && !uplift && !price && !demand && (
         <Row label="モデルの入力">
           <span className="font-mono text-xs">
             {inputs
@@ -595,6 +714,23 @@ function PredictCard({
   )
   const parsedCandidates = parseCandidates(candidates)
   const parsedMaxChange = parseMaxChange(maxChange)
+  // 需要の一式は日ごとの記録の表のファイルと, 品切れの損, 売れ残りの損, 発注の数の上限 (発注の判断だけ)
+  const demand = description.demand
+  const orderDefaults = String(description.decision?.type) === 'order' ? description.decision : null
+  const [shortage, setShortage] = useState(() =>
+    String(orderDefaults?.shortage_cost ?? demand?.shortage_cost ?? ''),
+  )
+  const [holding, setHolding] = useState(() =>
+    String(orderDefaults?.holding_cost ?? demand?.holding_cost ?? ''),
+  )
+  const [maxOrder, setMaxOrder] = useState(() =>
+    String(orderDefaults?.max_order ?? demand?.max_order ?? ''),
+  )
+  const parsedShortage = parseCost(shortage, '品切れの損')
+  const parsedHolding = parseCost(holding, '売れ残りの損')
+  const parsedMaxOrder = parseMaxOrder(maxOrder)
+  const tau = tauOf(parsedShortage.value, parsedHolding.value)
+  const edge = outsideLevel(tau, demand?.levels ?? [])
   const info = useQuery({ queryKey: ['info'], queryFn: api.info, staleTime: Infinity })
   const maxSamples = info.data?.max_samples ?? 1000
   const [count, setCount] = useState('4')
@@ -639,6 +775,10 @@ function PredictCard({
     if (parsedCandidates.problem) problems.push(parsedCandidates.problem)
     if (parsedMaxChange.problem) problems.push(parsedMaxChange.problem)
   }
+  if (demand) {
+    for (const parsed of [parsedShortage, parsedHolding, parsedMaxOrder])
+      if (parsed.problem) problems.push(parsed.problem)
+  }
   if (noise) {
     const number = Number(count)
     if (!/^\d+$/.test(count.trim()) || number < 1 || number > maxSamples)
@@ -671,25 +811,35 @@ function PredictCard({
                       max_change: parsedMaxChange.value ?? 0,
                     },
                   }
-                : !column
-                  ? mode === 'texts'
-                    ? { texts: texts.split('\n') }
-                    : { source: source.trim() }
-                  : readyModel
-                    ? { source: source.trim(), rules: withCleared(rules) }
-                    : mode === 'texts'
-                      ? {
-                          texts: texts.split('\n'),
-                          rules: withCleared(rules),
-                          decision: decision ?? {},
-                        }
-                      : {
-                          source: source.trim(),
-                          rules: withCleared(rules),
-                          forecast: canForecast && ahead,
-                          // 意思決定しない場合は空 (省くと一式の既定値になる)
-                          decision: decision ?? {},
-                        },
+                : demand
+                  ? {
+                      source: source.trim(),
+                      decision: {
+                        type: 'order',
+                        shortage_cost: parsedShortage.value ?? 0,
+                        holding_cost: parsedHolding.value ?? 0,
+                        max_order: parsedMaxOrder.value ?? 0,
+                      },
+                    }
+                  : !column
+                    ? mode === 'texts'
+                      ? { texts: texts.split('\n') }
+                      : { source: source.trim() }
+                    : readyModel
+                      ? { source: source.trim(), rules: withCleared(rules) }
+                      : mode === 'texts'
+                        ? {
+                            texts: texts.split('\n'),
+                            rules: withCleared(rules),
+                            decision: decision ?? {},
+                          }
+                        : {
+                            source: source.trim(),
+                            rules: withCleared(rules),
+                            forecast: canForecast && ahead,
+                            // 意思決定しない場合は空 (省くと一式の既定値になる)
+                            decision: decision ?? {},
+                          },
       ),
     onSuccess: (result) => {
       client.invalidateQueries({ queryKey: ['results'] })
@@ -710,6 +860,9 @@ function PredictCard({
     budget,
     candidates,
     maxChange,
+    shortage,
+    holding,
+    maxOrder,
   ])
   const ready =
     (noise || (mode === 'texts' ? texts.trim() : source.trim())) && problems.length === 0
@@ -724,6 +877,8 @@ function PredictCard({
       >
         {/* 値段の一式は, 推論の欄が値段の言葉の初めて出る所なので, 欄の上に言葉の説明と前提 */}
         {price && <PriceTerms cost={price.cost} step={price.elasticity_step} />}
+        {/* 需要の一式も同じく, 欄の上に言葉の説明と前提 */}
+        {demand && <DemandTerms horizon={demand.horizon} stock={demand.stock} />}
         {textual && (
           <div role="radiogroup" aria-label="推論するデータ" className="flex gap-4 text-sm">
             <label className="flex items-center gap-1">
@@ -790,7 +945,9 @@ function PredictCard({
                         ? `効果を見積もる行の表 (前処理に要る元の列と行の id の列 ${uplift.id} を持つファイル)`
                         : price
                           ? `値段を選ぶ商品の表 (前処理に要る元の列, 値段の列 ${price.price}, 行の id の列 ${price.id} を持つファイル)`
-                          : sourceLabel(description.items?.input_kind, description.kind)
+                          : demand
+                            ? `発注の数を決める日ごとの記録の表 (商品の id の列 ${demand.product}, 日付の列 ${demand.date}, 売れた数の列 ${demand.units}, 行の id の列 ${demand.id} を持つファイル)`
+                            : sourceLabel(description.items?.input_kind, description.kind)
               }
               value={source}
               onChange={setSource}
@@ -805,9 +962,11 @@ function PredictCard({
                         ? `学習のときと同じ前処理をかけ, 行ごとに効果を見積もります. 処置の列 ${uplift.treatment} と結果の列は要りません (あれば評価を数え直します). 前処理の後に欠けた値のある行は理由を付けて飛ばします`
                         : price
                           ? `1 行を 1 つの商品の今の状態とし, 値段の列を今の値段にして, 候補の値段ごとに売れた数を予測します. 売れた数の列 ${price.units} は要りません (あれば誤差を数え直します). 前処理の後に欠けた値のある行と, 値段か原価の読めない行は理由を付けて飛ばします`
-                          : description.items
-                            ? '学習のときと同じ 1 件の扱いをかけます (撮影は同じ正規化も). 読めない件は理由を付けて飛ばします'
-                            : '目的の列は有っても無くてもかまいません. 学習のときと同じ読み込みで読みます'
+                          : demand
+                            ? `学習のときと同じ形の日ごとの記録です (前処理に要る元の列${demand.stock ? `, 在庫の数の列 ${demand.stock}` : ''}). 商品ごとに最も遅い日を発注を決める日とし, その日の売れた数は要りません. 過去の売れた数の列を作るため, 前の日までの記録も入れます. 前処理の後に欠けた値のある商品と, 在庫の数の読めない商品は理由を付けて飛ばします`
+                            : description.items
+                              ? '学習のときと同じ 1 件の扱いをかけます (撮影は同じ正規化も). 読めない件は理由を付けて飛ばします'
+                              : '目的の列は有っても無くてもかまいません. 学習のときと同じ読み込みで読みます'
               }
             />
             {bundle.sample_input && (
@@ -1017,7 +1176,100 @@ function PredictCard({
             ))}
           </section>
         )}
-        {!column && !group && !anomaly && !uplift && !price && (
+        {demand && (
+          <section aria-label="発注の判断">
+            <div className="grid gap-3 md:grid-cols-3">
+              <div>
+                <label
+                  htmlFor="predict-shortage"
+                  className="mb-1 block text-xs font-medium text-ink-2"
+                >
+                  品切れの損 (1 つ足りないときの損. 正の数)
+                </label>
+                <input
+                  id="predict-shortage"
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={shortage}
+                  onChange={(event) => setShortage(event.target.value)}
+                  aria-describedby="predict-shortage-note"
+                  className="h-8 w-full rounded-lg border border-line bg-surface px-2 text-sm"
+                />
+                <p id="predict-shortage-note" className="mt-1 text-xs text-ink-3">
+                  一式の既定は {formatNumber(demand.shortage_cost)}
+                </p>
+              </div>
+              <div>
+                <label
+                  htmlFor="predict-holding"
+                  className="mb-1 block text-xs font-medium text-ink-2"
+                >
+                  売れ残りの損 (1 つ余ったときの損. 正の数)
+                </label>
+                <input
+                  id="predict-holding"
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={holding}
+                  onChange={(event) => setHolding(event.target.value)}
+                  aria-describedby="predict-holding-note"
+                  className="h-8 w-full rounded-lg border border-line bg-surface px-2 text-sm"
+                />
+                <p id="predict-holding-note" className="mt-1 text-xs text-ink-3">
+                  一式の既定は {formatNumber(demand.holding_cost)}
+                </p>
+              </div>
+              <div>
+                <label
+                  htmlFor="predict-max-order"
+                  className="mb-1 block text-xs font-medium text-ink-2"
+                >
+                  発注の数の上限 (0 以上の整数. 省けません)
+                </label>
+                <input
+                  id="predict-max-order"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={maxOrder}
+                  onChange={(event) => setMaxOrder(event.target.value)}
+                  aria-describedby="predict-max-order-note"
+                  className="h-8 w-full rounded-lg border border-line bg-surface px-2 text-sm"
+                />
+                <p id="predict-max-order-note" className="mt-1 text-xs text-ink-3">
+                  一式の既定は {formatNumber(demand.max_order)}
+                </p>
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-ink-2" role="status">
+              {tau === null
+                ? '損を 2 つとも書くと, 水準 τ が決まります'
+                : `水準 τ = ${levelText(tau)} (品切れの損 / (品切れの損 + 売れ残りの損)). 学んだ水準は ${levelsText(demand.levels)}`}
+            </p>
+            {edge !== null && (
+              <p className="mt-1 text-xs text-warning-text">
+                水準 τ が学んだ水準の範囲の外なので, 端の水準 {levelText(edge)} の分位点を使います
+                (分布の端は学んでいないので, 見込みの損は少なめに出ます)
+              </p>
+            )}
+            {parsedMaxOrder.value === 0 && (
+              <p className="mt-1 text-xs text-warning-text">
+                上限が 0 なので, どの商品も発注しません
+              </p>
+            )}
+            <p className="mt-2 text-xs text-ink-2">
+              {baselineText(demand.horizon)}. {DEMAND_UNSUPPORTED}. {DEMAND_NO_PROBLEM}
+            </p>
+            {problems.map((problem) => (
+              <p key={problem} role="alert" className="mt-1 text-xs text-critical-text">
+                {problem}
+              </p>
+            ))}
+          </section>
+        )}
+        {!column && !group && !anomaly && !uplift && !price && !demand && (
           <p className="text-xs text-ink-2">
             この一式の出力は{FORM_LABELS[outputForm] ?? outputForm}なので,
             結論は推論した件数だけです. 結論の決め方と意思決定は使えません
@@ -1255,7 +1507,7 @@ export function BundlePage() {
   const client = useQueryClient()
   const bundle = useQuery({ queryKey: ['bundles', id], queryFn: () => api.bundle(id) })
   const results = useQuery({ queryKey: ['results', id], queryFn: () => api.results(id) })
-  // 雑音だけの一式, 並べるの一式, 群分けの一式, 異常の度合いの一式, 効果の一式, 値段の一式は, 問題の設定の結論と意思決定を扱わないので問題の設定を読まない
+  // 雑音だけの一式, 並べるの一式, 群分けの一式, 異常の度合いの一式, 効果の一式, 値段の一式, 需要の一式は, 問題の設定の結論と意思決定を扱わないので問題の設定を読まない
   // (既製のモデルの一式は読み, 結論の決め方だけを既定にする).
   // 種類は一式か一覧の読んだ値から. 分からない間は一式と並べて読む (推論の欄を 1 往復早く出すため.
   // 読まない種類の一式なら, サーバーは問題の設定を読まずに空の状態を返す)
@@ -1267,7 +1519,8 @@ export function BundlePage() {
     kind === 'group' ||
     kind === 'anomaly' ||
     kind === 'uplift' ||
-    kind === 'price'
+    kind === 'price' ||
+    kind === 'demand'
   const problem = useQuery({
     queryKey: ['bundle-problem', id],
     queryFn: () => api.bundleProblem(id),
@@ -1384,6 +1637,11 @@ export function BundlePage() {
             {data.description.price && (
               <Card title="実験の評価">
                 <PriceEvaluationsView evaluations={data.description.price.evaluations} />
+              </Card>
+            )}
+            {data.description.demand && (
+              <Card title="実験の評価">
+                <DemandEvaluationsView evaluations={data.description.demand.evaluations} />
               </Card>
             )}
             {data.description.uplift && (

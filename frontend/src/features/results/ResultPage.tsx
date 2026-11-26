@@ -7,7 +7,7 @@ import { Link, useNavigate, useParams } from 'react-router'
 import { api } from '../../api/client'
 import type { Counts, Result } from '../../api/types'
 import { Button, Card, ErrorBox, PageHeader, Spinner, StatTile } from '../../components/ui'
-import { formatPercent, formatValue } from '../../lib/format'
+import { formatNumber, formatPercent, formatValue } from '../../lib/format'
 import {
   FORM_LABELS,
   maskNames,
@@ -38,6 +38,7 @@ import { READY_UNSUPPORTED } from '../../lib/ready'
 import { anomalySummary, triageSummary } from '../../lib/anomaly'
 import { resultK, treatSummary, upliftSummary } from '../../lib/uplift'
 import { priceDecisionSummary, priceSummary } from '../../lib/price'
+import { demandSummary, orderDecisionSummary } from '../../lib/demand'
 import { groupColumns } from '../../lib/remeasure'
 import { rowReasonable } from '../../lib/rowReason'
 import { fromForm, toForm, type RulesForm } from '../../lib/rules'
@@ -46,6 +47,7 @@ import { AnomalyCards } from './AnomalyCards'
 import { ArtifactCard } from './ArtifactCard'
 import { UpliftCards, UpliftTerms } from './UpliftCards'
 import { PriceCards, PriceTerms } from './PriceCards'
+import { DemandCards, DemandTerms } from './DemandCards'
 import {
   ClusterRepresentativesTable,
   ClusterStabilityView,
@@ -840,6 +842,9 @@ export function ResultPage() {
   // 値段の結果は行ごとの売れた数と弾力性 (結論は弾力性と実験の評価, 意思決定は上限の中で利益が最も大きい値段)
   const priced = priceSummary(data)
   const chosen = priceDecisionSummary(data)
+  // 需要の結果は商品ごとの先の期間の需要の分位点 (結論は分位点と実験の評価, 意思決定は水準 τ の分位点から在庫を引いた発注)
+  const demand = demandSummary(data)
+  const ordered = orderDecisionSummary(data)
   const form = data.artifacts?.form ?? data.output_form ?? ''
   // 外れ方を種類ごとに分けられる列 (回帰と予測の一式の, 予測と判断と目的の列を除いた列)
   const target = bundle.data?.description?.target
@@ -905,6 +910,7 @@ export function ResultPage() {
           )}
           {uplift && <UpliftTerms outcome={uplift.outcome} k={resultK(data, uplift)} />}
           {priced && <PriceTerms cost={priced.cost} step={data.price?.step} />}
+          {demand && <DemandTerms horizon={demand.horizon} stock={demand.stock} />}
           {summary && <DecisionBars counts={summary} />}
         </Card>
         {/* 決め直した後は, 使った決め方で編集を作り直す */}
@@ -930,6 +936,7 @@ export function ResultPage() {
         {anomaly && <AnomalyCards result={data} summary={anomaly} />}
         {uplift && <UpliftCards result={data} summary={uplift} />}
         {priced && <PriceCards result={data} summary={priced} />}
+        {demand && <DemandCards result={data} summary={demand} />}
         {column && !readyModel && (
           <DecisionCard
             key={`decision:${JSON.stringify(data.decision?.decision ?? null)}`}
@@ -948,7 +955,10 @@ export function ResultPage() {
         )}
         {summary && (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <StatTile label={ranking ? '利用者' : '行'} value={summary.rows.toLocaleString()} />
+            <StatTile
+              label={ranking ? '利用者' : demand ? '商品' : '行'}
+              value={summary.rows.toLocaleString()}
+            />
             <StatTile
               label={
                 ranking
@@ -961,9 +971,11 @@ export function ResultPage() {
                         ? '効果を見積もった'
                         : priced
                           ? '売れた数を予測した'
-                          : column
-                            ? '予測した'
-                            : '推論した'
+                          : demand
+                            ? '需要を予測した'
+                            : column
+                              ? '予測した'
+                              : '推論した'
               }
               value={summary.predicted.toLocaleString()}
             />
@@ -979,9 +991,11 @@ export function ResultPage() {
                         ? '効果を出せなかった'
                         : priced
                           ? '予測できなかった'
-                          : column
-                            ? '予測しなかった'
-                            : '推論しなかった'
+                          : demand
+                            ? '需要を予測できなかった'
+                            : column
+                              ? '予測しなかった'
+                              : '推論しなかった'
               }
               value={summary.skipped.toLocaleString()}
             />
@@ -1009,6 +1023,16 @@ export function ResultPage() {
                   chosen
                     ? `上げる ${chosen.raised} 行, 下げる ${chosen.lowered} 行`
                     : '値段を決めない'
+                }
+              />
+            ) : demand ? (
+              <StatTile
+                label="発注する"
+                value={`${ordered?.ordered ?? 0} 商品`}
+                hint={
+                  ordered
+                    ? `発注の数の和 ${formatNumber(ordered.total)}, 上限に当たった ${ordered.capped} 商品`
+                    : '発注の数を決めない'
                 }
               />
             ) : !column ? (

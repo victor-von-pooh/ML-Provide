@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from ml_provide.api import router
 from ml_provide.datasets import router as dataset_router
+from ml_provide.demands import router as demand_router
 from ml_provide.experiments import router as experiment_router
 from ml_provide.policies import router as policy_router
 from ml_provide.policy_results import router as policy_result_router
@@ -373,6 +374,7 @@ def create_app(
     app.include_router(review_router)
     app.include_router(treated_router)
     app.include_router(price_router)
+    app.include_router(demand_router)
     mount_frontend(app, STATIC_DIR)
 
     return app

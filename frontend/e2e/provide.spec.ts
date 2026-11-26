@@ -1327,6 +1327,99 @@ test('値段の一式を場所で登録して推論し, 選んだ値段と利益
   }
 })
 
+test('需要の一式を場所で登録して推論し, 発注の数と見込みの損の比べと上限に当たった商品を見て, 損と上限を変えると発注の数が変わる', async ({
+  page,
+}) => {
+  const root = path.resolve(import.meta.dirname, '.work', 'demand')
+  const bundle = { id: await registerFresh(page.request, path.join(root, 'bundle')) }
+  /** 発注の数の一覧の, 商品の id ごとの発注の数 */
+  const ordersOf = async () => {
+    const list = page.getByRole('table', { name: /^発注の数/ })
+    await expect(list.getByRole('row')).toHaveCount(5)
+    const cells = await list
+      .getByRole('row')
+      .evaluateAll((rows) =>
+        rows
+          .slice(1)
+          .map((row) => [row.children[2]?.textContent ?? '', row.children[8]?.textContent ?? '']),
+      )
+    return Object.fromEntries(cells.map(([product, order]) => [product, Number(order)]))
+  }
+  try {
+    // 一式の画面: 列と言葉の説明, 学んだ水準と損と上限, 実験の評価. 問題の設定と意思決定の欄は無い
+    await page.goto(`/bundles/${bundle.id}`)
+    await expect(page.getByText(/^需要の決め方と前処理のレシピ/)).toBeVisible()
+    await expect(page.getByText('0.1, 0.25, 0.5, 0.75, 0.9').first()).toBeVisible()
+    await expect(page.getByRole('table', { name: /^実験の評価/ })).toContainText('検証用')
+    await expect(page.getByRole('region', { name: '意思決定' })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: '問題の設定' })).toHaveCount(0)
+    await expect(page.getByLabel(/^品切れの損/)).toHaveValue('3')
+    await expect(page.getByLabel(/^売れ残りの損/)).toHaveValue('1')
+    await expect(page.getByLabel(/^発注の数の上限/)).toHaveValue('60')
+    await expect(page.getByText(/^水準 τ = 0.75/)).toBeVisible()
+
+    // 新しい記録の発注の数を既定の損と上限で決める
+    const daily = path.join(root, 'daily.csv')
+    await page.getByLabel(/^発注の数を決める日ごとの記録の表/).fill(daily)
+    await page.getByRole('button', { name: '推論する' }).click()
+    await expect(page.getByText(/^5 商品のうち 4 商品の先の 7 日の需要/)).toBeVisible({
+      timeout: 30_000,
+    })
+    await expect(page.getByLabel('言葉の説明')).toContainText('水準 τ は 品切れの損')
+    await expect(page.getByLabel('言葉の説明')).toContainText('発注の数の上限は')
+    await expect(
+      page
+        .getByText('前の期間と同じ数の発注の見込みの損')
+        .locator('xpath=following-sibling::dd[1]'),
+    ).toContainText('この決め方なら')
+    await expect(
+      page
+        .getByRole('table', { name: /^需要の分位点の幅/ })
+        .getByRole('row')
+        .nth(1),
+    ).toContainText('水準 0.1 から 0.9 まで')
+    await expect(page.getByRole('table', { name: /^実験の評価/ })).toContainText('テスト用')
+    const before = await ordersOf()
+    expect(Object.keys(before)).not.toContain('p99')
+
+    // 品切れの損を 9 にすると水準 τ が 0.9 に上がり, 発注の数は減らずに増える
+    await page.goto(`/bundles/${bundle.id}`)
+    await page.getByLabel(/^発注の数を決める日ごとの記録の表/).fill(daily)
+    await page.getByLabel(/^品切れの損/).fill('9')
+    await expect(page.getByText(/^水準 τ = 0.9/)).toBeVisible()
+    await page.getByRole('button', { name: '推論する' }).click()
+    await expect(page.getByText(/水準 0\.9, 上限 60\)/)).toBeVisible({ timeout: 30_000 })
+    const after = await ordersOf()
+    for (const key of Object.keys(before)) expect(after[key]).toBeGreaterThanOrEqual(before[key]!)
+    const sum = (orders: Record<string, number>) =>
+      Object.values(orders).reduce((total, value) => total + value, 0)
+    expect(sum(after)).toBeGreaterThan(sum(before))
+
+    // 上限を 1 にすると, 上限を超える商品は 1 で切り, 上限に当たった商品として数える
+    await page.goto(`/bundles/${bundle.id}`)
+    await page.getByLabel(/^発注の数を決める日ごとの記録の表/).fill(daily)
+    await page.getByLabel(/^品切れの損/).fill('9')
+    await page.getByLabel(/^発注の数の上限/).fill('1')
+    await page.getByRole('button', { name: '推論する' }).click()
+    await expect(page.getByText(/水準 0\.9, 上限 1\)/)).toBeVisible({ timeout: 30_000 })
+    const capped = Object.values(after).filter((value) => value > 1).length
+    expect(capped).toBeGreaterThan(0)
+    await expect(
+      page
+        .getByText('上限に当たった商品', { exact: true })
+        .locator('xpath=following-sibling::dd[1]'),
+    ).toContainText(`${capped} 商品`)
+    const limited = await ordersOf()
+    for (const value of Object.values(limited)) expect(value).toBeLessThanOrEqual(1)
+    await expect(
+      page.getByRole('table', { name: /^発注の数/ }).getByText('上限に当たった', { exact: true }),
+    ).toHaveCount(capped)
+    await expect(page.getByRole('heading', { name: /^意思決定/ })).toHaveCount(0)
+  } finally {
+    await page.request.delete(`/api/bundles/${bundle.id}`)
+  }
+})
+
 test('既製のモデルの一式を下見して作り, ライセンスの警告と重みの置き場を見て, 画像の種類を推論する', async ({
   page,
 }) => {
