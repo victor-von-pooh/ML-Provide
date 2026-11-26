@@ -101,8 +101,12 @@ RANK_TABLES = {".csv": ",", ".tsv": "\t", ".parquet": None}
 MAX_REPRESENTATIVES = 20
 
 # 推論の後に表を読み直して結論を出し直さない出力の形 (表の出力, 並べる,
-# 群分け, 効果. infer の結論のまま残す. 異常の度合いの一式も同じ)
+# 群分け, 効果. infer の結論のまま残す)
 KEPT_CONCLUSIONS = frozenset({"table", "ranking", "cluster", "effect"})
+
+# 同じく出し直さない一式の種類 (異常の度合いと需要. 出力の形が列の出力と
+# 同じ value と distribution なので, 種類で見分ける)
+KEPT_KINDS = frozenset({"anomaly", "demand"})
 
 # 異常の度合いの一式で, 人の確認に回す件数の上限 (確認の待ち行列を 1 度に
 # 返す件数の上限)
@@ -1190,6 +1194,10 @@ def predict(
         # 値段の一式は値段の判断だけ (省くと一式の既定)
         decision = price_decision(bundle, body)
         rules = None
+    elif bundle.from_demand:
+        # 需要の一式は発注の判断だけ (省くと一式の既定)
+        decision = demand_decision(body)
+        rules = None
     elif not bundle.column_output:
         # 列の出力でない一式は件数だけ (決め方と意思決定は使えないもの)
         given = any(v is not None for v in (rules or {}).values())
@@ -1258,23 +1266,25 @@ def predict(
         ranking=ranking,
         grouping=grouping_meta(bundle, result["frame"]),
         uplift=uplift_meta(bundle),
-        price=price_meta(bundle, result["frame"])
+        price=price_meta(bundle, result["frame"]),
+        demand=demand_meta(bundle, result["frame"])
     )
     # 書いた表を読み直して結論を出し直す (出し直しと同じ型の値でまとめ,
     # 日時のような列のまとめの名前が, 後の出し直しで変わらないように)
     # (書き出しの途中で失敗した結果は, 壊れたまま残さずに削除)
     result_id, place = get_store(request).new_result_dir()
     meta = {k: v for k, v in result.items() if k != "frame"}
-    # (表の出力, 並べる, 群分け, 異常の度合い, 効果, 値段の結果は infer の
-    # 結論のまま. 表の出力の件数は数え直しても同じ件数. 並べるの利用者
-    # ごとの数え方, 群分けの群の要約と群の安定性, 異常の度合いと効果の
-    # 分布と上位の行, 値段の弾力性と実験の評価は件数だけの結論に無い中身)
+    # (表の出力, 並べる, 群分け, 異常の度合い, 効果, 値段, 需要の結果は
+    # infer の結論のまま. 表の出力の件数は数え直しても同じ件数. 並べるの
+    # 利用者ごとの数え方, 群分けの群の要約と群の安定性, 異常の度合いと効果
+    # の分布と上位の行, 値段の弾力性と実験の評価, 需要の分位点の要約と実験
+    # の評価は件数だけの結論に無い中身)
     # (出し直しは書いた result.yaml を読んで渡す. 予測の表を読む列の型
     # column_types は write_result が書くときに決めるため)
     try:
         ml_inference.write_result(result, place)
         kept = meta.get("output_form") in KEPT_CONCLUSIONS or (
-            meta.get("kind") == "anomaly"
+            meta.get("kind") in KEPT_KINDS
         )
         if not kept:
             with RESULT_LOCK:
@@ -1478,6 +1488,99 @@ def price_meta(
     }
 
     return price
+
+
+def demand_decision(body: PredictRequest) -> Optional[dict[str, Any]]:
+    """
+    需要の一式に渡す発注の判断を確かめる関数
+
+    Parameters
+    ----------
+    body: PredictRequest
+        推論の要求
+
+    Returns
+    ----------
+    decision: Optional[dict[str, Any]]
+        渡す発注の判断 (None は一式の既定, 空の辞書は発注の数を決めない.
+        型と項目, 損と上限の形は ML-Inference が確かめる)
+
+    Raises
+    ----------
+    HTTPException
+        結論の決め方か何段も先の予測を渡した場合は 400
+    """
+    # 結論の決め方と何段も先の予測は使えないもの (先の期間は一式の
+    # horizon で決まる)
+    given = any(v is not None for v in (body.rules or {}).values())
+    if given or body.forecast:
+        raise HTTPException(
+            400, "需要の一式には, 結論の決め方と何段も先の予測を使えません. "
+            "意思決定は水準 τ の分位点から在庫を引いて発注する判断 ({type: "
+            "order, shortage_cost, holding_cost, max_order}) だけです"
+        )
+
+    return body.decision
+
+
+def demand_meta(
+    bundle: ml_inference.Bundle, frame: pd.DataFrame
+) -> Optional[dict[str, Any]]:
+    """
+    需要の結果に残す, 予測した行の水準ごとの分位点の平均と, 最も小さい
+    水準から最も大きい水準までの分位点の幅の分布を返す関数
+
+    Parameters
+    ----------
+    bundle: ml_inference.Bundle
+        読んだ一式
+    frame: pd.DataFrame
+        推論の直後の予測の表
+
+    Returns
+    ----------
+    demand: Optional[dict[str, Any]]
+        horizon (先の期間の日数), levels (学んだ水準), quantiles (水準ごと
+        の予測した行の分位点の平均. 予測した行が無ければ None), low と
+        high (幅を数える水準), width (幅の counted, mean, min, p10, p50,
+        p90, max. 予測した行が無ければ None). 需要の一式でなければ None
+    """
+    # 分位点の要約 (ML-Inference の結論は 0.5 の点の平均と和だけなので,
+    # 予測の表の q:<水準> の列から数える)
+    if not bundle.from_demand:
+        return None
+    levels = [float(level) for level in bundle.info["output"]["quantiles"]]
+    ok = frame[frame["status"] == ml_inference.OK]
+    values = np.column_stack([
+        pd.to_numeric(ok[f"q:{level:g}"], errors="coerce").to_numpy(
+            dtype=float
+        )
+        for level in levels
+    ]) if len(ok) else np.zeros((0, len(levels)))
+    values = values[np.isfinite(values).all(axis=1)]
+    quantiles, width = None, None
+    if len(values):
+        quantiles = [float(value) for value in values.mean(axis=0)]
+        spread = values[:, -1] - values[:, 0]
+        width = {
+            "counted": int(len(spread)),
+            "mean": float(spread.mean()),
+            "min": float(np.min(spread)),
+            "p10": float(np.percentile(spread, 10)),
+            "p50": float(np.percentile(spread, 50)),
+            "p90": float(np.percentile(spread, 90)),
+            "max": float(np.max(spread)),
+        }
+    demand = {
+        "horizon": int(bundle.info["demand"]["horizon"]),
+        "levels": levels,
+        "quantiles": quantiles,
+        "low": levels[0],
+        "high": levels[-1],
+        "width": width,
+    }
+
+    return demand
 
 
 def uplift_meta(bundle: Any) -> Optional[dict[str, Any]]:
@@ -2014,6 +2117,7 @@ def result_view(
         "grouping": meta.get("grouping"),
         "uplift": meta.get("uplift"),
         "price": meta.get("price"),
+        "demand": meta.get("demand"),
     }
 
     return view

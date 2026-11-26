@@ -106,6 +106,145 @@ export interface Description {
   uplift?: UpliftInfo | null
   /** 値段の一式 (版 13) の列, 値段の候補と変える幅の上限, 学習用の分割の要約, 実験の評価 */
   price?: PriceInfo | null
+  /** 需要の一式 (版 14) の列, 先の期間, 学んだ水準, 発注の損と上限, 学習用の分割の要約, 実験の評価 */
+  demand?: DemandInfo | null
+}
+
+/** 需要の一式の実験の 1 つの分割の評価 */
+export interface DemandEvaluation {
+  rows: number
+  products: number
+  /** 需要の 0.5 の分位点の平均絶対誤差と, 分位点の損失 */
+  mae: number
+  pinball_loss: number
+  /** 選んだ発注の数の損の和と, 前の期間と同じ数の発注の損の和, 差と比 (比べる損が 0 なら null) */
+  order_cost: number
+  baseline_cost: number
+  order_cost_saving: number
+  order_cost_ratio: number | null
+  /** 上限で切った行の数 */
+  capped: number
+}
+
+/** 需要の一式の demand の欄 */
+export interface DemandInfo {
+  /** 予測に使う列 (前処理の後の列) */
+  features: string[]
+  product: string
+  date: string
+  units: string
+  stock: string | null
+  id: string
+  /** 先の期間の日数と, 実験の発注を決める日の間隔の日数 */
+  horizon: number
+  interval: number
+  /** 学んだ水準 (小さい順) */
+  levels: number[]
+  shortage_cost: number
+  holding_cost: number
+  max_order: number
+  /** 実験の発注の数の表の行の数 */
+  rows: number
+  train: { rows: number; products: number; demand_mean: number | null } | null
+  evaluations: Record<string, DemandEvaluation>
+  /** 元の表で決めた発注の数と実験の発注の数の比べ (比べた場合だけ) */
+  check: { rows: number; agreement: number; max_diff: number; pinball_loss: number | null } | null
+}
+
+/** 需要の結果のまとめ (ML-Inference の需要の結論) */
+export interface DemandSummary extends Counts {
+  id: string | null
+  product: string | null
+  date: string | null
+  /** 予測の表の在庫の数の列 (在庫の数の列が無い一式か表に無ければ null) */
+  stock: string | null
+  horizon: number
+  levels: number[]
+  /** 予測した行の発注を決める日 (無ければ null) */
+  dates: { min: string; max: string } | null
+  /** 0.5 の点の平均と和 (予測した行が無ければ null) */
+  prediction: { mean: number; total: number } | null
+  /** 前の期間の合計の平均と数えた行 (予測した行が無ければ null) */
+  previous: { mean: number | null; counted: number } | null
+  train: DemandInfo['train']
+  evaluations: Record<string, DemandEvaluation>
+}
+
+/** 水準 τ の分位点から在庫を引いて発注する判断のまとめ (意思決定の結果の summary) */
+export interface OrderDecisionSummary {
+  rows: number
+  undecided: number
+  ordered: number
+  total: number
+  capped: number
+  /** 水準 τ と使った水準 (範囲の外なら端の水準) */
+  level: number
+  used_level: number
+  outside: boolean
+  expected_cost: number
+  /** 前の期間の合計のある行の数と, その行のこの決め方と前の期間と同じ数の発注の見込みの損の和 */
+  compared: number
+  compared_cost: number
+  baseline_cost: number
+  saving: number
+  /** compared_cost / baseline_cost (baseline_cost が 0 なら null) */
+  ratio: number | null
+  shortage_cost: number
+  holding_cost: number
+  max_order: number
+}
+
+/** 需要の結果の分位点の要約 (結果の demand の欄) */
+export interface DemandQuantiles {
+  horizon: number
+  levels: number[]
+  /** 水準ごとの予測した行の分位点の平均 (予測した行が無ければ null) */
+  quantiles: number[] | null
+  /** 幅を数える水準 (最も小さい水準と最も大きい水準) */
+  low: number
+  high: number
+  /** 最も小さい水準から最も大きい水準までの分位点の幅の分布 (予測した行が無ければ null) */
+  width: {
+    counted: number
+    mean: number
+    min: number
+    p10: number
+    p50: number
+    p90: number
+    max: number
+  } | null
+}
+
+/** 発注の数を決めた 1 行 (GET /api/results/{id}/orders) */
+export interface OrderRow {
+  row: number
+  id: string | number | boolean | null
+  product_id: string | number | boolean | null
+  /** 水準の小さい順の分位点 */
+  quantiles: (number | null)[]
+  order_date: string | null
+  on_hand: number | null
+  previous_demand: number | null
+  prediction: number | null
+  quantile: number | null
+  order: number | null
+  capped: boolean | null
+  expected_cost: number | null
+  baseline_order: number | null
+  baseline_cost: number | null
+}
+
+/** 発注の数 (発注の数の大きい順. offset から) */
+export interface OrderRows {
+  id: string | null
+  product: string | null
+  levels: number[]
+  shortage_cost: number | null
+  holding_cost: number | null
+  max_order: number | null
+  total: number
+  offset: number
+  rows: OrderRow[]
 }
 
 /** 値段の一式の実験の 1 つの分割の評価 */
@@ -899,6 +1038,8 @@ export interface Result {
   uplift?: { curves: Record<string, QiniCurve>; outcome: string; k: number } | null
   /** 値段の結果の, 予測した行の弾力性の分布 (数えた行が無ければ null) と弾力性の上げ幅 */
   price?: { step: number; elasticity: ElasticityDistribution | null } | null
+  /** 需要の結果の, 予測した行の水準ごとの分位点の平均と分位点の幅の分布 */
+  demand?: DemandQuantiles | null
 }
 
 /** 結果どうしの比べ (GET /api/results/compare) */
