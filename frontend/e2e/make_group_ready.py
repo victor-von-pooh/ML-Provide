@@ -16,7 +16,10 @@ import numpy as np
 import pandas as pd
 from ml_eda import Data, describe_groups
 from ml_inference import (
-    make_group_bundle, make_ready_bundle, predict, register_units
+    make_group_bundle,
+    make_ready_bundle,
+    predict,
+    register_units,
 )
 from PIL import Image
 

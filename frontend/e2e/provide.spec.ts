@@ -983,7 +983,7 @@ test('まとめるの骨組みの実験の中に作った群分けの一式を, 
 
     // 群の代表の行: 群ごとに中心に近い 3 件 (結論のまま) と, 件数を変えて 5 件
     const representatives = page.getByRole('table', {
-      name: '群の代表の行 (群ごとに中心に近い順の行, 距離, 群を作る列の値)',
+      name: '群の代表の行 (群ごとに中心に近い順の行, 距離, 群の要約の列の値)',
     })
     await expect(representatives.locator('thead th')).toHaveText([
       '群',
@@ -1532,6 +1532,12 @@ test('既製の埋め込みの群分けの一式を場所で登録して商品�
       page.getByRole('table', { name: '学習の群の安定性 (モデル, 比べる相手, 差)' }),
     ).toContainText('0.960')
     await expect(page.getByRole('region', { name: '意思決定' })).toHaveCount(0)
+    await expect(page.getByText(/骨組みの成果物から写してあります/)).toBeVisible()
+
+    // 一覧にも既製のモデルの出どころを添える
+    await page.goto('/')
+    await expect(page.getByText(/\(e2e\)から群/).first()).toBeVisible()
+    await page.goto(`/bundles/${bundle.id}`)
 
     // 新しい商品の写真のディレクトリを群に分ける
     await page.getByLabel(/^群に分ける写真/).fill(path.join(root, 'new'))
@@ -1566,7 +1572,7 @@ test('既製の埋め込みの群分けの一式を場所で登録して商品�
 
     // 群の代表の行は写真の場所を持つ
     const representatives = page.getByRole('table', {
-      name: '群の代表の行 (群ごとに中心に近い順の行, 距離, 群を作る列の値)',
+      name: '群の代表の行 (群ごとに中心に近い順の行, 距離, 群の要約の列の値)',
     })
     await expect(representatives.locator('thead th')).toHaveText([
       '群',

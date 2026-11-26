@@ -649,7 +649,7 @@ function RepresentativesCard({
       }
     >
       <p className="border-b border-line px-4 py-2 text-xs text-ink-3">
-        群ごとに, 群の中心に近い順の割り当てた行と, 群を作る列の値です
+        群ごとに, 群の中心に近い順の割り当てた行と, 群の要約の列の値です
         (距離は群の中心までの埋め込みの空間の距離. 小さいほど群らしい行).
         群の平均や最も多い値と並べて, 群を具体的な行で解釈できます. 「行を見る」で,
         割り当てた行の表をその行だけにします
@@ -662,7 +662,7 @@ function RepresentativesCard({
             columns={columns}
             summary={clusterRows(result)}
             onPick={onPick}
-            caption="群の代表の行 (群ごとに中心に近い順の行, 距離, 群を作る列の値)"
+            caption="群の代表の行 (群ごとに中心に近い順の行, 距離, 群の要約の列の値)"
           />
         ) : (
           <p className="p-4 text-sm text-ink-2">群に割り当てた行が無いので, 代表の行はありません</p>

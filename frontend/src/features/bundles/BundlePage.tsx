@@ -16,7 +16,11 @@ import {
   normalText,
   SCORE_LABELS,
 } from '../../lib/anomaly'
-import { CLUSTER_NO_PROBLEM, CLUSTER_UNSUPPORTED } from '../../lib/clusters'
+import {
+  CLUSTER_NO_PROBLEM,
+  CLUSTER_UNSUPPORTED,
+  READY_CLUSTER_NO_PROBLEM,
+} from '../../lib/clusters'
 import {
   budgetProblem,
   MAX_BUDGET,
@@ -1092,7 +1096,8 @@ function PredictCard({
         )}
         {group && (
           <p className="text-xs text-ink-2">
-            {CLUSTER_UNSUPPORTED}. {CLUSTER_NO_PROBLEM}
+            {CLUSTER_UNSUPPORTED}.{' '}
+            {group.features === null ? READY_CLUSTER_NO_PROBLEM : CLUSTER_NO_PROBLEM}
           </p>
         )}
         {anomaly && (

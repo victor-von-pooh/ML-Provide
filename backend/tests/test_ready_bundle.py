@@ -1004,7 +1004,7 @@ def test_ready_group_result(tmp_path: Path, client: TestClient) -> None:
     assert grouping["learned"][-1]["group"] == "全体"
     assert "path" in grouping["texts"]
 
-    # 群の代表の写真 (結論と, 件数を変えて求めたもの) は写真の場所を持つ
+    # 群の代表の写真 (結論と, 件数を変えて求めたもの) の写真の場所
     first = summary["representatives"][0]["rows"][0]
     assert first["values"]["path"] == "a_red.png"
     assert set(first["values"]) == {"path", "width", "height"}
@@ -1037,7 +1037,7 @@ def test_ready_group_result(tmp_path: Path, client: TestClient) -> None:
     assert again["summary"]["groups"] == groups
     assert again["output_form"] == "cluster"
 
-    # 写真の一式に読み込みの設定は渡せない
+    # 写真の一式への読み込みの設定の拒否
     response = client.post(
         f"/api/bundles/{bundle_id}/predict",
         json={"source": str(images), "options": {"loader": "image"}},
