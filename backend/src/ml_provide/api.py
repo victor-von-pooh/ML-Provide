@@ -1742,8 +1742,9 @@ def grouping_meta(
     ----------
     grouping: Optional[dict[str, Any]]
         k, columns (群を作る列), learned (学習のときの群の要約の行. 最後は
-        全体), texts (値が全て文字の元の列. 読み直すときに文字で読む).
-        群分けの一式でなければ None
+        全体), texts (値が全て文字の元の列. 読み直すときに文字で読む) と,
+        群の中心から遠い行の上限を持つ一式 (版 16 と 17) は far (上限の
+        写し). 群分けの一式でなければ None
     """
     # 一式を消した後も学習のときの群の大きさと比べるための写し
     if not bundle.from_group:
@@ -1755,6 +1756,9 @@ def grouping_meta(
         "learned": copy.deepcopy(list(group.get("summary") or [])),
         "texts": text_columns(frame),
     }
+    # 上限を持たない一式 (版 9 と 10) の結果は今までの形のまま
+    if group.get("far") is not None:
+        grouping["far"] = copy.deepcopy(group["far"])
 
     return grouping
 
@@ -2435,6 +2439,29 @@ def has_grouping(meta: dict[str, Any]) -> bool:
     return kept
 
 
+def has_far(meta: dict[str, Any]) -> bool:
+    """
+    結果が群の中心から遠い行の印を持つかを返す関数
+
+    Parameters
+    ----------
+    meta: dict[str, Any]
+        result.yaml の中身
+
+    Returns
+    ----------
+    found: bool
+        群分けの結果で, 結論に遠い行の件数 (summary.far) があるか (版 16
+        と 17 の一式の結果)
+    """
+    # 予測の表の far の列は, 上限を持つ一式の結果だけが印の列
+    found = is_cluster(meta) and (
+        (meta.get("summary") or {}).get("far") is not None
+    )
+
+    return found
+
+
 def same_grouping(metas: list[dict[str, Any]]) -> bool:
     """
     群分けの結果の群の数, 群を作る列, 学習のときの群の要約が全て同じかを
@@ -2622,6 +2649,7 @@ def get_rows(
     offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=MAX_ROWS),
     status: Optional[str] = None, decision: Optional[str] = None,
     group: Optional[int] = Query(None, ge=0),
+    far: Optional[bool] = None,
     row: Optional[int] = Query(None, ge=0)
 ) -> dict[str, Any]:
     """
@@ -2643,6 +2671,9 @@ def get_rows(
         判断で絞る
     group: Optional[int] = Query(None, ge=0)
         群の番号で絞る (群分けの結果だけ)
+    far: Optional[bool] = None
+        群の中心から遠い行 (True) か遠くない行 (False) に絞る (群の中心
+        から遠い行の上限を持つ群分けの結果だけ)
     row: Optional[int] = Query(None, ge=0)
         行の位置 (index) で 1 行だけに絞る
 
@@ -2655,7 +2686,8 @@ def get_rows(
     Raises
     ----------
     HTTPException
-        群分けでない結果に群の番号を渡した場合は 400
+        群分けでない結果に群の番号を渡した場合と, 遠い行の上限を持たない
+        結果に遠さを渡した場合は 400
     """
     # 絞ってから切り出す
     # 行の位置の列 (同じ名前の元の列は名前を変えて残す)
@@ -2663,6 +2695,11 @@ def get_rows(
     meta = read_meta(place)
     if group is not None and meta.get("output_form") != "cluster":
         raise HTTPException(400, "群で絞れるのは群分けの結果だけです")
+    if far is not None and not has_far(meta):
+        raise HTTPException(
+            400, "遠さで絞れるのは, 群の中心から遠い行の上限を持つ群分けの"
+            "結果だけです"
+        )
     frame = read_frame(place, meta)
     if "index" in frame.columns:
         frame = frame.rename(columns={"index": "index (入力)"})
@@ -2675,6 +2712,8 @@ def get_rows(
         frame = frame[frame["decision"] == decision]
     if group is not None:
         frame = frame[frame["group"] == group]
+    if far is not None:
+        frame = frame[frame["far"].fillna(False).astype(bool) == far]
     if row is not None:
         frame = frame[frame["index"] == row]
     part = frame.iloc[offset:offset + limit]

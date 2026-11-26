@@ -123,6 +123,20 @@ const photos = {
   },
 } as unknown as Bundle
 
+// 学習の表を渡して作った群分けの一式 (版 16. 群ごとの遠い行の上限を持ち, 群 1 は行が無かった)
+const farred = {
+  ...customers,
+  id: 'g3',
+  description: {
+    ...customers.description,
+    format_version: 16,
+    group: {
+      ...customers.description!.group!,
+      far: { quantile: 0.99, rows: 40, thresholds: [0.4123, null] },
+    },
+  },
+} as unknown as Bundle
+
 let current = customers
 const bundleProblem = vi.fn()
 const predict = vi.fn()
@@ -187,7 +201,19 @@ describe('群分けの一式の画面', () => {
     expect(screen.queryByText(/結論は推論した件数だけです/)).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: '意思決定' })).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: '結論の決め方' })).not.toBeInTheDocument()
+    // 遠さの上限を持たない一式 (版 9) には遠い行の上限の行が無い
+    expect(screen.queryByText('遠い行の上限')).not.toBeInTheDocument()
     expect(bundleProblem).not.toHaveBeenCalled()
+  })
+
+  it('遠い行の上限を持つ一式 (版 16) は, 学習の行の数, 分位点, 群ごとの上限を出す', async () => {
+    current = farred
+    show()
+    expect(await screen.findByText('遠い行の上限')).toBeInTheDocument()
+    expect(
+      screen.getByText(/学習の 40 行の群の中心までの距離の 99 % 点 \(群 0 0\.412, 群 1 –\)/),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/上限より遠い行に「遠い」の印を付けます/)).toBeInTheDocument()
   })
 
   it('行の表のファイルを渡して群に割り当てる', async () => {

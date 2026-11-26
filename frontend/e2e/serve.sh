@@ -146,8 +146,9 @@ uv run python ../frontend/e2e/make_demand.py "$WORK/demand"
 PYTHONPATH="$E2E_DIR${PYTHONPATH:+:$PYTHONPATH}" \
   uv run python ../frontend/e2e/make_search.py "$WORK/search"
 
-# 既製の埋め込みの群分けの骨組みと同じ形の成果物から, 既製の埋め込みの群分けの一式 (版 10.
-# ML-Inference の make_group_bundle) を作り, 群に分ける新しい商品の写真を書く
+# 既製の埋め込みの群分けの骨組みと同じ形の成果物から, 既製の埋め込みの群分けの一式 (群に分けた
+# 写真を渡すので, 群の中心から遠い行の上限を持つ版 17. ML-Inference の make_group_bundle) を作り,
+# 群に分ける新しい商品の写真 (学習に無い淡い赤を含む) を書く
 # (作り物の出どころの e2e_ready を読む)
 PYTHONPATH="$E2E_DIR${PYTHONPATH:+:$PYTHONPATH}" \
   uv run python ../frontend/e2e/make_group_ready.py "$WORK/group-ready"

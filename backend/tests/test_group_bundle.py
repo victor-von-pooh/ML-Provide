@@ -182,6 +182,15 @@ def test_group_bundle(
     assert {row["group"] for row in one["rows"]} == {1}
     assert {row["region"] for row in one["rows"]} == {"south"}
 
+    # 遠さの上限を持たない一式 (版 9) は印の列, 件数, 上限の写しを持たず,
+    # 遠さで絞ると断る
+    assert "far" not in rows["columns"] and summary["far"] is None
+    assert "far" not in grouping and len(result["sentences"]) == 3
+    response = client.get(
+        f"/api/results/{result['id']}/rows", params={"far": "true"}
+    )
+    assert response.status_code == 400
+
 
 def test_group_refusals(
     tmp_path: Path, client: TestClient, group_files: tuple[Path, Path]
@@ -481,3 +490,91 @@ def test_group_compare(
     ).json()
     assert kept["comparable"] and kept["grouping"]
     assert kept["results"][0]["grouping"]["learned"] == learned
+
+
+def test_group_far(tmp_path: Path, client: TestClient) -> None:
+    """
+    学習の表を渡して作った群分けの一式 (版 16) で, 群の中心から遠い行の
+    印, 件数の文, 群ごとの件数と上限を結果に残し, 遠さで絞れることを
+    確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    client: TestClient
+        クライアント
+
+    Returns
+    ----------
+    None
+    """
+    # 学習の表を渡した一式と, 使う額の桁の外れた行を足した新しい表
+    maker = load_maker()
+    run = tmp_path / "run"
+    train = maker.customer_rows()
+    maker.write_group_run(run, train)
+    train.to_csv(tmp_path / "train.csv", index=False)
+    ml_inference.make_group_bundle(
+        run / "inference", run, data=tmp_path / "train.csv"
+    )
+    new = maker.customer_rows(seed=1, rows=5)
+    new.loc[len(new)] = {"customer": "far", "spend": 90000.0, "visits": 1,
+                         "region": "north"}
+    table = tmp_path / "new.csv"
+    new.to_csv(table, index=False)
+
+    # 説明は版 16 で, 群ごとの上限を持つ
+    bundle = register(client, run / "inference")
+    description = bundle["description"]
+    assert description["format_version"] == 16
+    limits = description["group"]["far"]
+    assert (limits["quantile"], limits["rows"]) == (0.99, 60)
+    assert len(limits["thresholds"]) == 3
+
+    # 結論の遠い行の件数と文, 結果に残した上限の写し
+    response = client.post(
+        f"/api/bundles/{bundle['id']}/predict", json={"source": str(table)}
+    )
+    assert response.status_code == 201, response.text
+    result = response.json()
+    far = result["summary"]["far"]
+    assert far["rows"] == 1 and far["quantile"] == 0.99
+    assert [row["group"] for row in far["groups"]] == [0, 1, 2]
+    assert sum(row["rows"] for row in far["groups"]) == 1
+    assert [row["threshold"] for row in far["groups"]] == (
+        limits["thresholds"]
+    )
+    assert result["sentences"][2].startswith(
+        "1 行は群の中心から学習のときより遠い"
+    )
+    assert result["overall_count"] == len(result["sentences"]) == 4
+    assert result["grouping"]["far"] == limits
+    assert result["summary"]["groups"][-1]["rows"] == 16
+
+    # 行ごとの印は真偽値で, 遠い行と遠くない行に絞れる (群とも重ねる)
+    url = f"/api/results/{result['id']}/rows"
+    rows = client.get(url, params={"limit": 100}).json()
+    assert rows["columns"].index("far") == rows["columns"].index(
+        "distance"
+    ) + 1
+    assert all(isinstance(row["far"], bool) for row in rows["rows"])
+    marked = client.get(url, params={"far": "true"}).json()
+    assert marked["total"] == 1
+    assert marked["rows"][0]["customer"] == "far"
+    assert marked["rows"][0]["far"] is True
+    group = marked["rows"][0]["group"]
+    assert client.get(
+        url, params={"far": "false"}
+    ).json()["total"] == 15
+    assert client.get(
+        url, params={"far": "true", "group": group}
+    ).json()["total"] == 1
+    other = (group + 1) % 3
+    assert client.get(
+        url, params={"far": "true", "group": other}
+    ).json()["total"] == 0
+
+    # 読み直した結果も同じ
+    again = client.get(f"/api/results/{result['id']}").json()
+    assert again["summary"]["far"] == far

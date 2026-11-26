@@ -710,6 +710,35 @@ export interface GroupInfo {
   summary: ClusterRow[]
   /** 学習の表を一式で割り当て直した一致 (学習の表を渡して作った場合だけ) */
   check: { rows: number; agreement: number } | null
+  /** 群の中心から遠い行の上限 (版 16 と 17 だけ) */
+  far?: GroupFar | null
+}
+
+/** 群の中心から遠い行の上限 (一式の group.far) */
+export interface GroupFar {
+  /** 上限にした, 学習の行の距離の分位点 (0.99) */
+  quantile: number
+  /** 距離を数えた学習の行の数 */
+  rows: number
+  /** 群の番号の順の距離の上限 (行の無かった群は null) */
+  thresholds: (number | null)[]
+}
+
+/** 群ごとの群の中心から遠い行の件数 (ML-Inference の group_far の groups の 1 つ) */
+export interface ClusterFarGroup {
+  group: number
+  /** 群の中心から遠い行の数 */
+  rows: number
+  /** 群の距離の上限 (行の無かった群は null) */
+  threshold: number | null
+}
+
+/** 群の中心から遠い行の件数 (結論の summary.far) */
+export interface ClusterFar {
+  quantile: number
+  /** 群の中心から遠い行の数 */
+  rows: number
+  groups: ClusterFarGroup[]
 }
 
 /** 群の代表の行の 1 行 (ML-Inference の group_representatives の rows の 1 つ) */
@@ -741,6 +770,8 @@ export interface GroupingInfo {
   learned: ClusterRow[]
   /** 推論した表で値が全て文字だった元の列 (読み直すときに文字で読む) */
   texts?: string[]
+  /** 一式の群の中心から遠い行の上限の写し (版 16 と 17 の一式の結果だけ) */
+  far?: GroupFar
 }
 
 /** 反応の表 (前に反応した品物と正解の反応) の列の名前 */
@@ -1025,6 +1056,8 @@ export interface Counts {
   stability?: ClusterStability
   /** 群分けの結果の群ごとの代表の行 (既定の 3 件) */
   representatives?: ClusterRepresentatives[]
+  /** 群分けの結果の群の中心から遠い行の件数 (上限を持たない一式の結果は null) */
+  far?: ClusterFar | null
   values?: { sum: number; mean: number | null; min: number | null; max: number | null }
 }
 

@@ -979,6 +979,9 @@ test('まとめるの骨組みの実験の中に作った群分けの一式を, 
     await expect(summary.locator('tbody tr').nth(3)).toContainText('全体')
     const stability = page.getByRole('table', { name: '学習の群の安定性 (モデル, 比べる相手, 差)' })
     await expect(stability.locator('tbody tr').nth(2)).toContainText('+0.070')
+    // 学習の表を渡さずに作った一式 (版 9) は, 群の中心から遠い行の欄と絞る欄を持たない
+    await expect(page.getByText('群の中心から遠い行', { exact: true })).toHaveCount(0)
+    await expect(page.getByLabel('遠さで絞る')).toHaveCount(0)
     await expect(page.getByRole('heading', { name: '結論の決め方' })).toHaveCount(0)
 
     // 群の代表の行: 群ごとに中心に近い 3 件 (結論のまま) と, 件数を変えて 5 件
@@ -1515,7 +1518,7 @@ test('検索の一式を場所で登録して問いの写真を推論し, 近い
   }
 })
 
-test('既製の埋め込みの群分けの一式を場所で登録して商品の写真を群に分け, 群の要約と群の安定性と代表の写真を見る', async ({
+test('既製の埋め込みの群分けの一式を場所で登録して商品の写真を群に分け, 群の要約と群の安定性と代表の写真と群の中心から遠い写真を見る', async ({
   page,
 }) => {
   const root = path.resolve(import.meta.dirname, '.work', 'group-ready')
@@ -1532,6 +1535,11 @@ test('既製の埋め込みの群分けの一式を場所で登録して商品�
     ).toContainText('0.960')
     await expect(page.getByRole('region', { name: '意思決定' })).toHaveCount(0)
     await expect(page.getByText(/骨組みの成果物から写してあります/)).toBeVisible()
+    // 群に分けた写真を渡して作った一式 (版 17) は遠い行の上限を持つ
+    await expect(page.getByText('遠い行の上限')).toBeVisible()
+    await expect(
+      page.getByText(/^学習の 12 行の群の中心までの距離の 99 % 点 \(群 0 /),
+    ).toBeVisible()
 
     // 一覧にも既製のモデルの出どころを添える
     await page.goto('/')
@@ -1544,7 +1552,7 @@ test('既製の埋め込みの群分けの一式を場所で登録して商品�
 
     // 結果: 件数の文, 群の要約 (写真の幅と高さ), 群の安定性
     await expect(
-      page.getByText('6 行のうち 5 行を 3 個の群に割り当てた (1 行は割り当てられず)'),
+      page.getByText('7 行のうち 6 行を 3 個の群に割り当てた (1 行は割り当てられず)'),
     ).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText(/^学習の群の安定性 \(種を変えて作り直す, 5 回\)/)).toBeVisible()
     const summary = page.getByRole('table', {
@@ -1561,7 +1569,7 @@ test('既製の埋め込みの群分けの一式を場所で登録して商品�
       '行を見る',
     ])
     await expect(summary.locator('tbody tr')).toHaveCount(4)
-    await expect(summary.locator('tbody tr').nth(1)).toContainText('20.0%')
+    await expect(summary.locator('tbody tr').nth(1)).toContainText('16.7%')
     await expect(summary.locator('tbody tr').nth(3)).toContainText('全体')
     const stability = page.getByRole('table', { name: '学習の群の安定性 (モデル, 比べる相手, 差)' })
     await expect(stability.locator('tbody tr').nth(2)).toContainText('+0.230')
@@ -1594,6 +1602,28 @@ test('既製の埋め込みの群分けの一式を場所で登録して商品�
     await page.getByLabel('状態で絞る').selectOption('skipped')
     await expect(rows.locator('tbody tr')).toHaveCount(1)
     await expect(rows.locator('tbody tr').first()).toContainText('画像を読めません')
+    await page.getByLabel('状態で絞る').selectOption('')
+
+    // 学習に無い淡い赤の写真は, 赤の群に入るが群の中心から遠い
+    await expect(
+      page.getByText(/^1 行は群の中心から学習のときより遠い \(.*群 0 1 行\)/),
+    ).toBeVisible()
+    await expect(page.getByText('中心から遠い行 1 行')).toBeVisible()
+    const far = page.getByRole('table', {
+      name: '群の中心から遠い行 (群ごとの遠い行の件数と距離の上限, 全体)',
+    })
+    await expect(far.locator('thead th')).toHaveText(['群', '遠い行', '距離の上限', '遠い行を見る'])
+    await expect(far.locator('tbody tr')).toHaveCount(4)
+    await expect(far.locator('tbody tr').nth(3)).toContainText('全体')
+    await page.getByRole('button', { name: '群 0 の遠い行を見る' }).click()
+    await expect(page.getByLabel('群で絞る')).toHaveValue('0')
+    await expect(page.getByLabel('遠さで絞る')).toHaveValue('true')
+    await expect(rows.locator('tbody tr')).toHaveCount(1)
+    await expect(rows.locator('tbody tr').first()).toContainText('n5_pale.png')
+    await expect(rows.locator('tbody tr').first()).toContainText('遠い')
+    // 遠くない行は, 赤の群の残りの 2 枚
+    await page.getByLabel('遠さで絞る').selectOption('false')
+    await expect(rows.locator('tbody tr')).toHaveCount(2)
   } finally {
     await page.request.delete(`/api/bundles/${bundle.id}`)
   }
