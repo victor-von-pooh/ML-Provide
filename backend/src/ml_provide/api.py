@@ -101,8 +101,8 @@ RANK_TABLES = {".csv": ",", ".tsv": "\t", ".parquet": None}
 MAX_REPRESENTATIVES = 20
 
 # 推論の後に表を読み直して結論を出し直さない出力の形 (表の出力, 並べる,
-# 群分け. infer の結論のまま残す. 異常の度合いの一式も同じ)
-KEPT_CONCLUSIONS = frozenset({"table", "ranking", "cluster"})
+# 群分け, 効果. infer の結論のまま残す. 異常の度合いの一式も同じ)
+KEPT_CONCLUSIONS = frozenset({"table", "ranking", "cluster", "effect"})
 
 # 異常の度合いの一式で, 人の確認に回す件数の上限 (確認の待ち行列を 1 度に
 # 返す件数の上限)
@@ -1176,6 +1176,10 @@ def predict(
         # 異常の度合いの一式は振り分けだけ (省くと一式の既定)
         decision = anomaly_decision(bundle, body)
         rules = None
+    elif bundle.from_uplift:
+        # 効果の一式は配る判断だけ (省くと一式の既定)
+        decision = uplift_decision(body)
+        rules = None
     elif not bundle.column_output:
         # 列の出力でない一式は件数だけ (決め方と意思決定は使えないもの)
         given = any(v is not None for v in (rules or {}).values())
@@ -1242,17 +1246,18 @@ def predict(
         pretrained_warnings=warned,
         table_columns=table_columns(bundle),
         ranking=ranking,
-        grouping=grouping_meta(bundle, result["frame"])
+        grouping=grouping_meta(bundle, result["frame"]),
+        uplift=uplift_meta(bundle)
     )
     # 書いた表を読み直して結論を出し直す (出し直しと同じ型の値でまとめ,
     # 日時のような列のまとめの名前が, 後の出し直しで変わらないように)
     # (書き出しの途中で失敗した結果は, 壊れたまま残さずに削除)
     result_id, place = get_store(request).new_result_dir()
     meta = {k: v for k, v in result.items() if k != "frame"}
-    # (表の出力, 並べる, 群分け, 異常の度合いの結果は infer の結論のまま.
-    # 表の出力の件数は数え直しても同じ件数. 並べるの利用者ごとの数え方,
-    # 群分けの群の要約と群の安定性, 異常の度合いの分布と上位の行は件数
-    # だけの結論に無い中身)
+    # (表の出力, 並べる, 群分け, 異常の度合い, 効果の結果は infer の結論の
+    # まま. 表の出力の件数は数え直しても同じ件数. 並べるの利用者ごとの
+    # 数え方, 群分けの群の要約と群の安定性, 異常の度合いと効果の分布と
+    # 上位の行は件数だけの結論に無い中身)
     # (出し直しは書いた result.yaml を読んで渡す. 予測の表を読む列の型
     # column_types は write_result が書くときに決めるため)
     try:
@@ -1320,6 +1325,67 @@ def anomaly_decision(
         )
 
     return decision
+
+
+def uplift_decision(body: PredictRequest) -> Optional[dict[str, Any]]:
+    """
+    効果の一式に渡す配る判断を確かめる関数
+
+    Parameters
+    ----------
+    body: PredictRequest
+        推論の要求
+
+    Returns
+    ----------
+    decision: Optional[dict[str, Any]]
+        渡す配る判断 (None は一式の既定, 空の辞書は配らない. 型と項目は
+        ML-Inference が確かめる)
+
+    Raises
+    ----------
+    HTTPException
+        結論の決め方か何段も先の予測を渡した場合は 400
+    """
+    # 結論の決め方と何段も先の予測は使えないもの
+    given = any(v is not None for v in (body.rules or {}).values())
+    if given or body.forecast:
+        raise HTTPException(
+            400, "効果の一式には, 結論の決め方と何段も先の予測を使えません. "
+            "意思決定は効果の上位から配る判断 ({type: treat, budget}) だけ"
+            "です"
+        )
+    decision = body.decision
+
+    return decision
+
+
+def uplift_meta(bundle: Any) -> Optional[dict[str, Any]]:
+    """
+    効果の結果に残す, 実験の Qini の曲線, 結果の種類, K を返す関数
+
+    Parameters
+    ----------
+    bundle: Any
+        読んだ一式 (ML-Inference の Bundle)
+
+    Returns
+    ----------
+    uplift: Optional[dict[str, Any]]
+        curves (分割ごとの rows, fraction, qini, random の並び), outcome
+        (binary か amount), k. 効果の一式でなければ None
+    """
+    # 一式の登録を消しても, 結果の画面に曲線を出せるように写す
+    if not bundle.from_uplift:
+        return None
+    found = bundle.info["uplift"]
+    uplift = {
+        "curves": copy.deepcopy(found.get("curves") or {}),
+        "outcome": str(found["outcome"]),
+        "k": float(found["k"]),
+    }
+
+    return uplift
 
 
 def grouping_meta(
@@ -1826,6 +1892,7 @@ def result_view(
         "table_columns": meta.get("table_columns"),
         "ranking": meta.get("ranking"),
         "grouping": meta.get("grouping"),
+        "uplift": meta.get("uplift"),
     }
 
     return view

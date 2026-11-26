@@ -25,6 +25,7 @@ import type {
   RowReason,
   Rows,
   Rules,
+  TreatedRows,
 } from './types'
 
 /** API がエラーを返したときの例外 */
@@ -108,7 +109,8 @@ export const api = {
       seed?: number
       rules?: Rules
       forecast?: boolean
-      decision?: Decision | Record<string, never>
+      /** 効果の一式は効果の上位から配る判断 */
+      decision?: Decision | Record<string, never> | { type: 'treat'; budget: number }
       /** 並べるの一式の利用者 (書いた値), 件数, 前に反応した品物の表と正解の反応の表 */
       users?: string[]
       k?: number
@@ -140,6 +142,8 @@ export const api = {
   },
   representatives: (id: string, count: number) =>
     request<Representatives>(`/api/results/${id}/representatives?count=${count}`),
+  treated: (id: string, offset: number, limit: number) =>
+    request<TreatedRows>(`/api/results/${id}/treated?offset=${offset}&limit=${limit}`),
   queue: (id: string) => request<ReviewQueue>(`/api/results/${id}/queue`),
   reviews: (id: string) => request<{ records: ReviewRecord[] }>(`/api/results/${id}/reviews`),
   addReview: (id: string, row: string | number, judgment: Judgment, reviewer: string) =>

@@ -122,7 +122,9 @@ function usesBaseline(form: DecisionForm): boolean {
 
 /** 意思決定を編集の形にする */
 export function toDecisionForm(decision: Decision | null | undefined): DecisionForm {
-  if (!decision) return { type: '', positive: '', values: {} }
+  // 欄の無い型 (効果の一式の配る判断 treat など) は意思決定しない欄
+  if (!decision || !Object.hasOwn(DECISION_TYPES, decision.type))
+    return { type: '', positive: '', values: {} }
   const values: Record<string, string> = {}
   let baseline: Baseline | null = null
   for (const [key, value] of Object.entries(decision)) {
