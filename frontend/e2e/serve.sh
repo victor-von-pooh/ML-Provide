@@ -133,6 +133,10 @@ uv run python ../frontend/e2e/make_anomaly.py "$WORK/anomaly"
 # make_uplift_bundle) を作り, 効果を見積もる新しい顧客の表を書く
 uv run python ../frontend/e2e/make_uplift.py "$WORK/uplift"
 
+# 値段を変える判断の骨組みと同じ形の見本の実験から, 値段の一式 (版 13. ML-Inference の
+# make_price_bundle) を作り, 値段を選ぶ新しい商品の表を書く
+uv run python ../frontend/e2e/make_price.py "$WORK/price"
+
 # 既製のモデルの一式で推論する画像 (赤, 緑, 青と, 読めないファイル)
 uv run python - "$WORK/ready-images" <<'PY'
 import sys

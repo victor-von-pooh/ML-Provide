@@ -17,6 +17,7 @@ from ml_provide.datasets import router as dataset_router
 from ml_provide.experiments import router as experiment_router
 from ml_provide.policies import router as policy_router
 from ml_provide.policy_results import router as policy_result_router
+from ml_provide.prices import router as price_router
 from ml_provide.problems import router as problem_router
 from ml_provide.procedures import configured_modules, load_modules
 from ml_provide.reviews import router as review_router
@@ -371,6 +372,7 @@ def create_app(
     app.include_router(policy_result_router)
     app.include_router(review_router)
     app.include_router(treated_router)
+    app.include_router(price_router)
     mount_frontend(app, STATIC_DIR)
 
     return app

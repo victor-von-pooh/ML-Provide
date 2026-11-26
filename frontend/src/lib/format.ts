@@ -81,6 +81,7 @@ export const KIND_LABELS: Record<string, string> = {
   group: '群分け',
   anomaly: '異常の度合い',
   uplift: '効果の見積もり',
+  price: '値段を変える判断',
 }
 
 /** タスクの日本語の名前 */

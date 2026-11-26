@@ -111,6 +111,9 @@ MAX_CAPACITY = 1000
 # 効果の一式で, 配る数の上限の上限 (JSON の整数を丸めずに渡せる大きさ)
 MAX_BUDGET = 100_000
 
+# 値段の一式で, 値段の候補の数の上限 (候補ごとに全ての行を予測し直すため)
+MAX_CANDIDATES = 20
+
 # 並べるの一式だけに渡せる欄を, ほかの一式に渡したときの文
 RANK_ONLY = (
     "利用者の並び, 並べる件数, 前に反応した品物の表, 正解の反応の表は, "
@@ -1183,6 +1186,10 @@ def predict(
         # 効果の一式は配る判断だけ (省くと一式の既定)
         decision = uplift_decision(bundle, body)
         rules = None
+    elif bundle.from_price:
+        # 値段の一式は値段の判断だけ (省くと一式の既定)
+        decision = price_decision(bundle, body)
+        rules = None
     elif not bundle.column_output:
         # 列の出力でない一式は件数だけ (決め方と意思決定は使えないもの)
         given = any(v is not None for v in (rules or {}).values())
@@ -1250,17 +1257,18 @@ def predict(
         table_columns=table_columns(bundle),
         ranking=ranking,
         grouping=grouping_meta(bundle, result["frame"]),
-        uplift=uplift_meta(bundle)
+        uplift=uplift_meta(bundle),
+        price=price_meta(bundle, result["frame"])
     )
     # 書いた表を読み直して結論を出し直す (出し直しと同じ型の値でまとめ,
     # 日時のような列のまとめの名前が, 後の出し直しで変わらないように)
     # (書き出しの途中で失敗した結果は, 壊れたまま残さずに削除)
     result_id, place = get_store(request).new_result_dir()
     meta = {k: v for k, v in result.items() if k != "frame"}
-    # (表の出力, 並べる, 群分け, 異常の度合い, 効果の結果は infer の結論の
-    # まま. 表の出力の件数は数え直しても同じ件数. 並べるの利用者ごとの
-    # 数え方, 群分けの群の要約と群の安定性, 異常の度合いと効果の分布と
-    # 上位の行は件数だけの結論に無い中身)
+    # (表の出力, 並べる, 群分け, 異常の度合い, 効果, 値段の結果は infer の
+    # 結論のまま. 表の出力の件数は数え直しても同じ件数. 並べるの利用者
+    # ごとの数え方, 群分けの群の要約と群の安定性, 異常の度合いと効果の
+    # 分布と上位の行, 値段の弾力性と実験の評価は件数だけの結論に無い中身)
     # (出し直しは書いた result.yaml を読んで渡す. 予測の表を読む列の型
     # column_types は write_result が書くときに決めるため)
     try:
@@ -1375,6 +1383,101 @@ def uplift_decision(
         )
 
     return decision
+
+
+def price_decision(
+    bundle: ml_inference.Bundle, body: PredictRequest
+) -> Optional[dict[str, Any]]:
+    """
+    値段の一式に渡す値段の判断を確かめる関数
+
+    Parameters
+    ----------
+    bundle: ml_inference.Bundle
+        値段の一式
+    body: PredictRequest
+        推論の要求
+
+    Returns
+    ----------
+    decision: Optional[dict[str, Any]]
+        渡す値段の判断 (None は一式の既定, 空の辞書は値段を決めない. 型と
+        項目, 候補と上限の形は ML-Inference が確かめる)
+
+    Raises
+    ----------
+    HTTPException
+        結論の決め方か何段も先の予測を渡した場合と, 値段の候補が
+        MAX_CANDIDATES 個を超える場合は 400
+    """
+    # 結論の決め方と何段も先の予測は使えないもの
+    given = any(v is not None for v in (body.rules or {}).values())
+    if given or body.forecast:
+        raise HTTPException(
+            400, "値段の一式には, 結論の決め方と何段も先の予測を使えません. "
+            "意思決定は上限の中で利益が最も大きい値段を選ぶ判断 ({type: "
+            "price, candidates, max_change}) だけです"
+        )
+    decision = body.decision
+    found = bundle.info.get("decision") if decision is None else decision
+    candidates = (
+        (found or {}).get("candidates") if isinstance(found, dict) else None
+    )
+    if isinstance(candidates, list) and len(candidates) > MAX_CANDIDATES:
+        raise HTTPException(
+            400, f"値段の候補は {MAX_CANDIDATES} 個までにしてください (今は "
+            f"{len(candidates):,} 個)"
+        )
+
+    return decision
+
+
+def price_meta(
+    bundle: Any, frame: pd.DataFrame
+) -> Optional[dict[str, Any]]:
+    """
+    値段の結果に残す, 予測した行の弾力性の分布と弾力性の上げ幅を返す関数
+
+    Parameters
+    ----------
+    bundle: Any
+        読んだ一式 (ML-Inference の Bundle)
+    frame: pd.DataFrame
+        推論の直後の予測の表
+
+    Returns
+    ----------
+    price: Optional[dict[str, Any]]
+        step (弾力性を数える値段の上げ幅), elasticity (予測した行の弾力性の
+        counted, mean, min, p10, p50, p90, max, negative. 数えた行が無ければ
+        None). 値段の一式でなければ None
+    """
+    # ML-Inference の結論は弾力性の平均だけなので, 分布は予測の表から
+    if not bundle.from_price:
+        return None
+    values = pd.to_numeric(
+        frame.loc[frame["status"] == ml_inference.OK, "elasticity"],
+        errors="coerce"
+    ).to_numpy(dtype=float)
+    values = values[np.isfinite(values)]
+    elasticity = None
+    if len(values):
+        elasticity = {
+            "counted": int(len(values)),
+            "mean": float(values.mean()),
+            "min": float(values.min()),
+            "p10": float(np.percentile(values, 10)),
+            "p50": float(np.percentile(values, 50)),
+            "p90": float(np.percentile(values, 90)),
+            "max": float(values.max()),
+            "negative": float((values < 0).mean()),
+        }
+    price = {
+        "step": float(bundle.info["price"]["elasticity_step"]),
+        "elasticity": elasticity,
+    }
+
+    return price
 
 
 def uplift_meta(bundle: Any) -> Optional[dict[str, Any]]:
@@ -1910,6 +2013,7 @@ def result_view(
         "ranking": meta.get("ranking"),
         "grouping": meta.get("grouping"),
         "uplift": meta.get("uplift"),
+        "price": meta.get("price"),
     }
 
     return view
