@@ -333,6 +333,9 @@ describe('群分けの結果の画面', () => {
     expect(body[3]).toHaveTextContent(reason)
     expect(screen.queryByLabelText('判断で絞る')).not.toBeInTheDocument()
     expect(screen.queryByText('結論の決め方')).not.toBeInTheDocument()
+    // 遠さの上限を持たない一式 (版 9) の結果には遠い行の欄と絞る欄が無い
+    expect(screen.queryByText('群の中心から遠い行')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('遠さで絞る')).not.toBeInTheDocument()
 
     // 群の要約の「行を見る」で, 表をその群に絞る
     fireEvent.click(screen.getByRole('button', { name: '群 1 の行を見る' }))

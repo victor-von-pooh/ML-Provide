@@ -1,4 +1,10 @@
-import type { ClusterRepresentatives, ClusterRow, ClusterStability, Result } from '../api/types'
+import type {
+  ClusterFar,
+  ClusterRepresentatives,
+  ClusterRow,
+  ClusterStability,
+  Result,
+} from '../api/types'
 
 /** 群分けの一式で使えない機能 (出力が行ごとの群のため) */
 export const CLUSTER_UNSUPPORTED =
@@ -26,6 +32,7 @@ export const CLUSTER_HEADINGS: Record<string, string> = {
   index: '#',
   group: '群',
   distance: '距離',
+  far: '中心から遠い',
   status: '状態',
   reason: '理由',
 }
@@ -36,11 +43,12 @@ export const CLUSTER_STATUS_LABELS: Record<string, string> = {
   skipped: '割り当てられず',
 }
 
-/** 群に割り当てた行の表で, 先に並べる列 (行の位置, 群, 距離, 状態, 理由) */
-const CLUSTER_LEAD = ['index', 'group', 'distance', 'status', 'reason']
+/** 群に割り当てた行の表で, 先に並べる列 (行の位置, 群, 距離, 中心から遠いか, 状態, 理由) */
+const CLUSTER_LEAD = ['index', 'group', 'distance', 'far', 'status', 'reason']
 
 /**
- * 群に割り当てた行の表の列の並び. 行の位置, 群, 距離, 状態, 理由, 元の列の順.
+ * 群に割り当てた行の表の列の並び. 行の位置, 群, 距離, 中心から遠いか (遠さの上限を持つ一式
+ * だけ), 状態, 理由, 元の列の順.
  * 判断の列 (列の出力でないので割り当てた行は空) は出さない
  */
 export function clusterRowColumns(columns: string[]): string[] {
@@ -161,3 +169,29 @@ export function representativeValue(value: unknown, numeric: boolean): unknown {
   }
   return value
 }
+
+/**
+ * 群分けの結論の群の中心から遠い行の件数 (summary.far). 遠さの上限を持たない一式
+ * (版 9 と 10) の結果と群分けでない結果は undefined
+ */
+export function clusterFar(result: Result): ClusterFar | undefined {
+  if (result.output_form !== 'cluster') return undefined
+  return result.summary?.far ?? undefined
+}
+
+/** 遠さの分位点の文 (0.99 は「99 % 点」. ML-Inference の文と同じ書き方) */
+export function quantileText(quantile: number): string {
+  return `${Number((quantile * 100).toPrecision(6))} % 点`
+}
+
+/** 群に割り当てた行の表の, 中心から遠い列の値の見せ方 (遠い行は「遠い」, 他は空) */
+export function farMark(value: unknown): string {
+  return value === true ? '遠い' : ''
+}
+
+/** 遠さで絞る欄の選択肢 (値は API の far. 空は絞らない) */
+export const FAR_FILTERS: { value: '' | 'true' | 'false'; label: string }[] = [
+  { value: '', label: '遠さを問わない' },
+  { value: 'true', label: '中心から遠い行' },
+  { value: 'false', label: '遠くない行' },
+]

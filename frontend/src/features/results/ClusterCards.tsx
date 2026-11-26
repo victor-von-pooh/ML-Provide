@@ -1,6 +1,11 @@
 import { Fragment } from 'react'
 
-import type { ClusterRepresentatives, ClusterRow, ClusterStability } from '../../api/types'
+import type {
+  ClusterFar,
+  ClusterRepresentatives,
+  ClusterRow,
+  ClusterStability,
+} from '../../api/types'
 import {
   ALL_ROWS,
   clusterName,
@@ -320,6 +325,81 @@ export function ClusterStabilityView({ stability }: { stability: ClusterStabilit
         {stability.epoch != null ? ` (エポック ${stability.epoch})` : ''}. 比べる相手は「
         {baseline}」です. 新しいデータでは群を作り直さないので, 群の安定性は学習のときの値です
       </p>
+    </div>
+  )
+}
+
+/**
+ * 群ごとの群の中心から遠い行の件数と距離の上限の表 (最後に全体の件数).
+ * onPick を渡すと, 遠い行のある群の行に「行を見る」を出す
+ */
+export function ClusterFarTable({
+  far,
+  onPick,
+  caption,
+}: {
+  far: ClusterFar
+  onPick?: (group: number) => void
+  caption: string
+}) {
+  return (
+    <div className="max-h-[32rem] overflow-auto">
+      <table className="w-full text-sm">
+        <caption className="sr-only">{caption}</caption>
+        <thead className="sticky top-0 bg-surface text-xs text-ink-3">
+          <tr className="border-b border-line">
+            <th scope="col" className="px-4 py-2 text-left font-normal">
+              群
+            </th>
+            <th scope="col" className="px-3 py-2 text-right font-normal whitespace-nowrap">
+              遠い行
+            </th>
+            <th scope="col" className="px-3 py-2 text-right font-normal whitespace-nowrap">
+              距離の上限
+            </th>
+            {onPick && (
+              <th scope="col" className="px-3 py-2 font-normal">
+                <span className="sr-only">遠い行を見る</span>
+              </th>
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {far.groups.map((item) => (
+            <tr key={item.group} className="border-b border-line">
+              <th scope="row" className="px-4 py-1.5 text-left font-medium whitespace-nowrap">
+                {clusterName(item.group)}
+              </th>
+              <td className="tabular px-3 py-1.5 text-right">{item.rows.toLocaleString()}</td>
+              <td className="tabular px-3 py-1.5 text-right">
+                {item.threshold === null ? '–' : formatValue(item.threshold, true)}
+              </td>
+              {onPick && (
+                <td className="px-3 py-1.5 text-right">
+                  {item.rows > 0 && (
+                    <button
+                      type="button"
+                      className="text-xs whitespace-nowrap text-accent-text underline"
+                      aria-label={`${clusterName(item.group)} の遠い行を見る`}
+                      onClick={() => onPick(item.group)}
+                    >
+                      行を見る
+                    </button>
+                  )}
+                </td>
+              )}
+            </tr>
+          ))}
+          <tr className="border-t-2 border-line bg-surface-2">
+            <th scope="row" className="px-4 py-1.5 text-left font-medium whitespace-nowrap">
+              {ALL_ROWS}
+            </th>
+            <td className="tabular px-3 py-1.5 text-right">{far.rows.toLocaleString()}</td>
+            <td className="tabular px-3 py-1.5 text-right">–</td>
+            {onPick && <td />}
+          </tr>
+        </tbody>
+      </table>
     </div>
   )
 }

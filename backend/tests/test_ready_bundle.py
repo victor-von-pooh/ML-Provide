@@ -899,7 +899,7 @@ def test_ready_vector_and_group_bundles(
     assert embedder["ok"] and group["ok"]
     assert embedder["description"]["output"]["form"] == "vector"
     assert embedder["description"]["column_output"] is False
-    assert group["description"]["format_version"] == 10
+    assert group["description"]["format_version"] == 17
     assert group["description"]["kind"] == "group"
     assert group["description"]["ready"]["model"] == "tiny"
     assert group["description"]["group"]["k"] == 2
@@ -995,7 +995,19 @@ def test_ready_group_result(tmp_path: Path, client: TestClient) -> None:
     assert [row["rows"] for row in groups] == [1, 2, 3]
     assert groups[0]["width"] == 20 and groups[0]["height"] == 12
     assert summary["stability"]["silhouette"] == 0.9
-    assert "学習の群の安定性" in result["sentences"][2]
+    assert "学習の群の安定性" in result["sentences"][3]
+
+    # 群に分けた写真で求めた遠さの上限 (版 17). 同じ写真は遠くない
+    assert summary["far"]["rows"] == 0
+    assert [row["rows"] for row in summary["far"]["groups"]] == [0, 0]
+    assert result["sentences"][2].startswith(
+        "群の中心から学習のときより遠い行は無い"
+    )
+    assert result["grouping"]["far"]["quantile"] == 0.99
+    rows = client.get(
+        f"/api/results/{result['id']}/rows", params={"far": "true"}
+    ).json()
+    assert rows["total"] == 0
 
     # 群を作る列の記録 (写真の場所は文字のまま読む列)
     grouping = result["grouping"]

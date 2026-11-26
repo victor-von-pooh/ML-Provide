@@ -138,6 +138,8 @@ export const api = {
       status?: string
       decision?: string
       group?: number
+      /** 群の中心から遠い行 (true) か遠くない行 (false) に絞る */
+      far?: boolean
       row?: number
     },
   ) => {

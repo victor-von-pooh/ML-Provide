@@ -19,6 +19,8 @@ import {
 import {
   CLUSTER_NO_PROBLEM,
   CLUSTER_UNSUPPORTED,
+  clusterName,
+  quantileText,
   READY_CLUSTER_NO_PROBLEM,
 } from '../../lib/clusters'
 import {
@@ -70,7 +72,7 @@ import {
   stockText,
   tauOf,
 } from '../../lib/demand'
-import { formatNumber, KIND_LABELS, TASK_LABELS } from '../../lib/format'
+import { formatNumber, formatValue, KIND_LABELS, TASK_LABELS } from '../../lib/format'
 import { fromDecisionForm, toDecisionForm, type DecisionForm } from '../../lib/decision'
 import {
   ENTRY_KIND_LABELS,
@@ -226,7 +228,10 @@ function signed(value: number): string {
   return `${value >= 0 ? '+' : ''}${value.toFixed(3)}`
 }
 
-/** 群分けの一式 (版 9 と 10) の列の符号化と群の中心, 群を作る列 (版 10 は群の要約の列), 群の数 */
+/**
+ * 群分けの一式 (版 9, 10, 16, 17) の列の符号化と群の中心, 群を作る列 (版 10 と 17 は群の要約の
+ * 列), 群の数, 割り当て直しの一致と, 遠い行の上限 (版 16 と 17)
+ */
 function GroupRows({ group }: { group: NonNullable<Description['group']> }) {
   // 既製の埋め込みの群分けの一式 (版 10) は列を符号化しないので, 列は群の要約の列だけ
   const ready = group.features === null
@@ -255,6 +260,23 @@ function GroupRows({ group }: { group: NonNullable<Description['group']> }) {
         <Row label="割り当て直しの一致">
           学習の表 {group.check.rows.toLocaleString()} 行を一式で割り当て直し,{' '}
           {(group.check.agreement * 100).toFixed(1)} % が実験と同じ群
+        </Row>
+      )}
+      {group.far && (
+        <Row label="遠い行の上限">
+          学習の {group.far.rows.toLocaleString()} 行の群の中心までの距離の{' '}
+          {quantileText(group.far.quantile)} (
+          {group.far.thresholds
+            .map(
+              (threshold, index) =>
+                `${clusterName(index)} ${threshold === null ? '–' : formatValue(threshold, true)}`,
+            )
+            .join(', ')}
+          )
+          <span className="block text-xs text-ink-2">
+            推論で, 割り当てた群の上限より遠い行に「遠い」の印を付けます
+            (学習のときに無かった種類の行を見落とさないため)
+          </span>
         </Row>
       )}
     </>

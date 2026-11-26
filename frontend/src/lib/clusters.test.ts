@@ -1,12 +1,15 @@
 import type { ClusterRow, Result } from '../api/types'
 import {
+  clusterFar,
   clusterName,
   clusterRepresentatives,
   clusterRowColumns,
   clusterRows,
   representativeValue,
   diffText,
+  farMark,
   featureHeading,
+  quantileText,
   scoreText,
   stabilityLines,
   stabilityMethodText,
@@ -41,6 +44,26 @@ describe('群分けの結果と欄', () => {
         'decision',
       ]),
     ).toEqual(['index', 'group', 'distance', 'status', 'reason', 'customer', 'spend'])
+  })
+
+  it('遠さの上限を持つ一式の表は, 距離の次に中心から遠いかの列を並べる', () => {
+    expect(
+      clusterRowColumns(['index', 'customer', 'status', 'reason', 'group', 'distance', 'far']),
+    ).toEqual(['index', 'group', 'distance', 'far', 'status', 'reason', 'customer'])
+    expect(farMark(true)).toBe('遠い')
+    expect(farMark(false)).toBe('')
+    expect(farMark(null)).toBe('')
+  })
+
+  it('遠い行の件数は群分けの結果の結論から読み, 上限を持たない一式の結果は undefined', () => {
+    const far = { quantile: 0.99, rows: 1, groups: [{ group: 0, rows: 1, threshold: 0.5 }] }
+    const base = { summary: { rows: 1, predicted: 1, skipped: 0, far } } as unknown as Result
+    expect(clusterFar({ ...base, output_form: 'cluster' })).toEqual(far)
+    expect(clusterFar({ ...base, output_form: 'class' })).toBeUndefined()
+    const none = { summary: { rows: 1, predicted: 1, skipped: 0, far: null } } as unknown as Result
+    expect(clusterFar({ ...none, output_form: 'cluster' })).toBeUndefined()
+    expect(quantileText(0.99)).toBe('99 % 点')
+    expect(quantileText(0.995)).toBe('99.5 % 点')
   })
 
   it('列の特徴の見出しは, 数の列は平均, 種類の列は最も多い値 (行の無い群の null は見ない)', () => {

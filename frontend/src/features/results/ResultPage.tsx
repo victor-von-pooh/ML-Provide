@@ -19,11 +19,15 @@ import {
   CLUSTER_HEADINGS,
   CLUSTER_STATUS_LABELS,
   CLUSTER_UNSUPPORTED,
+  clusterFar,
   clusterName,
   clusterRepresentatives,
   clusterRowColumns,
   clusterRows,
   DEFAULT_REPRESENTATIVES,
+  FAR_FILTERS,
+  farMark,
+  quantileText,
   REPRESENTATIVE_COUNTS,
 } from '../../lib/clusters'
 import {
@@ -51,6 +55,7 @@ import { PriceCards, PriceTerms } from './PriceCards'
 import { DemandCards, DemandTerms } from './DemandCards'
 import { SearchCards } from './SearchCards'
 import {
+  ClusterFarTable,
   ClusterRepresentativesTable,
   ClusterStabilityView,
   ClusterSummaryTable,
@@ -198,6 +203,8 @@ function RowsTable({
   onReason,
   cluster = '',
   onCluster,
+  far = '',
+  onFar,
   focus = null,
   onFocus,
 }: {
@@ -207,6 +214,9 @@ function RowsTable({
   /** 群分けの結果で絞る群の番号 (空は全ての群. 群の要約の「行を見る」と同じ値) */
   cluster?: string
   onCluster?: (group: string) => void
+  /** 群の中心から遠い行で絞る値 (true は遠い行, false は遠くない行, 空は絞らない) */
+  far?: string
+  onFar?: (far: string) => void
   /** 1 行だけを見る行の位置 (群の代表の行の「行を見る」. null は絞らない) */
   focus?: number | null
   onFocus?: (row: number | null) => void
@@ -218,17 +228,22 @@ function RowsTable({
   // 群分けの結果は行ごとの群と距離 (見出しと状態は日本語. 群で絞れる)
   const grouped = result.output_form === 'cluster'
   const clusterCount = result.summary?.k ?? result.grouping?.k ?? 0
+  // 群の中心から遠い行の上限を持つ一式 (版 16 と 17) の結果だけ遠さで絞れる
+  const farred = clusterFar(result) !== undefined
+  const farValue = farred && far !== '' ? far === 'true' : undefined
   // 群の要約から絞る群を変えたら, ページを初めに戻す
-  // (代表の行の「行を見る」で 1 行に絞るときも同じ)
+  // (代表の行の「行を見る」で 1 行に絞るときと, 遠さで絞るときも同じ)
   const [seenCluster, setSeenCluster] = useState(cluster)
   const [seenFocus, setSeenFocus] = useState(focus)
-  if (seenCluster !== cluster || seenFocus !== focus) {
+  const [seenFar, setSeenFar] = useState(far)
+  if (seenCluster !== cluster || seenFocus !== focus || seenFar !== far) {
     setSeenCluster(cluster)
     setSeenFocus(focus)
+    setSeenFar(far)
     setPage(0)
   }
   const rows = useQuery({
-    queryKey: ['rows', result.id, page, status, decision, cluster, focus, result.rules],
+    queryKey: ['rows', result.id, page, status, decision, cluster, farValue, focus, result.rules],
     queryFn: () =>
       api.rows(result.id, {
         offset: page * PAGE,
@@ -236,6 +251,7 @@ function RowsTable({
         status: status || undefined,
         decision: decision || undefined,
         group: grouped && cluster !== '' ? Number(cluster) : undefined,
+        far: farValue,
         row: focus ?? undefined,
       }),
     placeholderData: keepPreviousData,
@@ -338,6 +354,25 @@ function RowsTable({
               </select>
             </>
           )}
+          {grouped && farred && onFar && (
+            <>
+              <label className="sr-only" htmlFor="rows-far">
+                遠さで絞る
+              </label>
+              <select
+                id="rows-far"
+                value={far}
+                onChange={(event) => onFar(event.target.value)}
+                className="h-8 rounded-lg border border-line bg-surface px-2 text-sm"
+              >
+                {FAR_FILTERS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
           {column && (
             <>
               <label className="sr-only" htmlFor="rows-decision">
@@ -387,8 +422,10 @@ function RowsTable({
           {grouped && (
             <p className="border-b border-line px-4 py-2 text-xs text-ink-3">
               1 行ごとに, 最も近い群の中心の番号 (群) と, その中心までの埋め込みの空間の距離
-              (小さいほど群の中心に近い) を出します. 割り当てられなかった行は理由を出します.
-              表の全ての行は CSV で持ち出せます
+              (小さいほど群の中心に近い) を出します.
+              {farred &&
+                ' 距離が学習のときの群の距離の上限を超えた行は「中心から遠い」の列に「遠い」と出します.'}{' '}
+              割り当てられなかった行は理由を出します. 表の全ての行は CSV で持ち出せます
             </p>
           )}
           {focus !== null && (
@@ -503,12 +540,14 @@ function RowsTable({
                           ? (statusLabels[String(row[name])] ?? String(row[name] ?? ''))
                           : grouped && name === 'group' && typeof row[name] === 'number'
                             ? clusterName(row[name])
-                            : formatValue(
-                                row[name],
-                                name === 'confidence' ||
-                                  name.startsWith('p:') ||
-                                  name === 'distance',
-                              )}
+                            : grouped && farred && name === 'far'
+                              ? farMark(row[name])
+                              : formatValue(
+                                  row[name],
+                                  name === 'confidence' ||
+                                    name.startsWith('p:') ||
+                                    name === 'distance',
+                                )}
                       </td>
                     ))}
                   </tr>
@@ -674,15 +713,48 @@ function RepresentativesCard({
   )
 }
 
+/**
+ * 群分けの結果の群の中心から遠い行 (版 16 と 17 の一式の結果だけ). 群ごとの件数と
+ * 距離の上限, 上限の決め方と読み方
+ */
+function FarCard({ result, onPick }: { result: Result; onPick: (group: number) => void }) {
+  const far = clusterFar(result)
+  if (!far) return null
+  const learned = result.grouping?.far?.rows
+  return (
+    <Card title="群の中心から遠い行" padded={false}>
+      <p className="border-b border-line px-4 py-2 text-xs text-ink-3">
+        群ごとに, 学習の行{learned !== undefined ? ` ${learned.toLocaleString()} 行` : ''}
+        の群の中心までの距離の {quantileText(far.quantile)}を上限にし,
+        上限より遠い割り当てた行を数えます. 遠い行は学習のときに無かった種類の行かもしれないので,
+        割り当てた群の特徴で判断する前に確かめてください. 「行を見る」で,
+        割り当てた行の表をその群の遠い行だけにします
+      </p>
+      {far.rows === 0 && (
+        <p className="border-b border-line px-4 py-2 text-sm text-ink-2">
+          群の中心から学習のときより遠い行はありません
+        </p>
+      )}
+      <ClusterFarTable
+        far={far}
+        onPick={onPick}
+        caption="群の中心から遠い行 (群ごとの遠い行の件数と距離の上限, 全体)"
+      />
+    </Card>
+  )
+}
+
 /** 群分けの結果の群の要約 (新しいデータの群ごとの件数と特徴) と学習の群の安定性 */
 function ClusterCards({
   result,
   onPick,
   onPickRow,
+  onPickFar,
 }: {
   result: Result
   onPick: (group: number) => void
   onPickRow: (row: number, group: number) => void
+  onPickFar: (group: number) => void
 }) {
   const rows = clusterRows(result)
   const stability = result.summary?.stability
@@ -712,6 +784,7 @@ function ClusterCards({
         )}
       </Card>
       <RepresentativesCard result={result} onPick={onPickRow} />
+      <FarCard result={result} onPick={onPickFar} />
       {stability && (
         <Card title="群の安定性 (学習のとき)">
           <ClusterStabilityView stability={stability} />
@@ -787,6 +860,8 @@ export function ResultPage() {
   const [cluster, setCluster] = useState('')
   // 1 行だけを見る行の位置 (群の代表の行の「行を見る」. null は絞らない)
   const [focusRow, setFocusRow] = useState<number | null>(null)
+  // 群分けの結果の表で絞る遠さ (群の中心から遠い行の「行を見る」と表の欄で選ぶ. 空は絞らない)
+  const [far, setFar] = useState('')
   const [artifactOf, setArtifactOf] = useState(id)
   if (artifactOf !== id) {
     setArtifactOf(id)
@@ -794,6 +869,7 @@ export function ResultPage() {
     setReasonRow(null)
     setCluster('')
     setFocusRow(null)
+    setFar('')
   }
   const navigate = useNavigate()
   const client = useQueryClient()
@@ -938,6 +1014,12 @@ export function ResultPage() {
               setFocusRow(row)
               document.getElementById('result-rows')?.scrollIntoView({ block: 'start' })
             }}
+            onPickFar={(group) => {
+              setCluster(String(group))
+              setFar('true')
+              setFocusRow(null)
+              document.getElementById('result-rows')?.scrollIntoView({ block: 'start' })
+            }}
           />
         )}
         {anomaly && <AnomalyCards result={data} summary={anomaly} />}
@@ -1023,7 +1105,13 @@ export function ResultPage() {
             ) : ranking ? (
               <StatTile label="並べた件数" value={`${summary.k ?? data.ranking?.k ?? '–'} 件`} />
             ) : grouped ? (
-              <StatTile label="群の数" value={`${summary.k ?? data.grouping?.k ?? '–'} 個`} />
+              <StatTile
+                label="群の数"
+                value={`${summary.k ?? data.grouping?.k ?? '–'} 個`}
+                hint={
+                  summary.far ? `中心から遠い行 ${summary.far.rows.toLocaleString()} 行` : undefined
+                }
+              />
             ) : anomaly ? (
               <StatTile
                 label="人の確認に回す"
@@ -1104,6 +1192,15 @@ export function ResultPage() {
               grouped
                 ? (group) => {
                     setCluster(group)
+                    setFocusRow(null)
+                  }
+                : undefined
+            }
+            far={far}
+            onFar={
+              grouped
+                ? (value) => {
+                    setFar(value)
                     setFocusRow(null)
                   }
                 : undefined

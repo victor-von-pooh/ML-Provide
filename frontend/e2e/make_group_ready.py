@@ -1,8 +1,8 @@
 """
 画面の通しのテスト用に, 既製の埋め込みの群分けの骨組みと同じ形の成果物
 (群の中心, 写真ごとの群, 群の安定性と群の要約) と, 既製の埋め込みの群分け
-の一式 (版 10. ML-Inference の make_group_bundle) を作り, 群に分ける新しい
-商品の写真を書く
+の一式 (群に分けた写真を渡すので, 群の中心から遠い行の上限を持つ版 17.
+ML-Inference の make_group_bundle) を作り, 群に分ける新しい商品の写真を書く
 
 埋め込みは作り物の出どころ (e2e_ready の e2e. チャンネルの平均) の埋め込みの
 一式で求めるので, ネットワークを使わない. 群の中心は色ごとの埋め込みの平均
@@ -28,6 +28,9 @@ from PIL import Image
 COLORS = {"red": (220, 30, 30), "green": (30, 200, 40),
           "blue": (30, 40, 210)}
 SIZES = [(32, 24), (40, 30), (24, 24), (48, 32)]
+
+# 学習に無い淡い赤 (赤の群に入るが, 群の中心から学習のときより遠い)
+PALE = (255, 150, 150)
 
 # 骨組みが書く比べる相手の名前と, 群の安定性の行
 BASELINE = "写真を縮めた画素をそのまま k-means で分けた群"
@@ -152,11 +155,13 @@ def main(root: Path) -> None:
     make_group_bundle(root / "bundle", artifacts, name="商品の写真の群",
                       data=photos, overwrite=True)
 
-    # 新しい商品の写真 (赤 2 枚, 緑 1 枚, 青 2 枚と, 読めないファイル)
+    # 新しい商品の写真 (赤 2 枚, 緑 1 枚, 青 2 枚, 学習に無い淡い赤 1 枚と,
+    # 読めないファイル. 淡い赤は赤の群の中心から学習のときより遠い)
     new = root / "new"
     for index, name in enumerate(["red", "red", "green", "blue", "blue"]):
         write_image(new / f"n{index}_{name}.png", COLORS[name],
                     SIZES[index % len(SIZES)], 5 * index)
+    write_image(new / "n5_pale.png", PALE, SIZES[0], 0)
     (new / "n9_broken.png").write_bytes(b"not an image")
 
 
