@@ -1,7 +1,7 @@
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import ml_quest
 import yaml
@@ -186,7 +186,7 @@ def experiment_row(
 
 def collect_rows(
     problems_dir: Path, registered: dict[str, str], folder: str,
-    marker: str, key: str
+    marker: str, key: str, problem: Optional[str] = None
 ) -> dict[str, Any]:
     """
     問題の設定に記録したプロジェクトの, 一式を持つ実験の一覧を作る関数
@@ -203,6 +203,9 @@ def collect_rows(
         一式を見分けるファイルの名前
     key: str
         登録済みの id の項目の名前
+    problem: Optional[str] = None
+        問題の設定の識別子 (渡せば, その問題の設定が記録したプロジェクト
+        だけを見る)
 
     Returns
     ----------
@@ -211,7 +214,11 @@ def collect_rows(
         数), experiments (新しい順の行), truncated (上限で打ち切ったか)
     """
     # プロジェクトごとの実験 (読めなくなったものは飛ばす)
-    projects = known_projects(problems_dir)
+    # 絞るのは上限を数える前 (後ろのプロジェクトを打ち切りで落とさない)
+    projects = [
+        project for project in known_projects(problems_dir)
+        if problem is None or problem in project["problem_ids"]
+    ]
     rows: list[dict[str, Any]] = []
     truncated = False
     for project in projects:
@@ -241,7 +248,9 @@ def collect_rows(
 
 
 @router.get("/experiments")
-def list_experiments(request: Request) -> dict[str, Any]:
+def list_experiments(
+    request: Request, project: Optional[str] = None
+) -> dict[str, Any]:
     """
     問題の設定に記録したプロジェクトの, 推論の一式を持つ実験の一覧を返す
     関数
@@ -250,6 +259,9 @@ def list_experiments(request: Request) -> dict[str, Any]:
     ----------
     request: Request
         リクエスト (request.app は置き場と問題の設定の置き場を持つ)
+    project: Optional[str] = None
+        殻で選んだ問題の設定の識別子 (渡せば, その問題の設定が記録した
+        プロジェクトの実験だけ)
 
     Returns
     ----------
@@ -266,14 +278,17 @@ def list_experiments(request: Request) -> dict[str, Any]:
                 registered[entry[key]] = str(entry["id"])
     problems_dir: Path = request.app.state.problems_dir
     listing = collect_rows(
-        problems_dir, registered, BUNDLE_DIR, BUNDLE_FILE, "bundle_id"
+        problems_dir, registered, BUNDLE_DIR, BUNDLE_FILE, "bundle_id",
+        project
     )
 
     return listing
 
 
 @router.get("/experiments/policies")
-def list_policy_experiments(request: Request) -> dict[str, Any]:
+def list_policy_experiments(
+    request: Request, project: Optional[str] = None
+) -> dict[str, Any]:
     """
     問題の設定に記録したプロジェクトの, 方策の一式 (policy.json を持つ
     policy) を持つ実験の一覧を返す関数
@@ -282,6 +297,9 @@ def list_policy_experiments(request: Request) -> dict[str, Any]:
     ----------
     request: Request
         リクエスト (request.app は置き場と問題の設定の置き場を持つ)
+    project: Optional[str] = None
+        殻で選んだ問題の設定の識別子 (渡せば, その問題の設定が記録した
+        プロジェクトの実験だけ)
 
     Returns
     ----------
@@ -298,7 +316,8 @@ def list_policy_experiments(request: Request) -> dict[str, Any]:
     }
     problems_dir: Path = request.app.state.problems_dir
     listing = collect_rows(
-        problems_dir, registered, POLICY_DIR, POLICY_FILE, "policy_id"
+        problems_dir, registered, POLICY_DIR, POLICY_FILE, "policy_id",
+        project
     )
 
     return listing

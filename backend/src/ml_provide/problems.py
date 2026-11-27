@@ -220,17 +220,22 @@ def stored_id(text: Optional[str], problems_dir: Path) -> Optional[str]:
     found: Optional[str]
         識別子 (置き場の外か読めない場所なら None)
     """
-    # どちらも実際のパスで比べる (リンクと ~ を開く)
+    # 実際のパスと, リンクを開かない絶対のパスの両方で比べる (置き場の
+    # <識別子> がリンクでも識別子にするため)
     found: Optional[str] = None
     if not text:
         return found
     try:
-        place = Path(text).expanduser().resolve()
-        root = problems_dir.expanduser().resolve()
+        given = Path(text).expanduser()
+        top = problems_dir.expanduser()
+        pairs = [(given.absolute(), top.absolute()),
+                 (given.resolve(), top.resolve())]
     except (OSError, RuntimeError, ValueError):
         return found
-    if place.name == "problem.yaml" and place.parent.parent == root:
-        found = place.parent.name
+    for place, root in pairs:
+        if place.name == "problem.yaml" and place.parent.parent == root:
+            found = place.parent.name
+            return found
 
     return found
 

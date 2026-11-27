@@ -48,41 +48,52 @@ register_procedure(
 '''
 
 
-@pytest.fixture
-def restore_registries() -> Iterator[None]:
-    """
-    手順と部品の登録簿, 読み込んだモジュールを, テストの後に元に戻す関数
+# テストが読む自作のモジュール, 手順, 部品の名前の頭
+TEST_PREFIX = "provide_"
 
-    登録簿と sys.modules は 1 つの処理で共有するので, テストで読み込んだ
-    モジュールとその手順と部品を後のテストに残さないため
+
+@pytest.fixture
+def restore_registries(tmp_path: Path) -> Iterator[None]:
+    """
+    テストが足した手順と部品と, 読んだ自作のモジュールを, テストの後に外す
+    関数
+
+    登録簿と sys.modules は 1 つの処理で共有するので, テストで読んだ
+    モジュールとその手順と部品を後のテストに残さないため. テストの間に
+    初めて読んだライブラリ (torch など) と組み込みの部品は残す
 
     Parameters
     ----------
-    None
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ (自作のモジュールを置く場所)
 
     Returns
     ----------
     restore: Iterator[None]
         テストの間だけ止まる
     """
-    # テストの前の中身の写し
-    procedures = dict(ml_inference.PROCEDURES)
-    units = dict(ml_modelcontrol.registry.REGISTRY)
-    loaded = {
-        name: list(items)
-        for name, items in ml_modelcontrol.custom.LOADED_MODULES.items()
-    }
+    # テストの前にあった名前
+    procedures = set(ml_inference.PROCEDURES)
+    units = set(ml_modelcontrol.registry.REGISTRY)
+    loaded = set(ml_modelcontrol.custom.LOADED_MODULES)
     modules = set(sys.modules)
     yield
-    # 写しへの置き換えと, テストで足したモジュールの除去
-    ml_inference.PROCEDURES.clear()
-    ml_inference.PROCEDURES.update(procedures)
-    ml_modelcontrol.registry.REGISTRY.clear()
-    ml_modelcontrol.registry.REGISTRY.update(units)
-    ml_modelcontrol.custom.LOADED_MODULES.clear()
-    ml_modelcontrol.custom.LOADED_MODULES.update(loaded)
+    # テストが足した, テストの名前の頭を持つものだけを外す
+    for registry, before in [
+        (ml_inference.PROCEDURES, procedures),
+        (ml_modelcontrol.registry.REGISTRY, units),
+        (ml_modelcontrol.custom.LOADED_MODULES, loaded),
+    ]:
+        for name in set(registry) - before:
+            if name.startswith(TEST_PREFIX):
+                registry.pop(name, None)  # type: ignore[attr-defined]
+    root = tmp_path.resolve()
     for name in set(sys.modules) - modules:
-        sys.modules.pop(name, None)
+        file = getattr(sys.modules.get(name), "__file__", None)
+        if name.startswith(TEST_PREFIX) or (
+            isinstance(file, str) and Path(file).resolve().is_relative_to(root)
+        ):
+            sys.modules.pop(name, None)
 
 
 @pytest.fixture

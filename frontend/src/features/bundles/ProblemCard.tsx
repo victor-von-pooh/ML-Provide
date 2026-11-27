@@ -31,6 +31,9 @@ export function ProblemCard({
     onSuccess: (next) => {
       setPath('')
       client.setQueryData(['bundle-problem', bundleId, project], next)
+      // 殻の選びが替わった後の値も同じ (つないだ一式は殻の選びで変わらない)
+      if (next.problem_id !== null)
+        client.setQueryData(['bundle-problem', bundleId, next.problem_id], next)
       client.invalidateQueries({ queryKey: ['bundles'] })
       // 置き場の別の問題の設定をつないだら, 殻の選びをそれにする (同じ識別子と,
       // 置き場の外の問題の設定では知らせない)

@@ -24,8 +24,8 @@ interface Row {
 const KINDS = {
   bundle: {
     key: 'experiments',
-    load: async (api: Api): Promise<ExperimentList<Row>> => {
-      const data = await api.experiments()
+    load: async (api: Api, project: string | null): Promise<ExperimentList<Row>> => {
+      const data = await api.experiments(project)
       return {
         ...data,
         experiments: data.experiments.map((row) => ({
@@ -40,8 +40,8 @@ const KINDS = {
   },
   policy: {
     key: 'policy-experiments',
-    load: async (api: Api): Promise<ExperimentList<Row>> => {
-      const data = await api.policyExperiments()
+    load: async (api: Api, project: string | null): Promise<ExperimentList<Row>> => {
+      const data = await api.policyExperiments(project)
       return {
         ...data,
         experiments: data.experiments.map((row) => ({
@@ -77,26 +77,21 @@ export function ExperimentsDialog({
   error: Error | null
 }) {
   const api = useApi()
-  // 開くたびに読み直す (学習が終わった実験を拾うため)
-  const config = KINDS[kind]
-  const listing = useQuery({
-    queryKey: [config.key],
-    queryFn: () => config.load(api),
-    staleTime: 0,
-  })
-  // 殻で問題の設定を選んでいれば, その問題の設定が記録したプロジェクトの実験に絞る.
-  // 外したのはそのときの問題の設定だけで, 殻で選び直すとまた絞る
+  // 殻で問題の設定を選んでいれば, その問題の設定が記録したプロジェクトの実験に絞る
+  // (上限で打ち切る前に絞るように API に渡す). 外したのはそのときの問題の設定だけで,
+  // 殻で選び直すとまた絞る
   const { project } = useStage()
   const [allFor, setAllFor] = useState<string | null>(null)
   const filtering = project !== null && allFor !== project
-  const loaded = listing.data
-  const data = loaded && {
-    ...loaded,
-    experiments: filtering
-      ? loaded.experiments.filter(({ row }) => row.problem_ids.includes(project))
-      : loaded.experiments,
-  }
-  const hidden = loaded && data ? loaded.experiments.length - data.experiments.length : 0
+  const asked = filtering ? project : null
+  // 開くたびに読み直す (学習が終わった実験を拾うため)
+  const config = KINDS[kind]
+  const listing = useQuery({
+    queryKey: [config.key, asked],
+    queryFn: () => config.load(api, asked),
+    staleTime: 0,
+  })
+  const data = listing.data
   return (
     <Dialog title="実験の一覧から登録" onClose={onClose}>
       <p className="mb-3 text-xs text-ink-3">
@@ -110,8 +105,8 @@ export function ExperimentsDialog({
             checked={!filtering}
             onChange={(event) => setAllFor(event.target.checked ? project : null)}
           />
-          全ての問題の設定の実験を出す (選んだプロジェクト {project} の実験だけに絞っています
-          {filtering && hidden > 0 ? `. 他に ${hidden} 件` : ''})
+          全ての問題の設定の実験を出す (出さなければ, 選んだプロジェクト {project}
+          の実験だけ)
         </label>
       )}
       {listing.isPending && <Spinner label="実験を探しています" />}

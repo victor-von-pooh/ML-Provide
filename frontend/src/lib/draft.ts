@@ -95,6 +95,8 @@ export function useDraftWriter(
 ): () => void {
   // 中身は描くたびに作り直されるので, 文で比べる
   const text = JSON.stringify(value)
+  // 最初の中身 (戻した下書きなら, 触るまで書き直さずに時刻を保つ)
+  const initial = useRef(text)
   // まだ書いていない中身 (無ければ null) と, 待っている書き込み
   const pending = useRef<string | null>(null)
   const timer = useRef<number | null>(null)
@@ -117,6 +119,7 @@ export function useDraftWriter(
       clearDraft(kind)
       return
     }
+    if (text === initial.current) return
     pending.current = text
     timer.current = window.setTimeout(() => flush.current(), delay)
     return stop

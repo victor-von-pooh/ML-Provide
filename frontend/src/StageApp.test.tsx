@@ -102,7 +102,15 @@ function stubApi(linkedId: string | null = null) {
     if (path === '/bundles' && method === 'GET') return Response.json([BUNDLE])
     if (path === '/bundles/b1') return Response.json(BUNDLE)
     if (path === '/results') return Response.json([])
-    if (path === '/experiments') return Response.json(EXPERIMENTS)
+    if (path === '/experiments') {
+      const project = params.get('project')
+      return Response.json({
+        ...EXPERIMENTS,
+        experiments: EXPERIMENTS.experiments.filter(
+          (row) => project === null || row.problem_ids.includes(project),
+        ),
+      })
+    }
     if (path === '/bundles/b1/problem' && method === 'GET')
       return Response.json(unlinked(params.get('project')))
     if (path === '/bundles/b1/problem' && method === 'PUT') {
@@ -215,14 +223,17 @@ describe('StageApp', () => {
   })
 
   it('project を渡すと, 実験の一覧をその問題の設定の実験に絞り, 外せる', async () => {
-    stubApi()
+    const fetchMock = stubApi()
     renderStage({ project: 'aaaa' })
     fireEvent.click(await screen.findByRole('button', { name: '実験の一覧から登録' }))
     const dialog = await screen.findByRole('dialog')
     expect(await within(dialog).findByText('run/1')).toBeInTheDocument()
     expect(within(dialog).queryByText('run/2')).not.toBeInTheDocument()
+    // 絞りは上限で打ち切る前に効くように API に渡す
+    const asked = fetchMock.mock.calls.map(([input]) => String(input))
+    expect(asked).toContain('/api/infer/experiments?project=aaaa')
     fireEvent.click(within(dialog).getByRole('checkbox', { name: /全ての問題の設定の実験を出す/ }))
-    expect(within(dialog).getByText('run/2')).toBeInTheDocument()
+    expect(await within(dialog).findByText('run/2')).toBeInTheDocument()
   })
 
   it('project が null なら実験の一覧を絞らず, 絞りの欄も出さない', async () => {
@@ -277,6 +288,12 @@ describe('StageApp', () => {
     renderStage()
     fireEvent.click(await screen.findByRole('button', { name: '学習の結果から作る' }))
     expect(await screen.findByLabelText('名前')).toHaveValue('書きかけ 2')
+    // 戻しただけでは書き直さない (下書きの時刻を保つ)
+    const stored = window.localStorage.getItem('ml-provide:drafts')
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 1100))
+    })
+    expect(window.localStorage.getItem('ml-provide:drafts')).toBe(stored)
     fireEvent.click(screen.getByRole('button', { name: '書きかけを捨てる' }))
     expect(screen.getByLabelText('名前')).toHaveValue('')
     await act(async () => {})

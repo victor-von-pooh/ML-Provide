@@ -1684,6 +1684,9 @@ export function BundlePage() {
     queryKey: ['bundle-problem', id, project],
     queryFn: () => api.bundleProblem(id, project),
     enabled: !noProblem,
+    // 殻で選び直す間も同じ一式の前の値を出し続ける (推論の欄を外して打ちかけを消さないため)
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[1] === id ? previous : undefined,
   })
   const remove = useMutation({
     mutationFn: () => api.deleteBundle(id),

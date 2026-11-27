@@ -71,6 +71,10 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T
 }
 
+/** 殻で選んだ問題の設定の識別子の検索の文 (選んでいなければ空) */
+const projectQuery = (project: string | null): string =>
+  project ? `?project=${encodeURIComponent(project)}` : ''
+
 const json = (method: string, body: unknown): RequestInit => ({
   method,
   body: JSON.stringify(body),
@@ -97,9 +101,13 @@ export function createApi(base: string) {
       ),
     createReadyBundle: (body: ReadyCreateBody) =>
       request<Bundle>(`${base}/bundles/ready`, json('POST', body)),
-    experiments: () => request<ExperimentList>(`${base}/experiments`),
-    policyExperiments: () =>
-      request<ExperimentList<PolicyExperimentRow>>(`${base}/experiments/policies`),
+    /** 実験の一覧 (project は殻で選んだ問題の設定の識別子. 渡せばそのプロジェクトの実験だけ) */
+    experiments: (project: string | null = null) =>
+      request<ExperimentList>(`${base}/experiments${projectQuery(project)}`),
+    policyExperiments: (project: string | null = null) =>
+      request<ExperimentList<PolicyExperimentRow>>(
+        `${base}/experiments/policies${projectQuery(project)}`,
+      ),
     describeDataset: (path: string) =>
       request<DatasetDescription>(`${base}/datasets/describe?path=${encodeURIComponent(path)}`),
     addSamples: () => request<Bundle[]>(`${base}/samples`, json('POST', {})),
@@ -108,9 +116,7 @@ export function createApi(base: string) {
     deleteBundle: (id: string) => request<void>(`${base}/bundles/${id}`, { method: 'DELETE' }),
     /** つないだ問題の設定 (project は殻で選んだ問題の設定の識別子. 一式の上に候補が無い場合の候補) */
     bundleProblem: (id: string, project: string | null = null) =>
-      request<ProblemState>(
-        `${base}/bundles/${id}/problem${project ? `?project=${encodeURIComponent(project)}` : ''}`,
-      ),
+      request<ProblemState>(`${base}/bundles/${id}/problem${projectQuery(project)}`),
     linkProblem: (id: string, path: string | null) =>
       request<ProblemState>(`${base}/bundles/${id}/problem`, json('PUT', { path })),
     predict: (

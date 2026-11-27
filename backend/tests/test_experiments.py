@@ -108,6 +108,14 @@ def test_list_experiments(client: TestClient, tmp_path: Path) -> None:
     assert rows[0]["path"] == str(new.resolve())
     assert rows[0]["problem"] == problem["name"]
     assert rows[0]["problem_ids"] == ["b", "e"]
+
+    # 殻で選んだ問題の設定の識別子で, そのプロジェクトの実験だけに絞る
+    for problem_id, count in [("b", 2), ("e", 2), ("a", 0), ("zz", 0)]:
+        found = client.get(
+            "/api/experiments", params={"project": problem_id}
+        ).json()
+        assert len(found["experiments"]) == count, problem_id
+        assert found["projects"] == (1 if count else 0)
     assert rows[0]["project"] == str(project.resolve())
     assert rows[0]["bundle_id"] is None
 
