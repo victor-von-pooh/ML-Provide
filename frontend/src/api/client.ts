@@ -29,6 +29,7 @@ import type {
   RowReason,
   Rows,
   Rules,
+  TestSplit,
   TreatedRows,
 } from './types'
 
@@ -122,10 +123,14 @@ export function createApi(base: string) {
         `${base}/bundles/${id}/problem${projectQuery(project)}`,
         json('PUT', { path }),
       ),
+    /** 実験から登録した一式の, 元のデータセットのテスト用の分割 */
+    testSplit: (id: string) => request<TestSplit>(`${base}/bundles/${id}/test-split`),
     predict: (
       id: string,
       body: {
         source?: string
+        /** 元のデータセットの分割の名前 (場所はサーバが一式の実験から見つけ直す) */
+        split?: string
         texts?: string[]
         /** 雑音だけの一式の件数と種 */
         count?: number

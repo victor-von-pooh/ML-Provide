@@ -31,6 +31,12 @@ from ml_provide.procedures import missing_procedure, registered
 from ml_provide.ready import FetchError, make_ready, preview_ready
 from ml_provide.reasons import read_input, row_reason
 from ml_provide.samples import write_samples
+from ml_provide.splits import (
+    find_test_split,
+    result_source,
+    split_key,
+    split_source,
+)
 from ml_provide.store import Store
 from ml_provide.units import unit_hint
 
@@ -133,6 +139,12 @@ OWN_COLUMNS = frozenset({
     "gain_if_acted", "expected_gain",
 })
 
+# 分割の結果に列の効きと 1 行の理由を求めたときの文
+SPLIT_UNEXPLAINED = (
+    "元のデータセットの分割の結果は, 前処理の前の列が無いので, 列の効きと"
+    "行ごとの理由を求めません"
+)
+
 # 推論の誤りとして画面に返す例外
 USER_ERRORS = (
     ValueError, FileNotFoundError, KeyError, TypeError, yaml.YAMLError
@@ -188,6 +200,9 @@ class PredictRequest(BaseModel):
     k: Any = None
     seen: Optional[str] = None
     truth: Optional[str] = None
+    # 一式の元のデータセットの分割の名前 (場所はサーバが一式の実験から
+    # 見つけ直す)
+    split: Optional[str] = Field(default=None, max_length=MAX_NAME)
 
 
 class ConcludeRequest(BaseModel):
@@ -670,6 +685,31 @@ def create_ready_bundle(
     view = bundle_view(entry)
 
     return view
+
+
+@router.get("/bundles/{bundle_id}/test-split")
+def get_test_split(request: Request, bundle_id: str) -> dict[str, Any]:
+    """
+    学習の結果 (実験) から登録した一式の, 元のデータセットのテスト用の
+    分割を返す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    bundle_id: str
+        一式の id
+
+    Returns
+    ----------
+    found: dict[str, Any]
+        split (選べる分割の名前. 無ければ None), dataset, rows,
+        experiment, reason (選べない理由)
+    """
+    # 一式から実験, config の data.dataset, dataset.yaml の順
+    found = find_test_split(find_bundle(request, bundle_id))
+
+    return found
 
 
 @router.post("/samples")
@@ -1218,10 +1258,30 @@ def predict(
         if given or decision or body.forecast:
             raise HTTPException(400, column_only(bundle.form))
         rules, decision = None, None
-    ranked = rank_request(bundle, body)
+    # 分割の名前だけを受け, 場所は一式の実験から見つけ直す (他の入力と
+    # 一緒には受けない)
     noise = body.count is not None or body.seed is not None
-    if ranked:
-        source: Any = ranked["source"]
+    others = (body.source, body.texts, body.users, body.seen, body.truth)
+    if body.split is not None and (
+        noise or body.k is not None or any(v is not None for v in others)
+    ):
+        raise HTTPException(
+            400, "分割と, ファイル, 文, 件数, 利用者は一緒に渡せません"
+        )
+    ranked: dict[str, Any] = (
+        {} if body.split is not None else rank_request(bundle, body)
+    )
+    if body.split is not None:
+        try:
+            source: Any = split_source(entry, body.split)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        described = (
+            f"元のデータセットのテスト用の分割 ({source['dataset']} の "
+            f"{source['split']})"
+        )
+    elif ranked:
+        source = ranked["source"]
         described = ranked["described"]
     elif bundle.from_noise or noise:
         source = noise_source(bundle, body)
@@ -2217,6 +2277,7 @@ def result_view(
         "bundle": meta.get("bundle"),
         "bundle_id": meta.get("bundle_id"),
         "source": meta.get("source"),
+        "split": meta.get("split"),
         "created_at": meta.get("created_at"),
         "task": meta.get("task"),
         "classes": meta.get("classes") or [],
@@ -2526,7 +2587,7 @@ def comparison(metas: list[dict[str, Any]]) -> dict[str, Any]:
         m.get("bundle_id") or (m.get("bundle") or {}).get("path")
         for m in metas
     ]
-    sources = [m.get("source_path") for m in metas]
+    sources = [m.get("source_path") or split_key(m) for m in metas]
     basis = [
         name for name, values in (("bundle", bundles), ("source", sources))
         if same_value(values)
@@ -2999,6 +3060,8 @@ def explain_result(request: Request, result_id: str) -> dict[str, Any]:
             400, "何段も先の予測の結果は, 列の効きを求めません (並べ替えて"
             "推論し直すのは 1 つ先の予測のため)"
         )
+    if meta.get("split"):
+        raise HTTPException(400, SPLIT_UNEXPLAINED)
     entry = get_store(request).find(str(meta.get("bundle_id")))
     if entry is None:
         raise HTTPException(400, "一式が登録されていないので求められません")
@@ -3067,6 +3130,8 @@ def explain_row(
             400, "何段も先の予測の結果は, 行ごとの理由を求めません (並べ替えて"
             "推論し直すのは 1 つ先の予測のため)"
         )
+    if meta.get("split"):
+        raise HTTPException(400, SPLIT_UNEXPLAINED)
     source = meta.get("source_path")
     if not source or not Path(source).exists():
         raise HTTPException(
@@ -3245,10 +3310,10 @@ def backtest_result(request: Request, result_id: str) -> dict[str, Any]:
     meta = read_meta(place)
     require_column(meta)
     decided = meta.get("decision") or {}
-    source = meta.get("source_path")
+    source = result_source(meta)
     if not decided.get("decision"):
         raise HTTPException(400, "先に意思決定の決め方を選んでください")
-    if not source or not Path(source).exists() or meta.get("forecast"):
+    if source is None or meta.get("forecast"):
         raise HTTPException(
             400, "たどり直すには, 目的の列を持つ入力のファイルの結果が"
             "要ります (書いた文と何段も先の予測の結果は除く)"
@@ -3260,7 +3325,7 @@ def backtest_result(request: Request, result_id: str) -> dict[str, Any]:
     with PREDICT_LOCK:
         try:
             replay = ml_inference.backtest(
-                bundle, Path(source), decided["decision"],
+                bundle, source, decided["decision"],
                 options=meta.get("options"), guard=guard
             )
         except (OSError, *USER_ERRORS) as error:
@@ -3327,8 +3392,8 @@ def remeasure_result(
     place = find_result(request, result_id)
     meta = read_meta(place)
     require_column(meta)
-    source = meta.get("source_path")
-    if not source or not Path(source).exists() or meta.get("forecast"):
+    source = result_source(meta)
+    if source is None or meta.get("forecast"):
         raise HTTPException(
             400, "測り直すには, 目的の列を持つ入力のファイルの結果が要ります"
             " (書いた文と何段も先の予測の結果は除く)"
@@ -3350,7 +3415,7 @@ def remeasure_result(
                 copied = copy_into_store(store, entry)
                 target = copied
             measured = ml_inference.remeasure(
-                str(target), Path(source),
+                str(target), source,
                 options=meta.get("options"), write=body.write,
                 horizon=body.horizon, time=body.time or None,
                 groups=body.groups or None

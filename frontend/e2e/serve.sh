@@ -79,6 +79,10 @@ shutil.copytree(bundle, run / "inference")
 shutil.copy(project / "problem.yaml", run / "problem.yaml")
 PY
 
+# 骨組みのプロジェクトに, 表の分類のデータセット (テスト用の分割を持つ) と, それを config.yaml の
+# data.dataset に記録した実験と実験の中の推論の一式を作る (元のデータセットのテスト用の分割の推論)
+uv run python ../frontend/e2e/make_split.py "$WORK/project"
+
 # 推論の一式の版 3 (列の出力でない一式. 領域とベクトル)
 uv run python ../frontend/e2e/make_v3.py "$WORK/v3"
 

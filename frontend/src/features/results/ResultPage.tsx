@@ -1177,7 +1177,8 @@ export function ResultPage() {
           <ConcludeCard key={`conclude:${JSON.stringify(data.rules ?? {})}`} result={data} />
         )}
         {column && <GroupTable result={data} />}
-        {column && <ExplainCard result={data} bundleAlive={bundleAlive} />}
+        {/* 元のデータセットの分割の結果は, 前処理の前の列が無いので列の効きを求めない */}
+        {column && !data.split && <ExplainCard result={data} bundleAlive={bundleAlive} />}
         {data.artifacts && (
           <ArtifactCard
             result={data}

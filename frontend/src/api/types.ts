@@ -1075,6 +1075,8 @@ export interface Result {
   bundle: { name: string | null; path: string } | null
   bundle_id: string | null
   source: string | null
+  /** 元のデータセットの分割を推論した結果の分割 (データセットの場所と名前. 他の結果は無い) */
+  split?: { dataset: string; name: string } | null
   created_at: string | null
   task: string | null
   classes?: string[]
@@ -1342,6 +1344,20 @@ export interface LinkedProblem {
   text: string
   /** 一式との食い違い */
   issues: string[]
+}
+
+/** 学習の結果 (実験) から登録した一式の, 元のデータセットのテスト用の分割 */
+export interface TestSplit {
+  /** 選べる分割の名前 (見つからなければ null) */
+  split: string | null
+  /** データセットの場所 (サーバが一式の実験から見つけたもの) */
+  dataset: string | null
+  /** 分割の行の数 */
+  rows: number | null
+  /** 実験の場所 */
+  experiment: string | null
+  /** 選べない理由 */
+  reason: string | null
 }
 
 /** 一式と問題の設定のつなぎの状態 */
