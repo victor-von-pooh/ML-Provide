@@ -809,9 +809,33 @@ function PredictCard({
   // 列の出力でない一式 (領域, 点群, ベクトル, 画像, 文) は結論が件数だけ
   const column = isColumnOutput(description)
   const outputForm = description.output?.form ?? ''
-  const [mode, setMode] = useState<'file' | 'texts'>('file')
+  const [chosen, setMode] = useState<'file' | 'texts' | 'split'>('file')
   const [source, setSource] = useState('')
   const [texts, setTexts] = useState('')
+  // 表と時系列の列の予測の一式は, 学習の結果 (実験) から登録していれば, 元のデータセットの
+  // テスト用の分割も選べる (場所はサーバが一式の実験から見つけ, 画面は名前だけを送る)
+  const splittable =
+    (description.kind === 'table' || description.kind === 'timeseries') &&
+    column &&
+    !group &&
+    !anomaly &&
+    !uplift &&
+    !price &&
+    !demand
+  const testSplit = useQuery({
+    queryKey: ['bundles', bundle.id, 'test-split'],
+    queryFn: () => api.testSplit(bundle.id),
+    enabled: splittable,
+    // 実験の記録は推論の間に変わらないので, 窓に戻るたびにたどり直さない
+    staleTime: 60_000,
+  })
+  const splitName = (splittable && testSplit.data?.split) || null
+  const split = splitName ? (testSplit.data ?? null) : null
+  // 分割を選んだ後に候補が消えたら, ファイルの欄に戻す (隠れた欄の値を送らないため. 選んだ
+  // 状態もファイルにし, 候補が戻っても何も押さずに分割へ戻らないように)
+  if (chosen === 'split' && !split) setMode('file')
+  const mode = chosen === 'split' && !split ? 'file' : chosen
+  const useSplit = mode === 'split' && splitName !== null
   // 目的の列の過去の値を使う回帰と予測の一式は, 何段も先まで予測できる
   const canForecast = column && !!description.forecastable
   const [ahead, setAhead] = useState(false)
@@ -904,13 +928,19 @@ function PredictCard({
                             rules: withCleared(rules),
                             decision: decision ?? {},
                           }
-                        : {
-                            source: source.trim(),
-                            rules: withCleared(rules),
-                            forecast: canForecast && ahead,
-                            // 意思決定しない場合は空 (省くと一式の既定値になる)
-                            decision: decision ?? {},
-                          },
+                        : useSplit
+                          ? {
+                              split: splitName,
+                              rules: withCleared(rules),
+                              decision: decision ?? {},
+                            }
+                          : {
+                              source: source.trim(),
+                              rules: withCleared(rules),
+                              forecast: canForecast && ahead,
+                              // 意思決定しない場合は空 (省くと一式の既定値になる)
+                              decision: decision ?? {},
+                            },
       ),
     onSuccess: (result) => {
       client.invalidateQueries({ queryKey: ['results'] })
@@ -920,6 +950,7 @@ function PredictCard({
   // 欄の中身の印 (送った後に欄を変えたら, 前の誤りを消す)
   const formKey = JSON.stringify([
     mode,
+    useSplit,
     source,
     texts,
     count,
@@ -936,7 +967,8 @@ function PredictCard({
     maxOrder,
   ])
   const ready =
-    (noise || (mode === 'texts' ? texts.trim() : source.trim())) && problems.length === 0
+    (noise || useSplit || (mode === 'texts' ? texts.trim() : source.trim())) &&
+    problems.length === 0
   return (
     <Card title="推論する">
       <form
@@ -950,16 +982,43 @@ function PredictCard({
         {price && <PriceTerms cost={price.cost} step={price.elasticity_step} />}
         {/* 需要の一式も同じく, 欄の上に言葉の説明と前提 */}
         {demand && <DemandTerms horizon={demand.horizon} stock={demand.stock} />}
-        {textual && (
-          <div role="radiogroup" aria-label="推論するデータ" className="flex gap-4 text-sm">
+        {(textual || split) && (
+          <div
+            role="radiogroup"
+            aria-label="推論するデータ"
+            className="flex flex-wrap gap-4 text-sm"
+          >
             <label className="flex items-center gap-1">
-              <input type="radio" checked={mode === 'file'} onChange={() => setMode('file')} />
+              <input
+                type="radio"
+                name="predict-data"
+                checked={mode === 'file'}
+                onChange={() => setMode('file')}
+              />
               ファイル
             </label>
-            <label className="flex items-center gap-1">
-              <input type="radio" checked={mode === 'texts'} onChange={() => setMode('texts')} />
-              文を書く
-            </label>
+            {textual && (
+              <label className="flex items-center gap-1">
+                <input
+                  type="radio"
+                  name="predict-data"
+                  checked={mode === 'texts'}
+                  onChange={() => setMode('texts')}
+                />
+                文を書く
+              </label>
+            )}
+            {split && (
+              <label className="flex items-center gap-1">
+                <input
+                  type="radio"
+                  name="predict-data"
+                  checked={mode === 'split'}
+                  onChange={() => setMode('split')}
+                />
+                元のデータセットのテスト用の分割
+              </label>
+            )}
           </div>
         )}
         {noise ? (
@@ -1001,7 +1060,20 @@ function PredictCard({
               </p>
             ))}
           </fieldset>
-        ) : mode === 'file' ? (
+        ) : useSplit && split ? (
+          <section aria-label="テスト用の分割" className="text-sm">
+            <p>
+              学習に使ったデータセットのテスト用の分割
+              {split.rows !== null && ` (${split.rows.toLocaleString()} 行) `}を推論します
+            </p>
+            <p className="mt-1 break-all font-mono text-xs text-ink-2">{split.dataset}</p>
+            <p className="mt-1 text-xs text-ink-3">
+              学習に使わなかった行を, 前処理を済ませた列のまま推論します. 目的の列があるので,
+              結果からたどり直しと外れ方の測り直しもできます (前処理の前の列が無いので,
+              何段も先の予測はせず, 列の効きと行ごとの理由も求めません)
+            </p>
+          </section>
+        ) : mode !== 'texts' ? (
           <div>
             <PathField
               id="predict-source"
@@ -1044,6 +1116,11 @@ function PredictCard({
                               : '目的の列は有っても無くてもかまいません. 学習のときと同じ読み込みで読みます'
               }
             />
+            {splittable && !split && testSplit.data?.experiment && testSplit.data.reason && (
+              <p className="mt-1 text-xs text-ink-3">
+                元のデータセットのテスト用の分割は選べません: {testSplit.data.reason}
+              </p>
+            )}
             {bundle.sample_input && (
               <p className="mt-1 text-xs text-ink-2">
                 見本の一式です.{' '}

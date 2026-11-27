@@ -795,6 +795,37 @@ test('骨組みの学習が実験の中に作った版 4 の一式を, 実験の
   await expect(page.getByText('画素を 0 から 1 にする')).toBeVisible()
 })
 
+test('実験の一覧から登録した一式で, 元のデータセットのテスト用の分割を選んで推論し, 測り直す', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: '実験の一覧から登録' }).click()
+  const dialog = page.getByRole('dialog', { name: '実験の一覧から登録' })
+  await dialog
+    .getByRole('button', { name: '総菜の作る量 (split/2026-01-04/09-00-00) を登録' })
+    .click()
+  await expect(
+    page.getByRole('heading', { name: '総菜の作る量 (split/2026-01-04/09-00-00)' }),
+  ).toBeVisible({ timeout: 30_000 })
+
+  // 場所を入れずに, 一式の実験から見つけたテスト用の分割を選ぶ
+  await page.getByRole('radio', { name: '元のデータセットのテスト用の分割' }).check()
+  const section = page.getByRole('region', { name: 'テスト用の分割' })
+  await expect(section).toContainText('(30 行)')
+  await expect(section).toContainText('data/split-dataset')
+  await page.getByRole('button', { name: '推論する', exact: true }).click()
+  await expect(page).toHaveURL(/\/results\/[^/]+$/, { timeout: 30_000 })
+  await expect(page.getByText('30 件のうち 30 件を予測')).toBeVisible()
+  await expect(
+    page.getByText(/元のデータセットのテスト用の分割 \(.*split-dataset の test\)/),
+  ).toBeVisible()
+
+  // 目的の列があるので測り直せ, 前処理の前の列が要る列の効きは出さない
+  await expect(page.getByRole('button', { name: '求める', exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: '確かめる' }).click()
+  await expect(page.getByText(/30 行で/).first()).toBeVisible({ timeout: 30_000 })
+})
+
 test('表の生成の骨組みが実験の中に作った表の出力の一式を, 実験の一覧から登録して表を作り, CSV で持ち出す', async ({
   page,
 }) => {
