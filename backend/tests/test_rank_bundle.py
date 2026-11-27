@@ -156,8 +156,9 @@ def test_rank_bundle(tmp_path: Path, client: TestClient) -> None:
 
     # 問題の設定は読まない (結論と意思決定を使わないため)
     state = client.get(f"/api/bundles/{bundle['id']}/problem").json()
-    assert state == {"path": None, "linked": None, "error": None,
-                     "hint": None, "hint_note": None}
+    assert state == {"path": None, "problem_id": None, "linked": None,
+                     "error": None, "hint": None, "hint_note": None,
+                     "hint_project": False}
 
     # 書いた利用者 (空の行は除く. 数の利用者も文字で引く) を既定の件数で
     result = predict(client, bundle, users=["u0", "", "007", "103", "nobody"])

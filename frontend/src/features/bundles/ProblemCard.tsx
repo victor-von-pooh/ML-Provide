@@ -2,10 +2,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ClipboardList, Link2, Unlink } from 'lucide-react'
 import { useState } from 'react'
 
-import { api } from '../../api/client'
+import { useApi } from '../../api/client'
 import type { ProblemState } from '../../api/types'
 import { PathField } from '../../components/PathPicker'
 import { Button, Card, ErrorBox } from '../../components/ui'
+import { useStage } from '../../lib/stage'
 
 /**
  * 一式につないだ問題の設定 (損得, 根拠, 一式との食い違い) を出し, つなぐか外す.
@@ -21,14 +22,21 @@ export function ProblemCard({
   state: ProblemState
   readyModel?: boolean
 }) {
+  const api = useApi()
   const client = useQueryClient()
+  const { project, onProjectChange } = useStage()
   const [path, setPath] = useState('')
   const link = useMutation({
     mutationFn: (target: string | null) => api.linkProblem(bundleId, target),
     onSuccess: (next) => {
       setPath('')
-      client.setQueryData(['bundle-problem', bundleId], next)
+      client.setQueryData(['bundle-problem', bundleId, project], next)
       client.invalidateQueries({ queryKey: ['bundles'] })
+      // 置き場の別の問題の設定をつないだら, 殻の選びをそれにする (同じ識別子と,
+      // 置き場の外の問題の設定では知らせない)
+      if (next.problem_id !== null && next.problem_id !== project) {
+        onProjectChange(next.problem_id)
+      }
     },
   })
   const linked = state.linked
@@ -100,7 +108,11 @@ export function ProblemCard({
           </p>
           {hint && (
             <div className="rounded-lg border border-line p-3 text-xs">
-              <p className="text-ink-2">一式の上のディレクトリに問題の設定がありました.</p>
+              <p className="text-ink-2">
+                {state.hint_project
+                  ? '一式の上のディレクトリに問題の設定が無いので, 選んだプロジェクトの問題の設定を候補にしました.'
+                  : '一式の上のディレクトリに問題の設定がありました.'}
+              </p>
               {state.hint_note && <p className="mt-1 text-ink-2">{state.hint_note}</p>}
               <p id="problem-hint" className="mt-1 truncate font-mono text-ink-3" title={hint}>
                 {hint}

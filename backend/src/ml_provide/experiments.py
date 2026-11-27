@@ -47,13 +47,15 @@ def known_projects(problems_dir: Path) -> list[dict[str, Any]]:
     ----------
     projects: list[dict[str, Any]]
         path (プロジェクトのディレクトリ), problem (問題の設定の名前),
-        problem_path (problem.yaml) の並び (同じプロジェクトは 1 つ)
+        problem_path (problem.yaml), problem_ids (そのプロジェクトを記録
+        した問題の設定の識別子. 置き場のディレクトリの名前) の並び (同じ
+        プロジェクトは 1 つ)
     """
     # 読めない問題の設定と, 記録の無いものと, 無いディレクトリは飛ばす
     projects: list[dict[str, Any]] = []
     if not problems_dir.is_dir():
         return projects
-    seen: set[str] = set()
+    seen: dict[str, dict[str, Any]] = {}
     for child in sorted(problems_dir.iterdir()):
         file = child / "problem.yaml"
         try:
@@ -64,18 +66,22 @@ def known_projects(problems_dir: Path) -> list[dict[str, Any]]:
             place = ml_quest.project_of(upgraded)["path"]
         except READ_ERRORS:
             continue
-        if not isinstance(place, str) or place in seen or not (
-            Path(place).is_dir()
-        ):
+        if not isinstance(place, str) or not Path(place).is_dir():
             continue
-        seen.add(place)
+        # 同じプロジェクトを記録した別の問題の設定は, 識別子だけを足す
+        # (殻で選んだどちらの問題の設定でも, その実験に絞れるように)
+        if place in seen:
+            seen[place]["problem_ids"].append(child.name)
+            continue
         name = problem.get("name")
-        projects.append({
+        seen[place] = {
             "path": place,
             "problem": name if isinstance(name, str) and name.strip()
             else file.parent.name,
-            "problem_path": str(file.resolve())
-        })
+            "problem_path": str(file.resolve()),
+            "problem_ids": [child.name]
+        }
+        projects.append(seen[place])
 
     return projects
 
@@ -157,8 +163,9 @@ def experiment_row(
     Returns
     ----------
     row: dict[str, Any]
-        path, project, problem, experiment (出力先からの実験の場所),
-        modified (一式の更新の時刻), key (登録済みならその id)
+        path, project, problem, problem_ids (プロジェクトを記録した問題
+        の設定の識別子), experiment (出力先からの実験の場所), modified
+        (一式の更新の時刻), key (登録済みならその id)
     """
     # 実験の場所は出力先からの相対 (名前/日付/時刻)
     resolved = bundle.resolve()
@@ -168,6 +175,7 @@ def experiment_row(
         "path": str(resolved),
         "project": project["path"],
         "problem": project["problem"],
+        "problem_ids": list(project["problem_ids"]),
         "experiment": run.as_posix(),
         "modified": datetime.fromtimestamp(stamp).astimezone().isoformat(),
         key: registered.get(str(resolved)),

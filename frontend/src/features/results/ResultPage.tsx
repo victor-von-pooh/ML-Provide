@@ -4,7 +4,7 @@ import { Download, RefreshCw, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 
-import { api } from '../../api/client'
+import { useApi } from '../../api/client'
 import type { Counts, Result } from '../../api/types'
 import { Button, Card, ErrorBox, PageHeader, Spinner, StatTile } from '../../components/ui'
 import { formatNumber, formatPercent, formatValue } from '../../lib/format'
@@ -222,6 +222,7 @@ function RowsTable({
   focus?: number | null
   onFocus?: (row: number | null) => void
 }) {
+  const api = useApi()
   const column = result.column_output !== false
   const [page, setPage] = useState(0)
   const [status, setStatus] = useState('')
@@ -652,6 +653,7 @@ function RepresentativesCard({
   result: Result
   onPick: (row: number, group: number) => void
 }) {
+  const api = useApi()
   const [count, setCount] = useState(DEFAULT_REPRESENTATIVES)
   const kept = clusterRepresentatives(result)
   const useKept = count === DEFAULT_REPRESENTATIVES && kept !== undefined
@@ -800,6 +802,7 @@ function ClusterCards({
 
 /** 決め方を変えて結論を出し直す */
 function ConcludeCard({ result }: { result: Result }) {
+  const api = useApi()
   const client = useQueryClient()
   const task = result.task ?? ''
   const [form, setForm] = useState<RulesForm>(() => toForm(result.rules))
@@ -855,6 +858,7 @@ function ConcludeCard({ result }: { result: Result }) {
 
 /** 推論の結果 (結論の文, 内訳, まとめ, 予測の表) */
 export function ResultPage() {
+  const api = useApi()
   const { id = '' } = useParams()
   // 配列の出力で見る行 (選ぶまでは推論した最初の行. 別の結果に移ったら戻す)
   const [artifactRow, setArtifactRow] = useState<number | null>(null)

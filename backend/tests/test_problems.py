@@ -172,8 +172,9 @@ def test_link_and_predict(client: TestClient, tmp_path: Path) -> None:
     added = client.post("/api/samples").json()
     daily = next(b for b in added if "日々の売上" in b["name"])
     state = client.get(f"/api/bundles/{daily['id']}/problem").json()
-    assert state == {"path": None, "linked": None, "error": None,
-                     "hint": None, "hint_note": None}
+    assert state == {"path": None, "problem_id": None, "linked": None,
+                     "error": None, "hint": None, "hint_note": None,
+                     "hint_project": False}
     project, bundle = project_bundle(client, tmp_path, daily["path"])
     url = f"/api/bundles/{bundle['id']}/problem"
     state = client.get(url).json()
@@ -764,6 +765,69 @@ def test_origin_hint(client: TestClient, tmp_path: Path) -> None:
     state = client.get(url).json()
     assert state["hint"] == str((project / "problem.yaml").resolve())
     assert "場所を持ちません" in state["hint_note"]
+
+
+def test_shell_project_hint(client: TestClient, tmp_path: Path) -> None:
+    """
+    殻で選んだプロジェクト (問題の設定の識別子) を, 一式の上に候補が無い
+    一式の候補にし, つないだ問題の設定が置き場のものなら識別子を返すこと
+    を確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    tmp_path: Path
+        一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 置き場の問題の設定と, 置き場の中の見本の一式 (上に候補が無い)
+    added = client.post("/api/samples").json()
+    daily = next(b for b in added if "日々の売上" in b["name"])
+    stored = tmp_path / "pathfinder" / "problems" / "one"
+    ml_quest.save_problem(shop_problem(), stored)
+    url = f"/api/bundles/{daily['id']}/problem"
+    assert client.get(url).json()["hint"] is None
+
+    # 選んだプロジェクトの問題の設定を候補にする
+    state = client.get(url, params={"project": "one"}).json()
+    assert state["hint"] == str((stored / "problem.yaml").resolve())
+    assert state["hint_project"] is True and state["hint_note"] is None
+
+    # 置き場に無い識別子と, 置き場の外を指す識別子は候補にしない
+    for project in ["missing", "..", "../one", "one/problem.yaml"]:
+        state = client.get(url, params={"project": project}).json()
+        assert state["hint"] is None, project
+
+    # 推論に渡せない問題の設定 (受け持ちが列の予測でない) も候補にしない
+    ml_quest.save_problem(generate_problem(), tmp_path / "pathfinder"
+                          / "problems" / "gen")
+    assert client.get(url, params={"project": "gen"}).json()["hint"] is None
+
+    # 置き場の問題の設定をつなぐと識別子を返す. 置き場の外なら返さない
+    state = client.put(url, json={"path": str(stored)}).json()
+    assert state["problem_id"] == "one"
+    assert client.get(url).json()["problem_id"] == "one"
+    outside = tmp_path / "elsewhere" / "one"
+    ml_quest.save_problem(shop_problem(), outside)
+    state = client.put(url, json={"path": str(outside)}).json()
+    assert state["path"] == str((outside / "problem.yaml").resolve())
+    assert state["problem_id"] is None
+
+    # 上に候補がある一式は, 選んだプロジェクトより上の候補を出す
+    project = tmp_path / "project"
+    ml_quest.save_problem(shop_problem(), project)
+    place = project / "outputs" / "run" / "inference"
+    shutil.copytree(daily["path"], place)
+    bundle = client.post("/api/bundles", json={"path": str(place)}).json()
+    state = client.get(
+        f"/api/bundles/{bundle['id']}/problem", params={"project": "one"}
+    ).json()
+    assert state["hint"] == str((project / "problem.yaml").resolve())
+    assert state["hint_project"] is False
 
 
 def set_source(

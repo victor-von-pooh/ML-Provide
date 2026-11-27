@@ -36,14 +36,16 @@ const rows = vi.fn((_id: string, params: { status?: string }) =>
   }),
 )
 
-vi.mock('../../api/client', () => ({
-  api: {
-    policyResult: () => Promise.resolve(result),
-    policy: () => Promise.reject(new Error('無い')),
-    policyResultRows: (id: string, params: { status?: string }) => rows(id, params),
-    policyResultDownloadUrl: (id: string) => `/api/policy-results/${id}/download`,
-  },
-}))
+vi.mock('../../api/client', async () =>
+  (await import('../../test/mockClient')).mockClient({
+    api: {
+      policyResult: () => Promise.resolve(result),
+      policy: () => Promise.reject(new Error('無い')),
+      policyResultRows: (id: string, params: { status?: string }) => rows(id, params),
+      policyResultDownloadUrl: (id: string) => `/api/policy-results/${id}/download`,
+    },
+  }),
+)
 
 describe('方策の結果の画面', () => {
   it('守りの結果ごとの件数と 1 件ずつの表を出し, 守りの結果で絞る', async () => {

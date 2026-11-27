@@ -54,14 +54,16 @@ const policyBatch = vi.fn((_id: string, _source: string) =>
   }),
 )
 
-vi.mock('../../api/client', () => ({
-  api: {
-    policy: () => Promise.resolve(cartpole),
-    act: (id: string, observation: unknown) => act(id, observation),
-    policyResults: () => Promise.resolve([]),
-    policyBatch: (id: string, source: string) => policyBatch(id, source),
-  },
-}))
+vi.mock('../../api/client', async () =>
+  (await import('../../test/mockClient')).mockClient({
+    api: {
+      policy: () => Promise.resolve(cartpole),
+      act: (id: string, observation: unknown) => act(id, observation),
+      policyResults: () => Promise.resolve([]),
+      policyBatch: (id: string, source: string) => policyBatch(id, source),
+    },
+  }),
+)
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })

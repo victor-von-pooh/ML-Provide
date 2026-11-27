@@ -1348,13 +1348,20 @@ export interface LinkedProblem {
 export interface ProblemState {
   /** つないだ場所 (つないでいなければ null) */
   path: string | null
+  /** つないだ場所が問題の設定の置き場の `<識別子>/problem.yaml` なら識別子 (他は null) */
+  problem_id: string | null
   linked: LinkedProblem | null
   /** つないだ問題の設定を読めない理由 */
   error: string | null
-  /** つないでいない一式の, 上のディレクトリで見つけた候補 (元の場所を持つ写しなら元) */
+  /**
+   * つないでいない一式の, 上のディレクトリで見つけた候補 (元の場所を持つ写しなら元).
+   * 上に無ければ殻で選んだ問題の設定
+   */
   hint: string | null
   /** 候補が元の問題の設定か, 学習の時点の写しかを伝える文 */
   hint_note: string | null
+  /** 候補が殻で選んだ問題の設定か (一式の上に候補が無い場合) */
+  hint_project: boolean
 }
 
 /** 問題の設定に記録したプロジェクトの, 推論の一式を持つ実験 */
@@ -1365,6 +1372,8 @@ export interface ExperimentRow {
   project: string
   /** プロジェクトを記録した問題の設定の名前 */
   problem: string
+  /** プロジェクトを記録した問題の設定の識別子 (置き場のディレクトリの名前) */
+  problem_ids: string[]
   /** 出力先からの実験の場所 (名前/日付/時刻) */
   experiment: string
   /** 一式の更新の時刻 */

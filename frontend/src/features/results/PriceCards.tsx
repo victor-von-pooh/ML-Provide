@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 
-import { api } from '../../api/client'
+import { useApi } from '../../api/client'
 import type {
   ElasticityDistribution,
   PriceDecisionSummary,
@@ -291,6 +291,7 @@ function ElasticityCard({
 
 /** 選んだ値段. 行ごとの選んだ値段と変える割合の一覧 (見込みの利益の差の大きい順. ページを送る) */
 function PricesCard({ result, decided }: { result: Result; decided: PriceDecisionSummary | null }) {
+  const api = useApi()
   const [offset, setOffset] = useState(0)
   const prices = useQuery({
     queryKey: ['prices', result.id, offset],

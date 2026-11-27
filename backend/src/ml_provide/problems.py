@@ -201,6 +201,69 @@ def find_hint(
     return found
 
 
+def stored_id(text: Optional[str], problems_dir: Path) -> Optional[str]:
+    """
+    問題の設定の場所が置き場の <識別子>/problem.yaml なら, 識別子を返す関数
+
+    殻 (ML-Studio) のプロジェクトは置き場の問題の設定の識別子なので, 置き場
+    の外のファイルは同じ名前のディレクトリでも識別子にしない
+
+    Parameters
+    ----------
+    text: Optional[str]
+        problem.yaml の場所 (無ければ None)
+    problems_dir: Path
+        ML-Pathfinder の問題の設定の置き場
+
+    Returns
+    ----------
+    found: Optional[str]
+        識別子 (置き場の外か読めない場所なら None)
+    """
+    # どちらも実際のパスで比べる (リンクと ~ を開く)
+    found: Optional[str] = None
+    if not text:
+        return found
+    try:
+        place = Path(text).expanduser().resolve()
+        root = problems_dir.expanduser().resolve()
+    except (OSError, RuntimeError, ValueError):
+        return found
+    if place.name == "problem.yaml" and place.parent.parent == root:
+        found = place.parent.name
+
+    return found
+
+
+def project_file(
+    project: Optional[str], problems_dir: Path
+) -> Optional[Path]:
+    """
+    殻で選んだプロジェクト (問題の設定の識別子) の problem.yaml を返す関数
+
+    Parameters
+    ----------
+    project: Optional[str]
+        問題の設定の識別子 (選んでいなければ None)
+    problems_dir: Path
+        ML-Pathfinder の問題の設定の置き場
+
+    Returns
+    ----------
+    path: Optional[Path]
+        置き場の <識別子>/problem.yaml (識別子の形でなければ None)
+    """
+    # 区切りや . で始まる名前で置き場の外を指さないため
+    path: Optional[Path] = None
+    if not project or project != Path(project).name or (
+        project.startswith(".") or "\\" in project
+    ):
+        return path
+    path = problems_dir / project / "problem.yaml"
+
+    return path
+
+
 def named_columns(value: Any) -> list[str]:
     """
     レシピの手順の引数や当てはめた値から, 列の名前を取り出す関数
@@ -774,7 +837,10 @@ def bundle_kind(path: str) -> Optional[str]:
     return kind
 
 
-def problem_state(entry: dict[str, Any], home: Path) -> dict[str, Any]:
+def problem_state(
+    entry: dict[str, Any], home: Path, problems_dir: Path,
+    project: Optional[str] = None
+) -> dict[str, Any]:
     """
     一式につないだ問題の設定の今の状態を返す関数
 
@@ -784,13 +850,20 @@ def problem_state(entry: dict[str, Any], home: Path) -> dict[str, Any]:
         一式の登録
     home: Path
         このアプリの置き場 (候補を探さない場所)
+    problems_dir: Path
+        ML-Pathfinder の問題の設定の置き場
+    project: Optional[str] = None
+        殻で選んだプロジェクト (問題の設定の識別子. 一式の上に候補が無い
+        場合の候補にする)
 
     Returns
     ----------
     state: dict[str, Any]
-        path (つないだ場所. 無ければ None), linked (読んだ値. 読めなければ
-        None), error (読めない理由), hint (つないでいない場合の候補),
-        hint_note (候補が写しか元かを伝える文)
+        path (つないだ場所. 無ければ None), problem_id (つないだ場所が置き
+        場の問題の設定なら識別子), linked (読んだ値. 読めなければ None),
+        error (読めない理由), hint (つないでいない場合の候補), hint_note
+        (候補が写しか元かを伝える文), hint_project (候補が殻で選んだ
+        プロジェクトの問題の設定か)
     """
     # 問題の設定の欄を出さない一式は, 問題の設定の読み込みも候補の探索も
     # 無し (画面が一式と並べて要求しても, 結論と意思決定に使わない設定.
@@ -801,23 +874,34 @@ def problem_state(entry: dict[str, Any], home: Path) -> dict[str, Any]:
     state: dict[str, Any]
     kind = bundle_kind(str(entry["path"]))
     if not uses_problem(kind):
-        state = {"path": text if isinstance(text, str) else None,
+        place = text if isinstance(text, str) else None
+        state = {"path": place, "problem_id": stored_id(place, problems_dir),
                  "linked": None, "error": None, "hint": None,
-                 "hint_note": None}
+                 "hint_note": None, "hint_project": False}
         return state
 
-    # つないでいなければ候補だけ
+    # つないでいなければ候補だけ. 一式の上に候補が無ければ, 殻で選んだ
+    # プロジェクトの問題の設定 (推論に渡せるもの)
     if not isinstance(text, str):
         hint, note = find_hint(
             Path(str(entry["path"])), home, kind == "ready"
         )
-        state = {"path": None, "linked": None, "error": None,
-                 "hint": hint, "hint_note": note}
+        chosen = project_file(project, problems_dir)
+        from_project = hint is None and chosen is not None and is_usable(
+            chosen, kind == "ready"
+        )
+        if from_project and chosen is not None:
+            hint = str(chosen.resolve())
+            note = None
+        state = {"path": None, "problem_id": None, "linked": None,
+                 "error": None, "hint": hint, "hint_note": note,
+                 "hint_project": from_project}
         return state
 
     # 置き換わったか読めなくなった場合は理由 (つなぎは外さない)
-    state = {"path": text, "linked": None, "error": None, "hint": None,
-             "hint_note": None}
+    state = {"path": text, "problem_id": stored_id(text, problems_dir),
+             "linked": None, "error": None, "hint": None,
+             "hint_note": None, "hint_project": False}
     try:
         path = problem_file(text)
         problem = read_problem(path)
@@ -835,7 +919,9 @@ def problem_state(entry: dict[str, Any], home: Path) -> dict[str, Any]:
 
 
 @router.get("/bundles/{bundle_id}/problem")
-def get_problem(request: Request, bundle_id: str) -> dict[str, Any]:
+def get_problem(
+    request: Request, bundle_id: str, project: Optional[str] = None
+) -> dict[str, Any]:
     """
     一式につないだ問題の設定から読んだ推論の値を返す関数
 
@@ -845,15 +931,19 @@ def get_problem(request: Request, bundle_id: str) -> dict[str, Any]:
         リクエスト
     bundle_id: str
         一式の id
+    project: Optional[str] = None
+        殻で選んだプロジェクト (問題の設定の識別子. つないでいない一式の
+        候補に使う)
 
     Returns
     ----------
     state: dict[str, Any]
-        path, linked, error, hint, hint_note
+        path, problem_id, linked, error, hint, hint_note, hint_project
     """
     # 推論のたびの読み直し (覚えない)
     state = problem_state(
-        find_bundle(request, bundle_id), get_store(request).home
+        find_bundle(request, bundle_id), get_store(request).home,
+        request.app.state.problems_dir, project
     )
 
     return state
@@ -878,7 +968,8 @@ def link_problem(
     Returns
     ----------
     state: dict[str, Any]
-        つないだ後の状態 (path, linked, error, hint, hint_note)
+        つないだ後の状態 (path, problem_id, linked, error, hint,
+        hint_note, hint_project)
 
     Raises
     ----------
@@ -894,7 +985,9 @@ def link_problem(
             entry = store.link_problem(bundle_id, None)
         except KeyError as error:
             raise HTTPException(404, "一式が見つかりません") from error
-        state = problem_state(entry, store.home)
+        state = problem_state(
+            entry, store.home, request.app.state.problems_dir
+        )
         return state
     # 問題の設定を使わない種類の一式 (並べる, 検索など) にはつながない
     if not uses_problem(bundle_kind(str(entry["path"]))):
@@ -910,6 +1003,8 @@ def link_problem(
         )
     except KeyError as error:
         raise HTTPException(404, "一式が見つかりません") from error
-    state = problem_state(entry, store.home)
+    state = problem_state(
+        entry, store.home, request.app.state.problems_dir
+    )
 
     return state

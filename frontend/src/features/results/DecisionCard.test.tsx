@@ -4,7 +4,9 @@ import { render, screen, within } from '@testing-library/react'
 import type { BacktestGuard, Result } from '../../api/types'
 import { DecisionCard } from './DecisionCard'
 
-vi.mock('../../api/client', () => ({ api: {} }))
+vi.mock('../../api/client', async () =>
+  (await import('../../test/mockClient')).mockClient({ api: {} }),
+)
 
 // 日々の売上の見本の過去のデータで, 量を決めてたどり直した結果
 function resultWith(guard: BacktestGuard | null): Result {

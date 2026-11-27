@@ -127,8 +127,9 @@ def test_search_predict_and_photos(
     listed = client.get("/api/bundles").json()
     assert [item["uses_problem"] for item in listed] == [False]
     state = client.get(f"/api/bundles/{bundle_id}/problem").json()
-    assert state == {"path": None, "linked": None, "error": None,
-                     "hint": None, "hint_note": None}
+    assert state == {"path": None, "problem_id": None, "linked": None,
+                     "error": None, "hint": None, "hint_note": None,
+                     "hint_project": False}
     refused = client.put(f"/api/bundles/{bundle_id}/problem",
                          json={"path": str(tmp_path / "problem.yaml")})
     assert refused.status_code == 400

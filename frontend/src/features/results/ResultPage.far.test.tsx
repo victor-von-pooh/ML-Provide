@@ -99,15 +99,17 @@ const rows: Rows = {
 
 const rowsCall = vi.fn((_id: string, _params: Record<string, unknown>) => Promise.resolve(rows))
 
-vi.mock('../../api/client', () => ({
-  api: {
-    result: () => Promise.resolve(result),
-    bundle: () => Promise.reject(new Error('無い')),
-    rows: (id: string, params: Record<string, unknown>) => rowsCall(id, params),
-    representatives: () => new Promise(() => {}),
-    downloadUrl: (id: string) => `/api/results/${id}/download`,
-  },
-}))
+vi.mock('../../api/client', async () =>
+  (await import('../../test/mockClient')).mockClient({
+    api: {
+      result: () => Promise.resolve(result),
+      bundle: () => Promise.reject(new Error('無い')),
+      rows: (id: string, params: Record<string, unknown>) => rowsCall(id, params),
+      representatives: () => new Promise(() => {}),
+      downloadUrl: (id: string) => `/api/results/${id}/download`,
+    },
+  }),
+)
 
 // 「行を見る」で表へ移る (jsdom は scrollIntoView を持たない)
 Element.prototype.scrollIntoView = vi.fn()

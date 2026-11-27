@@ -1,11 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
 import { FolderInput } from 'lucide-react'
+import { useState } from 'react'
 import { Link } from 'react-router'
 
-import { api } from '../../api/client'
+import { useApi, type Api } from '../../api/client'
 import type { ExperimentList, ExperimentRow, PolicyExperimentRow } from '../../api/types'
 import { Dialog } from '../../components/Dialog'
 import { Button, ErrorBox, Spinner } from '../../components/ui'
+import { useStage } from '../../lib/stage'
 
 /** 一覧から登録する一式の名前 (問題の設定の名前と実験の場所) */
 function experimentName(row: { problem: string; experiment: string }): string {
@@ -22,7 +24,7 @@ interface Row {
 const KINDS = {
   bundle: {
     key: 'experiments',
-    load: async (): Promise<ExperimentList<Row>> => {
+    load: async (api: Api): Promise<ExperimentList<Row>> => {
       const data = await api.experiments()
       return {
         ...data,
@@ -38,7 +40,7 @@ const KINDS = {
   },
   policy: {
     key: 'policy-experiments',
-    load: async (): Promise<ExperimentList<Row>> => {
+    load: async (api: Api): Promise<ExperimentList<Row>> => {
       const data = await api.policyExperiments()
       return {
         ...data,
@@ -74,20 +76,44 @@ export function ExperimentsDialog({
   /** 登録できなかった理由 */
   error: Error | null
 }) {
+  const api = useApi()
   // 開くたびに読み直す (学習が終わった実験を拾うため)
   const config = KINDS[kind]
   const listing = useQuery({
     queryKey: [config.key],
-    queryFn: config.load,
+    queryFn: () => config.load(api),
     staleTime: 0,
   })
-  const data = listing.data
+  // 殻で問題の設定を選んでいれば, その問題の設定が記録したプロジェクトの実験に絞る.
+  // 外したのはそのときの問題の設定だけで, 殻で選び直すとまた絞る
+  const { project } = useStage()
+  const [allFor, setAllFor] = useState<string | null>(null)
+  const filtering = project !== null && allFor !== project
+  const loaded = listing.data
+  const data = loaded && {
+    ...loaded,
+    experiments: filtering
+      ? loaded.experiments.filter(({ row }) => row.problem_ids.includes(project))
+      : loaded.experiments,
+  }
+  const hidden = loaded && data ? loaded.experiments.length - data.experiments.length : 0
   return (
     <Dialog title="実験の一覧から登録" onClose={onClose}>
       <p className="mb-3 text-xs text-ink-3">
         ML-Pathfinder で骨組みを書き出した問題の設定のプロジェクトから, {config.intro}
         を新しい順に並べます. 一式は写さずに, 場所だけを覚えます.
       </p>
+      {project !== null && (
+        <label className="mb-3 flex items-center gap-2 text-xs text-ink-2">
+          <input
+            type="checkbox"
+            checked={!filtering}
+            onChange={(event) => setAllFor(event.target.checked ? project : null)}
+          />
+          全ての問題の設定の実験を出す (選んだプロジェクト {project} の実験だけに絞っています
+          {filtering && hidden > 0 ? `. 他に ${hidden} 件` : ''})
+        </label>
+      )}
       {listing.isPending && <Spinner label="実験を探しています" />}
       {pending && <Spinner label={config.checking} />}
       {error && (
@@ -96,7 +122,13 @@ export function ExperimentsDialog({
         </div>
       )}
       {listing.error && <ErrorBox error={listing.error} />}
-      {data && data.experiments.length === 0 && (
+      {data && data.experiments.length === 0 && filtering && (
+        <p role="status" className="text-sm text-ink-2">
+          選んだプロジェクトの問題の設定が記録したプロジェクトに, 一式を持つ実験がありません.
+          全ての問題の設定の実験を出すか, 「場所で登録」を使います.
+        </p>
+      )}
+      {data && data.experiments.length === 0 && !filtering && (
         <p role="status" className="text-sm text-ink-2">
           一式を持つ実験がありません ({data.projects} 個のプロジェクトを見ました). ML-Pathfinder
           で骨組みを書き出して学習するか, 「場所で登録」を使います. 問題の設定の置き場:{' '}

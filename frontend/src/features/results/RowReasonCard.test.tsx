@@ -38,9 +38,11 @@ const view: RowReason = {
 
 const rowReason = vi.fn((_id: string, _row: number) => Promise.resolve(view))
 
-vi.mock('../../api/client', () => ({
-  api: { rowReason: (id: string, row: number) => rowReason(id, row) },
-}))
+vi.mock('../../api/client', async () =>
+  (await import('../../test/mockClient')).mockClient({
+    api: { rowReason: (id: string, row: number) => rowReason(id, row) },
+  }),
+)
 
 /** 行を親が持つ形で欄を描く */
 function Harness() {

@@ -10,6 +10,7 @@ import { PolicyResultPage } from './features/policies/PolicyResults'
 import { ComparePage } from './features/results/ComparePage'
 import { ResultPage } from './features/results/ResultPage'
 import { ResultsPage } from './features/results/ResultsPage'
+import { useStage } from './lib/stage'
 import { useTheme } from './lib/themeContext'
 
 /** 左の欄の移動先 */
@@ -35,6 +36,8 @@ function NavItem({ to, icon: Icon, label }: { to: string; icon: typeof Package; 
 
 export function App() {
   const { theme, toggle } = useTheme()
+  // 殻の下では, アプリの名前と明暗の切り替えを殻の上の帯が持つ
+  const { embedded } = useStage()
   return (
     <div className="flex h-full">
       <a
@@ -47,20 +50,22 @@ export function App() {
         aria-label="移動"
         className="flex w-56 shrink-0 flex-col gap-1 border-r border-line bg-surface p-3"
       >
-        <div className="mb-3 flex items-center justify-between px-2">
-          <span className="flex items-center gap-2 text-base font-semibold">
-            <Lightbulb size={20} className="text-accent" aria-hidden />
-            ML-Provide
-          </span>
-          <button
-            type="button"
-            onClick={toggle}
-            aria-label={theme === 'dark' ? '明るい表示にする' : '暗い表示にする'}
-            className="rounded p-1 text-ink-3 hover:bg-surface-2"
-          >
-            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-          </button>
-        </div>
+        {!embedded && (
+          <div className="mb-3 flex items-center justify-between px-2">
+            <span className="flex items-center gap-2 text-base font-semibold">
+              <Lightbulb size={20} className="text-accent" aria-hidden />
+              ML-Provide
+            </span>
+            <button
+              type="button"
+              onClick={toggle}
+              aria-label={theme === 'dark' ? '明るい表示にする' : '暗い表示にする'}
+              className="rounded p-1 text-ink-3 hover:bg-surface-2"
+            >
+              {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
+          </div>
+        )}
         <NavItem to="/" icon={Package} label="推論の一式" />
         <NavItem to="/results" icon={FileBarChart} label="結果" />
         <NavItem to="/policies" icon={Bot} label="方策の一式" />

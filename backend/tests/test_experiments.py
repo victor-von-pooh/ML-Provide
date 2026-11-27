@@ -93,6 +93,12 @@ def test_list_experiments(client: TestClient, tmp_path: Path) -> None:
     (problems / "d").mkdir()
     (problems / "d" / "problem.yaml").write_text("[", encoding="utf-8")
 
+    # 同じプロジェクトを記録した別の問題の設定は, 識別子だけを足す
+    ml_quest.save_problem(
+        {**problem, "project": {"path": str(project.resolve())}},
+        problems / "e"
+    )
+
     listing = client.get("/api/experiments").json()
     assert listing["projects"] == 1 and not listing["truncated"]
     rows = listing["experiments"]
@@ -101,6 +107,7 @@ def test_list_experiments(client: TestClient, tmp_path: Path) -> None:
     ]
     assert rows[0]["path"] == str(new.resolve())
     assert rows[0]["problem"] == problem["name"]
+    assert rows[0]["problem_ids"] == ["b", "e"]
     assert rows[0]["project"] == str(project.resolve())
     assert rows[0]["bundle_id"] is None
 

@@ -32,12 +32,14 @@ const remeasure = vi.fn(
     Promise.resolve(view),
 )
 
-vi.mock('../../api/client', () => ({
-  api: {
-    remeasure: (id: string, write: boolean, horizon?: number, time?: string, groups?: string) =>
-      remeasure(id, write, horizon, time, groups),
-  },
-}))
+vi.mock('../../api/client', async () =>
+  (await import('../../test/mockClient')).mockClient({
+    api: {
+      remeasure: (id: string, write: boolean, horizon?: number, time?: string, groups?: string) =>
+        remeasure(id, write, horizon, time, groups),
+    },
+  }),
+)
 
 /** 確かめの欄を描く関数 */
 function show(groupColumns: string[]) {

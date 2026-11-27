@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 
-import { api } from '../../api/client'
+import { useApi } from '../../api/client'
 import type { Result, SearchResultInfo } from '../../api/types'
 import { Button, Card, ErrorBox, Spinner } from '../../components/ui'
 import { searchPage, type SearchQuery } from '../../lib/search'
@@ -78,6 +78,7 @@ function SearchSummaryCard({ search }: { search: SearchResultInfo }) {
 
 /** 問いの写真と, 近い順の索引の写真 */
 function QueryRow({ resultId, query }: { resultId: string; query: SearchQuery }) {
+  const api = useApi()
   return (
     <li className="flex flex-col gap-2 border-t border-line px-4 py-3 first:border-t-0">
       <div className="flex flex-wrap items-baseline gap-2 text-sm">
@@ -123,6 +124,7 @@ function QueryRow({ resultId, query }: { resultId: string; query: SearchQuery })
 
 /** 検索の結果: 待ち時間と評価, 問いごとの似た写真 */
 export function SearchCards({ result, search }: { result: Result; search: SearchResultInfo }) {
+  const api = useApi()
   // ページごとの初めの行の位置 (問いの境目で切るので, 読んだページから次の位置が決まる)
   const [starts, setStarts] = useState<number[]>([0])
   const page = starts.length - 1

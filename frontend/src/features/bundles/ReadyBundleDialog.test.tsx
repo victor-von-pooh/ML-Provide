@@ -37,14 +37,16 @@ const readyPreview = vi.fn((_library: string, _model: string, _weights: string) 
 )
 const createReadyBundle = vi.fn((_body: unknown) => Promise.resolve({ id: 'r1', name: 'resnet18' }))
 
-vi.mock('../../api/client', () => ({
-  api: {
-    info: () => Promise.resolve({ ready_libraries: ['torchvision'] }),
-    readyPreview: (library: string, model: string, weights: string) =>
-      readyPreview(library, model, weights),
-    createReadyBundle: (body: unknown) => createReadyBundle(body),
-  },
-}))
+vi.mock('../../api/client', async () =>
+  (await import('../../test/mockClient')).mockClient({
+    api: {
+      info: () => Promise.resolve({ ready_libraries: ['torchvision'] }),
+      readyPreview: (library: string, model: string, weights: string) =>
+        readyPreview(library, model, weights),
+      createReadyBundle: (body: unknown) => createReadyBundle(body),
+    },
+  }),
+)
 
 /** 対話を描く */
 function renderDialog(onCreated = vi.fn()) {

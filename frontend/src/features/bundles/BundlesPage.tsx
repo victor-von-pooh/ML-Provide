@@ -3,7 +3,7 @@ import { FlaskConical, FolderInput, ListChecks, Package, PackagePlus, Plus } fro
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 
-import { api } from '../../api/client'
+import { useApi } from '../../api/client'
 import type { Bundle } from '../../api/types'
 import { PathPicker } from '../../components/PathPicker'
 import { Button, Card, EmptyState, ErrorBox, PageHeader, Spinner } from '../../components/ui'
@@ -44,6 +44,7 @@ function bundleSummary(bundle: Bundle): string {
 
 /** 登録した推論の一式の一覧 */
 export function BundlesPage() {
+  const api = useApi()
   const navigate = useNavigate()
   const client = useQueryClient()
   const bundles = useQuery({ queryKey: ['bundles'], queryFn: api.bundles })

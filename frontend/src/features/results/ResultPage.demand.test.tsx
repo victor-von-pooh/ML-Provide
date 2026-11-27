@@ -140,15 +140,17 @@ const orders = vi.fn((_id: string, offset: number, _limit: number): Promise<Orde
   }),
 )
 
-vi.mock('../../api/client', () => ({
-  api: {
-    result: () => Promise.resolve(result),
-    bundle: () => Promise.reject(new Error('無い')),
-    rows: () => Promise.resolve(rows),
-    orders: (id: string, offset: number, limit: number) => orders(id, offset, limit),
-    downloadUrl: (id: string) => `/api/results/${id}/download`,
-  },
-}))
+vi.mock('../../api/client', async () =>
+  (await import('../../test/mockClient')).mockClient({
+    api: {
+      result: () => Promise.resolve(result),
+      bundle: () => Promise.reject(new Error('無い')),
+      rows: () => Promise.resolve(rows),
+      orders: (id: string, offset: number, limit: number) => orders(id, offset, limit),
+      downloadUrl: (id: string) => `/api/results/${id}/download`,
+    },
+  }),
+)
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })

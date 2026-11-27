@@ -62,7 +62,7 @@ def load_unit_modules(names: list[str]) -> list[dict[str, Any]]:
 
     Raises
     ----------
-    RuntimeError
+    ValueError
         モジュールを読めない, 部品を宣言していない場合
     """
     # 読めないモジュールでの起動の停止 (気付かずに部品の無いまま動かない
@@ -72,7 +72,7 @@ def load_unit_modules(names: list[str]) -> list[dict[str, Any]]:
         try:
             loaded = ml_inference.register_units([name])
         except Exception as error:
-            raise RuntimeError(
+            raise ValueError(
                 f"起動の設定の部品のモジュール {name} を読めません: {error}"
             ) from error
         modules.append({"name": name, "units": list(loaded.get(name, []))})

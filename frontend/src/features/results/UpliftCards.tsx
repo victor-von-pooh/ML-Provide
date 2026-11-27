@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useId, useState } from 'react'
 
-import { api } from '../../api/client'
+import { useApi } from '../../api/client'
 import type {
   EffectDistribution,
   QiniCurve,
@@ -545,6 +545,7 @@ function TopRowsCard({ summary }: { summary: UpliftSummary }) {
 
 /** 配る行. 配る判断の文と前提と, 効果の高い順に配る数の上限までの行の一覧 (ページを送る) */
 function TreatedCard({ result }: { result: Result }) {
+  const api = useApi()
   const treat = treatSummary(result)
   const [offset, setOffset] = useState(0)
   const treated = useQuery({

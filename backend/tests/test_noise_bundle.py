@@ -247,8 +247,8 @@ def test_noise_problem_not_read(
     response = client.get(f"/api/bundles/{bundle['id']}/problem")
     assert response.status_code == 200, response.text
     assert response.json() == {
-        "path": None, "linked": None, "error": None, "hint": None,
-        "hint_note": None,
+        "path": None, "problem_id": None, "linked": None, "error": None,
+        "hint": None, "hint_note": None, "hint_project": False,
     }
 
 

@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 
-import { api } from '../../api/client'
+import { useApi } from '../../api/client'
 import type { Comparison } from '../../api/types'
 import { Card, ErrorBox, PageHeader, Spinner } from '../../components/ui'
 import { compareSections } from '../../lib/compare'
@@ -80,6 +80,7 @@ function CompareTable({ data, onlyDiffers }: { data: Comparison; onlyDiffers: bo
 
 /** 選んだ結果どうしの比べ (同じ一式か同じ入力の結果だけ) */
 export function ComparePage() {
+  const api = useApi()
   const [params] = useSearchParams()
   const ids = (params.get('ids') ?? '').split(',').filter(Boolean)
   const [onlyDiffers, setOnlyDiffers] = useState(false)

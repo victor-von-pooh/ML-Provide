@@ -4,7 +4,7 @@ import { Download, Files, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 
-import { api } from '../../api/client'
+import { useApi } from '../../api/client'
 import type { PolicyAct, PolicyResult } from '../../api/types'
 import { PathField } from '../../components/PathPicker'
 import { Button, Card, ErrorBox, PageHeader, Spinner } from '../../components/ui'
@@ -79,6 +79,7 @@ export function PolicyResultList({
 
 /** 観測のファイル (CSV の行か .npy の並び) でまとめて行動を決め, 結果を残す */
 export function BatchCard({ id }: { id: string }) {
+  const api = useApi()
   const navigate = useNavigate()
   const client = useQueryClient()
   const [source, setSource] = useState('')
@@ -142,6 +143,7 @@ export function BatchCard({ id }: { id: string }) {
 
 /** 方策の結果の表 (守りの結果で絞り, ページに分ける) */
 function ActionsTable({ id }: { id: string }) {
+  const api = useApi()
   const [page, setPage] = useState(0)
   const [status, setStatus] = useState('')
   const rows = useQuery({
@@ -242,6 +244,7 @@ function ActionsTable({ id }: { id: string }) {
 
 /** 方策の結果の画面 (守りの結果ごとの件数と 1 件ずつの表) */
 export function PolicyResultPage() {
+  const api = useApi()
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const client = useQueryClient()

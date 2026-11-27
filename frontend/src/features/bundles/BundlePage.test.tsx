@@ -44,16 +44,26 @@ const audio: Bundle = {
 // 画面に返す一式 (テストごとに差し替える)
 let shown: Bundle = audio
 
-const problem: ProblemState = { path: null, linked: null, error: null, hint: null, hint_note: null }
+const problem: ProblemState = {
+  path: null,
+  linked: null,
+  error: null,
+  hint: null,
+  hint_note: null,
+  problem_id: null,
+  hint_project: false,
+}
 
-vi.mock('../../api/client', () => ({
-  api: {
-    bundle: () => Promise.resolve(shown),
-    results: () => Promise.resolve([]),
-    bundleProblem: () => Promise.resolve(problem),
-    info: () => new Promise(() => {}),
-  },
-}))
+vi.mock('../../api/client', async () =>
+  (await import('../../test/mockClient')).mockClient({
+    api: {
+      bundle: () => Promise.resolve(shown),
+      results: () => Promise.resolve([]),
+      bundleProblem: () => Promise.resolve(problem),
+      info: () => new Promise(() => {}),
+    },
+  }),
+)
 
 /** 一式の画面を描く関数 */
 function show() {

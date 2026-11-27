@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Ruler, Save } from 'lucide-react'
 import { useState } from 'react'
 
-import { api } from '../../api/client'
+import { useApi } from '../../api/client'
 import type { Remeasure, Result } from '../../api/types'
 import { Button, Card, ErrorBox } from '../../components/ui'
 
@@ -30,6 +30,7 @@ export function RemeasureCard({
   /** 外れ方を種類ごとに分けられる列 (回帰と予測の一式だけ. 分けられなければ空) */
   groupColumns: string[]
 }) {
+  const api = useApi()
   const client = useQueryClient()
   // 最後に終わった確かめか書き戻しの結果と, そのときの段の数と時刻の列
   // (書き戻しは確かめたときの入力で行う)

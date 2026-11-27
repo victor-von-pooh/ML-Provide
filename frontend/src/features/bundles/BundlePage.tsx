@@ -3,7 +3,7 @@ import { Play, Trash2, Undo2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 
-import { api } from '../../api/client'
+import { useApi } from '../../api/client'
 import type { Bundle, Description, LinkedProblem, UncertaintySummary } from '../../api/types'
 import { PathField } from '../../components/PathPicker'
 import { Button, Card, ErrorBox, PageHeader, Spinner } from '../../components/ui'
@@ -104,6 +104,7 @@ import { CompareResultsCard, MAX_COMPARE } from '../results/CompareResultsCard'
 import { DecisionEditor } from '../results/DecisionEditor'
 import { RulesEditor } from '../results/RulesEditor'
 import { OutputNotices, OutputView } from './OutputView'
+import { useStage } from '../../lib/stage'
 import { ProblemCard } from './ProblemCard'
 
 /** 説明の 1 行 */
@@ -752,6 +753,7 @@ function PredictCard({
   description: Description
   linked: LinkedProblem | null
 }) {
+  const api = useApi()
   const navigate = useNavigate()
   const client = useQueryClient()
   const textual = description.kind === 'text' && !!description.text_column
@@ -1424,6 +1426,7 @@ function RankPredictCard({
   bundle: Bundle
   rank: NonNullable<Description['rank']>
 }) {
+  const api = useApi()
   const navigate = useNavigate()
   const client = useQueryClient()
   const [mode, setMode] = useState<'users' | 'file'>('users')
@@ -1582,6 +1585,7 @@ function SearchPredictCard({
   bundle: Bundle
   search: NonNullable<Description['search']>
 }) {
+  const api = useApi()
   const navigate = useNavigate()
   const client = useQueryClient()
   const [source, setSource] = useState('')
@@ -1662,6 +1666,7 @@ function SearchPredictCard({
 
 /** 一式の説明, 推論, 過去の結果 */
 export function BundlePage() {
+  const api = useApi()
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const client = useQueryClient()
@@ -1673,9 +1678,11 @@ export function BundlePage() {
   // 読まない種類の一式なら, サーバーは問題の設定を読まずに空の状態を返す)
   const listed = client.getQueryData<Bundle[]>(['bundles'])?.find((item) => item.id === id)
   const noProblem = (bundle.data?.uses_problem ?? listed?.uses_problem) === false
+  // 殻で選んだ問題の設定は, 一式の上に候補が無い場合の候補にする
+  const { project } = useStage()
   const problem = useQuery({
-    queryKey: ['bundle-problem', id],
-    queryFn: () => api.bundleProblem(id),
+    queryKey: ['bundle-problem', id, project],
+    queryFn: () => api.bundleProblem(id, project),
     enabled: !noProblem,
   })
   const remove = useMutation({
@@ -1858,6 +1865,7 @@ function UncertaintyText({ summary }: { summary: UncertaintySummary }) {
 
 /** 測り直した外れ方を, 一式を作ったときの記録に戻すボタン */
 function RestoreButton({ bundle }: { bundle: Bundle }) {
+  const api = useApi()
   const client = useQueryClient()
   const restore = useMutation({
     mutationFn: () => api.restoreUncertainty(bundle.id),

@@ -96,14 +96,16 @@ const rows: Rows = {
   ],
 }
 
-vi.mock('../../api/client', () => ({
-  api: {
-    result: () => Promise.resolve(result),
-    bundle: () => Promise.reject(new Error('無い')),
-    rows: () => Promise.resolve(rows),
-    downloadUrl: (id: string) => `/api/results/${id}/download`,
-  },
-}))
+vi.mock('../../api/client', async () =>
+  (await import('../../test/mockClient')).mockClient({
+    api: {
+      result: () => Promise.resolve(result),
+      bundle: () => Promise.reject(new Error('無い')),
+      rows: () => Promise.resolve(rows),
+      downloadUrl: (id: string) => `/api/results/${id}/download`,
+    },
+  }),
+)
 
 describe('並べるの結果の画面', () => {
   it('利用者ごとの上位の品物と点数, 並べられなかった理由, Recall@K と NDCG を出す', async () => {
