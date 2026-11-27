@@ -68,7 +68,7 @@ def known_projects(problems_dir: Path) -> list[dict[str, Any]]:
             continue
         if not isinstance(place, str) or not Path(place).is_dir():
             continue
-        # 同じプロジェクトを記録した別の問題の設定は, 識別子だけを足す
+        # 同じプロジェクトを記録した別の問題の設定は, 識別子だけの追加
         # (殻で選んだどちらの問題の設定でも, その実験に絞れるように)
         if place in seen:
             seen[place]["problem_ids"].append(child.name)
@@ -214,7 +214,8 @@ def collect_rows(
         数), experiments (新しい順の行), truncated (上限で打ち切ったか)
     """
     # プロジェクトごとの実験 (読めなくなったものは飛ばす)
-    # 絞るのは上限を数える前 (後ろのプロジェクトを打ち切りで落とさない)
+    # 上限を数える前の絞り込み (後ろのプロジェクトを打ち切りで落とさない
+    # ため)
     projects = [
         project for project in known_projects(problems_dir)
         if problem is None or problem in project["problem_ids"]

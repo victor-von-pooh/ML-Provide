@@ -792,24 +792,30 @@ def test_shell_project_hint(client: TestClient, tmp_path: Path) -> None:
     url = f"/api/bundles/{daily['id']}/problem"
     assert client.get(url).json()["hint"] is None
 
-    # 選んだプロジェクトの問題の設定を候補にする
+    # 選んだプロジェクトの問題の設定の候補
     state = client.get(url, params={"project": "one"}).json()
     assert state["hint"] == str((stored / "problem.yaml").resolve())
     assert state["hint_project"] is True and state["hint_note"] is None
 
-    # 置き場に無い識別子と, 置き場の外を指す識別子は候補にしない
+    # 置き場に無い識別子と, 置き場の外を指す識別子は候補の外
     for project in ["missing", "..", "../one", "one/problem.yaml"]:
         state = client.get(url, params={"project": project}).json()
         assert state["hint"] is None, project
 
-    # 推論に渡せない問題の設定 (受け持ちが列の予測でない) も候補にしない
+    # 推論に渡せない問題の設定 (受け持ちが列の予測でない) も候補の外
     ml_quest.save_problem(generate_problem(), tmp_path / "pathfinder"
                           / "problems" / "gen")
     assert client.get(url, params={"project": "gen"}).json()["hint"] is None
 
-    # 置き場の問題の設定をつなぐと識別子を返す. 置き場の外なら返さない
+    # 置き場の問題の設定をつないだときの識別子 (置き場の外なら無し)
     state = client.put(url, json={"path": str(stored)}).json()
     assert state["problem_id"] == "one"
+    # 外すときに渡した選びの, 外した後の候補での使用
+    state = client.put(
+        url, params={"project": "one"}, json={"path": None}
+    ).json()
+    assert state["path"] is None and state["hint_project"] is True
+    state = client.put(url, json={"path": str(stored)}).json()
     assert client.get(url).json()["problem_id"] == "one"
     outside = tmp_path / "elsewhere" / "one"
     ml_quest.save_problem(shop_problem(), outside)
@@ -817,7 +823,17 @@ def test_shell_project_hint(client: TestClient, tmp_path: Path) -> None:
     assert state["path"] == str((outside / "problem.yaml").resolve())
     assert state["problem_id"] is None
 
-    # 上に候補がある一式は, 選んだプロジェクトより上の候補を出す
+    # 置き場の <識別子> がリンクの場合の, その識別子
+    target = tmp_path / "linked-target"
+    ml_quest.save_problem(shop_problem(), target)
+    (tmp_path / "pathfinder" / "problems" / "two").symlink_to(target)
+    client.put(url, json={"path": None})
+    state = client.get(url, params={"project": "two"}).json()
+    assert state["hint_project"] is True
+    state = client.put(url, json={"path": state["hint"]}).json()
+    assert state["problem_id"] == "two"
+
+    # 上に候補がある一式は, 選んだプロジェクトより上の候補の表示
     project = tmp_path / "project"
     ml_quest.save_problem(shop_problem(), project)
     place = project / "outputs" / "run" / "inference"

@@ -95,8 +95,9 @@ export function useDraftWriter(
 ): () => void {
   // 中身は描くたびに作り直されるので, 文で比べる
   const text = JSON.stringify(value)
-  // 最初の中身 (戻した下書きなら, 触るまで書き直さずに時刻を保つ)
-  const initial = useRef(text)
+  // 保存場所にある中身 (最初から書きかけなら戻した下書きなので, 同じ中身のうちは
+  // 書き直さずに時刻を保つ. 書くたび, 消すたびに置き換える)
+  const stored = useRef<string | null>(dirty ? text : null)
   // まだ書いていない中身 (無ければ null) と, 待っている書き込み
   const pending = useRef<string | null>(null)
   const timer = useRef<number | null>(null)
@@ -111,15 +112,22 @@ export function useDraftWriter(
     if (item === null) return
     pending.current = null
     writeDraft(kind, JSON.parse(item))
+    stored.current = item
   })
   useEffect(() => {
     if (!dirty) {
       stop()
       pending.current = null
       clearDraft(kind)
+      stored.current = null
       return
     }
-    if (text === initial.current) return
+    // 保存場所と同じ中身に戻したら, 待っている書き込み (前の中身) を捨てる
+    if (text === stored.current) {
+      stop()
+      pending.current = null
+      return
+    }
     pending.current = text
     timer.current = window.setTimeout(() => flush.current(), delay)
     return stop
@@ -140,5 +148,6 @@ export function useDraftWriter(
     stop()
     pending.current = null
     clearDraft(kind)
+    stored.current = null
   }
 }

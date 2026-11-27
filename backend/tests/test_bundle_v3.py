@@ -78,7 +78,7 @@ def restore_registries(tmp_path: Path) -> Iterator[None]:
     loaded = set(ml_modelcontrol.custom.LOADED_MODULES)
     modules = set(sys.modules)
     yield
-    # テストが足した, テストの名前の頭を持つものだけを外す
+    # テストが足した, テストの名前の頭を持つものだけの除去
     for registry, before in [
         (ml_inference.PROCEDURES, procedures),
         (ml_modelcontrol.registry.REGISTRY, units),
@@ -1051,8 +1051,8 @@ def test_create_api_shared_registry(
     (folder / f"{lab}.py").write_text(
         LAB_CODE.format(unit=unit, walk=walk), encoding="utf-8"
     )
-    # 登録簿とモジュールは 1 つの処理で共有するので, 終わったら
-    # restore_registries が元に戻す
+    # 登録簿とモジュールは 1 つの処理で共有するので, 終わったときの
+    # restore_registries による後始末
 
     # 別のアプリ (ML-CreateArchitecture) の代わりに, 先に同じモジュールを
     # 部品のモジュールとして読み込む (手順もそのときに入る)
@@ -1158,7 +1158,7 @@ def test_stopped_module_keeps_other_procedures(
         encoding="utf-8"
     )
 
-    # 2 度とも同じ理由で止まり, 止まったモジュールの手順だけを外す
+    # 2 度とも同じ理由での停止と, 止まったモジュールの手順だけの除去
     for _ in range(2):
         with pytest.raises(ValueError, match="途中で止まる"):
             create_api(tmp_path / "home", procedures=[broken], units=[])
@@ -1166,7 +1166,7 @@ def test_stopped_module_keeps_other_procedures(
         assert f"{helper}_walk" in ml_inference.PROCEDURES
         assert helper in sys.modules and broken not in sys.modules
 
-    # 直したモジュールは読め, 別のモジュールの手順もそのまま使える
+    # 直したモジュールの読み込みと, 別のモジュールの手順の残り
     (folder / f"{broken}.py").write_text(
         STOPS_AFTER_HELPER.format(
             helper=helper, walk=f"{broken}_walk"
@@ -1204,7 +1204,7 @@ def test_cli_stops_on_unreadable_module(
     ----------
     None
     """
-    # 待ち受けずに, 起動を止めるかだけを見る
+    # 待ち受けずに, 起動を止めるかだけの確かめ
     monkeypatch.setenv("ML_PROVIDE_HOME", str(tmp_path / "home"))
     monkeypatch.setenv("ML_PROVIDE_TOKEN", TOKEN)
     monkeypatch.setattr(
@@ -1218,3 +1218,57 @@ def test_cli_stops_on_unreadable_module(
     assert stopped.value.code == 1
     shown = capsys.readouterr().out
     assert "起動できません" in shown and "no_such_module" in shown
+
+
+# 部品を宣言し, 手順を登録してから止まるモジュールの中身 ({unit} は部品の
+# 名前, {walk} は手順の名前)
+UNITS_THEN_STOP = UNIT_CODE + """
+
+from ml_inference import register_procedure
+
+
+def walk(model, state, steps, generator):
+    return state
+
+
+register_procedure("{walk}", walk, start="noise", time=False)
+raise ValueError("途中で止まる")
+"""
+
+
+@pytest.mark.usefixtures("restore_registries")
+def test_stopped_units_module_drops_procedures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    部品と手順の両方に渡したモジュールが部品の読み込みで止まっても, その
+    モジュールの手順を外し, 2 度目も同じ理由で止まることを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    monkeypatch: pytest.MonkeyPatch
+        import の場所を替える
+
+    Returns
+    ----------
+    None
+    """
+    # 部品を宣言し, 手順を登録してから止まるモジュール
+    folder = tmp_path / "modules"
+    folder.mkdir()
+    monkeypatch.syspath_prepend(str(folder))
+    lab = f"provide_both_{tmp_path.name.replace('-', '_')}"
+    walk = f"{lab}_walk"
+    (folder / f"{lab}.py").write_text(
+        UNITS_THEN_STOP.format(unit=f"{lab}.Twice", walk=walk),
+        encoding="utf-8"
+    )
+
+    # 2 度とも同じ理由での停止と, 手順の除去
+    for _ in range(2):
+        with pytest.raises(ValueError, match="途中で止まる"):
+            create_api(tmp_path / "home", procedures=[lab], units=[lab])
+        assert walk not in ml_inference.PROCEDURES
+

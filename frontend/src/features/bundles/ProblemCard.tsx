@@ -27,9 +27,12 @@ export function ProblemCard({
   const { project, onProjectChange } = useStage()
   const [path, setPath] = useState('')
   const link = useMutation({
-    mutationFn: (target: string | null) => api.linkProblem(bundleId, target),
+    // 外した後の候補にも殻の選びを使う
+    mutationFn: (target: string | null) => api.linkProblem(bundleId, target, project),
     onSuccess: (next) => {
       setPath('')
+      // 他の殻の選びで読んだ写しは古いので, 次に使うときに読み直す
+      client.invalidateQueries({ queryKey: ['bundle-problem', bundleId], refetchType: 'none' })
       client.setQueryData(['bundle-problem', bundleId, project], next)
       // 殻の選びが替わった後の値も同じ (つないだ一式は殻の選びで変わらない)
       if (next.problem_id !== null)

@@ -117,8 +117,11 @@ export function createApi(base: string) {
     /** つないだ問題の設定 (project は殻で選んだ問題の設定の識別子. 一式の上に候補が無い場合の候補) */
     bundleProblem: (id: string, project: string | null = null) =>
       request<ProblemState>(`${base}/bundles/${id}/problem${projectQuery(project)}`),
-    linkProblem: (id: string, path: string | null) =>
-      request<ProblemState>(`${base}/bundles/${id}/problem`, json('PUT', { path })),
+    linkProblem: (id: string, path: string | null, project: string | null = null) =>
+      request<ProblemState>(
+        `${base}/bundles/${id}/problem${projectQuery(project)}`,
+        json('PUT', { path }),
+      ),
     predict: (
       id: string,
       body: {

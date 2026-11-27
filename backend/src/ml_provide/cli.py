@@ -85,7 +85,7 @@ def main() -> None:
     units = None
     if args.units is not None:
         units = module_names(args.units)
-    # 読めない自作の部品と手順のモジュールでは, 理由を出して止める
+    # 読めない自作の部品と手順のモジュールでの, 理由の表示と停止
     try:
         app = create_app(
             token=get_token(None), allowed_hosts=hosts, procedures=modules,

@@ -255,6 +255,9 @@ describe('StageApp', () => {
     expect(asked).toContain('/api/infer/bundles/b1/problem?project=aaaa')
     fireEvent.click(screen.getByRole('button', { name: 'これをつなぐ' }))
     await waitFor(() => expect(onProjectChange).toHaveBeenCalledWith('bbbb'))
+    // つなぐ (外す) 要求にも渡し, 外した後の候補に使う
+    const linked = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT')
+    expect(String(linked?.[0])).toBe('/api/infer/bundles/b1/problem?project=aaaa')
     expect(onProjectChange).toHaveBeenCalledTimes(1)
   })
 

@@ -206,7 +206,8 @@ def stored_id(text: Optional[str], problems_dir: Path) -> Optional[str]:
     問題の設定の場所が置き場の <識別子>/problem.yaml なら, 識別子を返す関数
 
     殻 (ML-Studio) のプロジェクトは置き場の問題の設定の識別子なので, 置き場
-    の外のファイルは同じ名前のディレクトリでも識別子にしない
+    の外のファイルは同じ名前のディレクトリでも識別子にしない. <識別子> が
+    リンクなら, リンクの先のファイルも識別子にする
 
     Parameters
     ----------
@@ -220,22 +221,26 @@ def stored_id(text: Optional[str], problems_dir: Path) -> Optional[str]:
     found: Optional[str]
         識別子 (置き場の外か読めない場所なら None)
     """
-    # 実際のパスと, リンクを開かない絶対のパスの両方で比べる (置き場の
-    # <識別子> がリンクでも識別子にするため)
+    # 置き場の <識別子>/problem.yaml を実際のパスにしたものとの比べ
+    # (つないだ場所は実際のパスで残るので, <識別子> がリンクでも識別子
+    # にするため)
     found: Optional[str] = None
     if not text:
         return found
     try:
-        given = Path(text).expanduser()
-        top = problems_dir.expanduser()
-        pairs = [(given.absolute(), top.absolute()),
-                 (given.resolve(), top.resolve())]
-    except (OSError, RuntimeError, ValueError):
-        return found
-    for place, root in pairs:
-        if place.name == "problem.yaml" and place.parent.parent == root:
+        place = Path(text).expanduser().resolve()
+        root = problems_dir.expanduser()
+        if place.name == "problem.yaml" and (
+            place.parent.parent == root.resolve()
+        ):
             found = place.parent.name
             return found
+        for child in sorted(root.iterdir()):
+            if (child / "problem.yaml").resolve() == place:
+                found = child.name
+                return found
+    except (OSError, RuntimeError, ValueError):
+        return found
 
     return found
 
@@ -258,7 +263,7 @@ def project_file(
     path: Optional[Path]
         置き場の <識別子>/problem.yaml (識別子の形でなければ None)
     """
-    # 区切りや . で始まる名前で置き場の外を指さないため
+    # 区切りを含む名前と . で始まる名前の除外 (置き場の外を指さないため)
     path: Optional[Path] = None
     if not project or project != Path(project).name or (
         project.startswith(".") or "\\" in project
@@ -886,7 +891,7 @@ def problem_state(
         return state
 
     # つないでいなければ候補だけ. 一式の上に候補が無ければ, 殻で選んだ
-    # プロジェクトの問題の設定 (推論に渡せるもの)
+    # プロジェクトの問題の設定 (推論に渡せるもの) の候補
     if not isinstance(text, str):
         hint, note = find_hint(
             Path(str(entry["path"])), home, kind == "ready"
@@ -956,7 +961,8 @@ def get_problem(
 
 @router.put("/bundles/{bundle_id}/problem")
 def link_problem(
-    request: Request, bundle_id: str, body: ProblemLink
+    request: Request, bundle_id: str, body: ProblemLink,
+    project: Optional[str] = None
 ) -> dict[str, Any]:
     """
     一式に問題の設定をつなぐか, つなぎを外す関数
@@ -969,6 +975,8 @@ def link_problem(
         一式の id
     body: ProblemLink
         問題の設定の場所 (空で外す)
+    project: Optional[str] = None
+        殻で選んだプロジェクト (問題の設定の識別子. 外した後の候補に使う)
 
     Returns
     ----------
@@ -991,7 +999,7 @@ def link_problem(
         except KeyError as error:
             raise HTTPException(404, "一式が見つかりません") from error
         state = problem_state(
-            entry, store.home, request.app.state.problems_dir
+            entry, store.home, request.app.state.problems_dir, project
         )
         return state
     # 問題の設定を使わない種類の一式 (並べる, 検索など) にはつながない
@@ -1009,7 +1017,7 @@ def link_problem(
     except KeyError as error:
         raise HTTPException(404, "一式が見つかりません") from error
     state = problem_state(
-        entry, store.home, request.app.state.problems_dir
+        entry, store.home, request.app.state.problems_dir, project
     )
 
     return state
