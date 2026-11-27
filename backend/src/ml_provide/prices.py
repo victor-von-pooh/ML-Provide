@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from ml_provide.api import MAX_ROWS, find_result_meta, read_frame
 from ml_provide.reviews import plain_value
 
-router = APIRouter(prefix="/api")
+router = APIRouter()
 
 # 選んだ値段の 1 行に返す予測の表の列 (返す名前と表の列の名前)
 PRICE_COLUMNS = {

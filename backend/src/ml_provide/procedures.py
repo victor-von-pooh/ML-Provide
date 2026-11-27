@@ -76,7 +76,9 @@ def load_modules(names: list[str]) -> list[str]:
     起動の設定で明示したモジュールを import する関数
 
     モジュールは import のときに ml_inference.register_procedure で手順を
-    登録する
+    登録する. 登録簿はプロセスで 1 つなので, 読み込み済みのモジュールは
+    import し直さない (何度呼んでも, 同じプロセスの他のアプリが先に読み
+    込んでいても重ねて登録しない)
 
     Parameters
     ----------
@@ -96,15 +98,42 @@ def load_modules(names: list[str]) -> list[str]:
     # 読めないモジュールでの起動の停止 (気付かずに手順の無いまま動かないため)
     loaded: list[str] = []
     for name in names:
-        try:
-            importlib.import_module(name)
-        except Exception as error:
-            raise RuntimeError(
-                f"起動の設定の手順のモジュール {name} を読めません: {error}"
-            ) from error
+        load_module(name)
         loaded.append(name)
 
     return loaded
+
+
+def load_module(name: str) -> None:
+    """
+    1 つのモジュールを import して手順を登録する関数
+
+    Parameters
+    ----------
+    name: str
+        モジュールの名前
+
+    Returns
+    ----------
+    None
+
+    Raises
+    ----------
+    RuntimeError
+        モジュールを読めない場合 (途中で登録した手順は登録簿から外す)
+    """
+    # 読み込み済みのモジュールは sys.modules の前の結果 (登録し直さない)
+    before = set(PROCEDURES)
+    try:
+        importlib.import_module(name)
+    except Exception as error:
+        # 途中で止まったモジュールの手順の除去 (同じプロセスで直して読み
+        # 直したときに, 既にある名前の誤りにならないように)
+        for added in set(PROCEDURES) - before:
+            PROCEDURES.pop(added, None)
+        raise RuntimeError(
+            f"起動の設定の手順のモジュール {name} を読めません: {error}"
+        ) from error
 
 
 def registered() -> list[dict[str, Any]]:

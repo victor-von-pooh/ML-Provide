@@ -26,7 +26,7 @@ from ml_provide.policies import (
 )
 from ml_provide.store import Store
 
-router = APIRouter(prefix="/api")
+router = APIRouter()
 
 # 方策の結果を置くディレクトリ (置き場の中) と, 中のファイル
 RESULTS_DIR = "policy_results"

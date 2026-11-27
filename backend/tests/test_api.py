@@ -3,17 +3,19 @@ from pathlib import Path
 from typing import Any
 
 import ml_inference
+import ml_quest
 import numpy as np
 import pandas as pd
 import pytest
 import torch
 import yaml
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from ml_eda import export_dataset, load_data
 from ml_modelcontrol import build_model
 
 from ml_provide import reasons
-from ml_provide.app import create_app
+from ml_provide.app import cookie_name, create_api, create_app
 
 # テストで使うトークン
 TOKEN = "test-token"
@@ -166,6 +168,177 @@ def test_token_required(tmp_path: Path) -> None:
         data_dir=tmp_path / "home", token=TOKEN, allowed_hosts=["testserver"]
     )
     assert TestClient(app).get("/api/bundles").status_code == 401
+
+
+def test_standalone_checks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    単独の起動のアプリが確かめ, /api/auth, 画面の配信を持つことを
+    確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    monkeypatch: pytest.MonkeyPatch
+        画面の置き場の差し替え
+
+    Returns
+    ----------
+    None
+    """
+    # ビルド済みの画面の代わり
+    static_dir = (tmp_path / "static").resolve()
+    (static_dir / "assets").mkdir(parents=True)
+    (static_dir / "index.html").write_text("画面", encoding="utf-8")
+    (static_dir / "assets" / "a.js").write_text("1", encoding="utf-8")
+    monkeypatch.setattr("ml_provide.app.STATIC_DIR", static_dir)
+    standalone = create_app(
+        data_dir=tmp_path / "home", token=TOKEN,
+        allowed_hosts=["testserver"], procedures=[], units=[]
+    )
+    client = TestClient(standalone)
+
+    # 違うトークンは 401, 合うトークンは Cookie を置いて画面へ
+    assert client.get("/api/auth?token=x").status_code == 401
+    # GET でない /api/auth もトークンの確かめの対象
+    assert client.post(f"/api/auth?token={TOKEN}").status_code == 401
+    assert client.get("/api/bundles").status_code == 401
+    moved = client.get(f"/api/auth?token={TOKEN}", follow_redirects=False)
+    assert moved.status_code == 303 and moved.headers["location"] == "/"
+    assert cookie_name(TOKEN) in moved.cookies
+    assert client.get("/api/bundles").json() == []
+
+    # ヘッダーのトークンでも呼べる
+    header = TestClient(standalone).get(
+        "/api/bundles", headers={"x-provide-token": TOKEN}
+    )
+    assert header.status_code == 200
+
+    # 別の Origin の書き込みは 403, 同じ Origin は受け付ける (無い一式)
+    foreign = client.delete(
+        "/api/bundles/nothing", headers={"origin": "http://evil.example"}
+    )
+    assert foreign.status_code == 403
+    same = client.delete(
+        "/api/bundles/nothing", headers={"origin": "http://testserver"}
+    )
+    assert same.status_code == 404, same.text
+
+    # 別のホスト名は断る
+    other = client.get("/api/bundles", headers={"host": "evil.example"})
+    assert other.status_code == 400
+
+    # 画面の配信と, 無い API と仕様の画面の 404 (根の仕様の画面も出さず,
+    # 画面の中の移動先として index.html)
+    assert client.get("/").text == "画面"
+    assert client.get("/results").text == "画面"
+    assert client.get("/assets/a.js").text == "1"
+    for path in ["/api", "/api/nothing", "/api/openapi.json", "/api/docs"]:
+        assert client.get(path).status_code == 404, path
+    for path in ["/docs", "/openapi.json"]:
+        assert client.get(path).text == "画面", path
+
+
+def test_create_api_mounted(tmp_path: Path) -> None:
+    """
+    API だけのアプリを別の頭の下に mount して, 情報, 見本の一式の登録,
+    一覧, 消すが動き, 確かめを持たないことを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 殻の代わりのアプリ (確かめは殻が持つので, ここでは付けない)
+    shell = FastAPI()
+    shell.mount(
+        "/api/infer",
+        create_api(tmp_path / "home", procedures=[], units=[])
+    )
+    client = TestClient(shell)
+
+    # トークン無しで, 別の Origin からも呼べる (確かめは殻の役目)
+    info = client.get("/api/infer/info").json()
+    assert info["version"] == ml_inference.__version__
+    added = client.post(
+        "/api/infer/samples", headers={"origin": "http://other.example"}
+    )
+    assert added.status_code == 200, added.text
+    bundle_id = added.json()[0]["id"]
+    listed = client.get("/api/infer/bundles").json()
+    assert bundle_id in [item["id"] for item in listed]
+    assert (tmp_path / "home" / "bundles.json").is_file()
+    removed = client.delete(
+        f"/api/infer/bundles/{bundle_id}",
+        headers={"origin": "http://other.example"}
+    )
+    assert removed.status_code == 204, removed.text
+
+    # /auth も仕様の画面も持たない
+    for path in ["/auth", "/openapi.json", "/docs", "/redoc"]:
+        assert client.get(f"/api/infer{path}").status_code == 404, path
+
+    # 2 度呼んでも誤りにならず, 別の置き場の別のアプリ
+    again = TestClient(
+        create_api(tmp_path / "other", procedures=[], units=[])
+    )
+    assert again.get("/bundles").json() == []
+
+
+def test_create_api_problems_dir(tmp_path: Path) -> None:
+    """
+    実験の一覧が, create_api に渡した問題の設定の置き場か, 渡さなければ
+    ML_PATHFINDER_HOME の下を読むことを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 渡した問題の設定の置き場に, 一式のある実験を記録した問題の設定
+    # (環境変数の置き場とは別)
+    problems_dir = tmp_path / "shared" / "problems"
+    shell = FastAPI()
+    shell.mount(
+        "/api/infer",
+        create_api(
+            tmp_path / "home", problems_dir=problems_dir, procedures=[],
+            units=[]
+        )
+    )
+    client = TestClient(shell)
+    added = client.post("/api/infer/samples").json()
+    project = tmp_path / "project"
+    run = project / "outputs" / "sales" / "2026-01-01" / "10-00-00"
+    shutil.copytree(added[0]["path"], run / "inference")
+    problem = ml_quest.example_problem(next(iter(ml_quest.EXAMPLES)))
+    problem["project"] = {"path": str(project.resolve())}
+    ml_quest.save_problem(problem, problems_dir / "churn")
+    listing = client.get("/api/infer/experiments").json()
+    assert listing["problems"] == str(problems_dir)
+    assert listing["projects"] == 1
+    assert [row["experiment"] for row in listing["experiments"]] == [
+        "sales/2026-01-01/10-00-00"
+    ]
+    policies = client.get("/api/infer/experiments/policies").json()
+    assert policies["problems"] == str(problems_dir)
+
+    # problems_dir を渡さなければ ML_PATHFINDER_HOME の下の problems
+    default = TestClient(
+        create_api(tmp_path / "home", procedures=[], units=[])
+    )
+    expected = (tmp_path / "pathfinder").resolve() / "problems"
+    assert default.get("/experiments").json()["problems"] == str(expected)
 
 
 def test_create_predict_conclude(tmp_path: Path, client: TestClient) -> None:

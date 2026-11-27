@@ -10,11 +10,12 @@ import pandas as pd
 import pytest
 import torch
 import yaml
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from ml_eda import export_dataset, load_data
-from ml_modelcontrol import build_model
+from ml_modelcontrol import build_model, register_units_from
 
-from ml_provide.app import create_app
+from ml_provide.app import create_api, create_app
 
 # テストで使うトークン
 TOKEN = "test-token"
@@ -934,3 +935,107 @@ def test_units_from_startup_setting(
     })
     assert response.status_code == 400
     assert "ML_PROVIDE_UNITS" in response.json()["detail"]
+
+
+# 部品の宣言と手順の登録の両方を持つモジュールの中身 ({unit} は部品の
+# 名前, {walk} は手順の名前)
+LAB_CODE = UNIT_CODE + """
+
+from ml_inference import register_procedure
+
+
+def walk(model, state, steps, generator):
+    return state
+
+
+register_procedure("{walk}", walk, start="noise", time=False)
+"""
+
+# 手順を 1 つ登録してから読み込みに失敗するモジュールの中身
+BROKEN_CODE = """
+from ml_inference import register_procedure
+
+
+def walk(model, state, steps, generator):
+    return state
+
+
+register_procedure("{walk}", walk, start="noise", time=False)
+raise ValueError("途中で止まる")
+"""
+
+
+def test_create_api_shared_registry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    自作の部品と手順のモジュールを渡した create_api を 2 度呼べ, 同じ
+    プロセスの別のアプリが先に同じモジュールを読み込んでいても誤りに
+    ならないことを確かめる関数
+
+    殻 (ML-Studio) は 1 つのプロセスで 5 つのアプリを動かし,
+    ML-CreateArchitecture も同じ ML-ModelControl の登録簿に部品を入れる
+
+    Parameters
+    ----------
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    monkeypatch: pytest.MonkeyPatch
+        import の場所と登録簿を替える
+
+    Returns
+    ----------
+    None
+    """
+    # 部品と手順の両方を持つモジュール (名前はテストごとに別)
+    folder = tmp_path / "modules"
+    folder.mkdir()
+    monkeypatch.syspath_prepend(str(folder))
+    lab = f"provide_lab_{tmp_path.name.replace('-', '_')}"
+    unit = f"{lab}.Twice"
+    walk = f"{lab}_walk"
+    (folder / f"{lab}.py").write_text(
+        LAB_CODE.format(unit=unit, walk=walk), encoding="utf-8"
+    )
+    # 手順の登録簿とモジュールは 1 つの処理で共有するので, 終わったら外す
+    monkeypatch.setitem(ml_inference.PROCEDURES, walk, None)
+    monkeypatch.delitem(ml_inference.PROCEDURES, walk)
+    monkeypatch.delitem(sys.modules, lab, raising=False)
+
+    # 別のアプリ (ML-CreateArchitecture) の代わりに, 先に同じモジュールを
+    # 部品のモジュールとして読み込む (手順もそのときに入る)
+    assert register_units_from([lab]) == {lab: [unit]}
+    assert walk in ml_inference.PROCEDURES
+
+    # 同じモジュールで 2 度作っても, どちらも同じ部品と手順を持つ
+    shell = FastAPI()
+    for head in ["/api/infer", "/api/again"]:
+        shell.mount(head, create_api(
+            tmp_path / head.rsplit("/", 1)[-1], procedures=[lab],
+            units=[lab]
+        ))
+    client = TestClient(shell)
+    for head in ["/api/infer", "/api/again"]:
+        info = client.get(f"{head}/info").json()
+        assert info["unit_modules"] == [{"name": lab, "units": [unit]}]
+        assert info["procedure_modules"] == [lab]
+        names = [item["name"] for item in info["procedures"]]
+        assert names.count(walk) == 1
+
+    # モジュールを渡さないアプリは, 読み込んだモジュールを持たない
+    # (登録簿の手順は同じプロセスの全てのアプリから見える)
+    empty = TestClient(create_api(tmp_path / "c", procedures=[], units=[]))
+    info = empty.get("/info").json()
+    assert info["procedure_modules"] == [] and info["unit_modules"] == []
+
+    # 途中で止まるモジュールは, 登録した手順を外して止まり, 2 度目も
+    # 同じ理由で止まる (既にある名前の誤りにしない)
+    broken = f"{lab}_broken"
+    broken_walk = f"{broken}_walk"
+    (folder / f"{broken}.py").write_text(
+        BROKEN_CODE.format(walk=broken_walk), encoding="utf-8"
+    )
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match="途中で止まる"):
+            create_api(tmp_path / "d", procedures=[broken], units=[])
+        assert broken_walk not in ml_inference.PROCEDURES

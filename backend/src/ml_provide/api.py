@@ -34,7 +34,7 @@ from ml_provide.samples import write_samples
 from ml_provide.store import Store
 from ml_provide.units import unit_hint
 
-router = APIRouter(prefix="/api")
+router = APIRouter()
 
 # 推論を 1 つずつにする鍵 (大きなモデルでメモリを使い切らないように)
 PREDICT_LOCK = threading.Lock()

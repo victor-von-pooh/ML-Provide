@@ -14,7 +14,7 @@ from fastapi.responses import Response
 from ml_provide.api import USER_ERRORS, find_result_meta, get_store
 from ml_provide.cache import open_bundle
 
-router = APIRouter(prefix="/api")
+router = APIRouter()
 
 # 縮小画像の長い辺の上限 (画素)
 PHOTO_SIDE = 256
