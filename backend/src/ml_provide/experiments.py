@@ -9,9 +9,8 @@ from fastapi import APIRouter, Request
 
 from ml_provide.api import get_store
 from ml_provide.policies import SPEC_FILE, read_policies
-from ml_provide.settings import get_problems_dir
 
-router = APIRouter(prefix="/api")
+router = APIRouter()
 
 # 問題の設定のファイルを読めないときの例外
 READ_ERRORS = (OSError, ValueError, TypeError, AttributeError,
@@ -178,13 +177,16 @@ def experiment_row(
 
 
 def collect_rows(
-    registered: dict[str, str], folder: str, marker: str, key: str
+    problems_dir: Path, registered: dict[str, str], folder: str,
+    marker: str, key: str
 ) -> dict[str, Any]:
     """
     問題の設定に記録したプロジェクトの, 一式を持つ実験の一覧を作る関数
 
     Parameters
     ----------
+    problems_dir: Path
+        ML-Pathfinder の問題の設定の置き場
     registered: dict[str, str]
         登録した一式の場所から id
     folder: str
@@ -201,7 +203,6 @@ def collect_rows(
         数), experiments (新しい順の行), truncated (上限で打ち切ったか)
     """
     # プロジェクトごとの実験 (読めなくなったものは飛ばす)
-    problems_dir = get_problems_dir()
     projects = known_projects(problems_dir)
     rows: list[dict[str, Any]] = []
     truncated = False
@@ -240,7 +241,7 @@ def list_experiments(request: Request) -> dict[str, Any]:
     Parameters
     ----------
     request: Request
-        リクエスト
+        リクエスト (request.app は置き場と問題の設定の置き場を持つ)
 
     Returns
     ----------
@@ -255,7 +256,10 @@ def list_experiments(request: Request) -> dict[str, Any]:
         for key in ("path", "copied_from"):
             if isinstance(entry.get(key), str):
                 registered[entry[key]] = str(entry["id"])
-    listing = collect_rows(registered, BUNDLE_DIR, BUNDLE_FILE, "bundle_id")
+    problems_dir: Path = request.app.state.problems_dir
+    listing = collect_rows(
+        problems_dir, registered, BUNDLE_DIR, BUNDLE_FILE, "bundle_id"
+    )
 
     return listing
 
@@ -269,7 +273,7 @@ def list_policy_experiments(request: Request) -> dict[str, Any]:
     Parameters
     ----------
     request: Request
-        リクエスト
+        リクエスト (request.app は置き場と問題の設定の置き場を持つ)
 
     Returns
     ----------
@@ -284,7 +288,10 @@ def list_policy_experiments(request: Request) -> dict[str, Any]:
         for entry in read_policies(get_store(request))
         if isinstance(entry.get("path"), str)
     }
-    listing = collect_rows(registered, POLICY_DIR, POLICY_FILE, "policy_id")
+    problems_dir: Path = request.app.state.problems_dir
+    listing = collect_rows(
+        problems_dir, registered, POLICY_DIR, POLICY_FILE, "policy_id"
+    )
 
     return listing
 

@@ -26,7 +26,7 @@ from ml_provide.problem_files import (
 )
 from ml_provide.units import unit_hint
 
-router = APIRouter(prefix="/api")
+router = APIRouter()
 
 # 一式の場所から問題の設定の候補を探す, 上のディレクトリの数
 HINT_DEPTH = 4

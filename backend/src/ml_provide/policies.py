@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from ml_provide.api import MAX_NAME, get_store, user_error
 from ml_provide.store import Store
 
-router = APIRouter(prefix="/api")
+router = APIRouter()
 
 # 登録した方策の一式の一覧のファイル
 POLICIES_FILE = "policies.json"

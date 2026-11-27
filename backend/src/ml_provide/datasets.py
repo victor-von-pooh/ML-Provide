@@ -5,7 +5,7 @@ import ml_inference
 import yaml
 from fastapi import APIRouter, HTTPException
 
-router = APIRouter(prefix="/api")
+router = APIRouter()
 
 # データセットを読めないときの例外
 READ_ERRORS = (

@@ -45,13 +45,12 @@ ML-Provide の今の設計と決まりをまとめる. まだやっていない�
 | 新しいデータを推論し, 予測と結論を見る | 一式の種類ごとの推論と結果の画面 (列の予測, 領域, 点群, 画像, 文, 生成, 既製のモデル, 検索, 並べる, 群分け, 異常, 効果, 値段, 需要, 方策) | 統合以外は無し (まだ扱っていない型は低か条件待ち) |
 | 結論の決め方を変えて出し直す, 結果を保存し比べる | 結論の決め直し, 結果の保存と一覧, 結果どうしの比べ, CSV の書き出し, 1 行の予測の理由 | 統合以外は無し |
 | 問題の設定の損得と結論の決め方を既定にする | 一式に問題の設定をつなぐ (「問題の設定とのつなぎ」). 候補の探し方と食い違いの表示 | 統合以外は無し. 殻のプロジェクトの問題の設定をつなぎの候補にする (統合) |
-| 置き場, トークン, 待ち受けを外から決められる | `create_app(data_dir, token, allowed_hosts, procedures, units)` と環境変数 `ML_PROVIDE_HOME`, `ML_PROVIDE_TOKEN`. ポートは `--port` (起動のコマンドだけ) | 下の「統合に向けて足りないこと」 |
+| 置き場, トークン, 待ち受けを外から決められる | `create_app(data_dir, token, allowed_hosts, procedures, units)` と環境変数 `ML_PROVIDE_HOME`, `ML_PROVIDE_TOKEN`. ポートは `--port` (起動のコマンドだけ). 確かめを持たない API だけのアプリ (`create_api`) を殻の頭の下に mount できる (「4. API」) | 下の「統合に向けて足りないこと」 |
 
 ### 統合に向けて足りないこと
 
 殻 (ML-Studio) は 5 つのアプリを submodule で持ち, 1 つのコマンドで 1 つのポートを開く. 起動ごとのトークンと Origin の確かめは殻が 1 つだけ持つ. 各アプリは自分のバックエンドを `/api/<段階>`, 画面を `/<段階>` の下に載せられる形にし, 単独でも今まで通り動く.
 
-- バックエンド: API の経路の頭 `/api` が複数の router (`api.py`, `problems.py`, `experiments.py`, `datasets.py`, `policy_results.py`, `reviews.py`, `searches.py`, `demands.py`, `prices.py`, `treated.py` など) の `APIRouter(prefix="/api")`, 認証の経路 `/api/auth` (移動先は `/`), ビルド済みの画面の配信 (`/`) に固定されている. `create_app` は token と Origin と Host の確認を自分の middleware として必ず付ける. 殻が `/api/<段階>` の下に載せるには, 経路の頭を渡せる router (か sub-app) の作り方を公開し, 確認の middleware と画面の配信を切って殻の確認だけを使う形にする. 置き場 (`data_dir`), トークン, ホスト名は引数で渡せるので, その形は保つ
 - 画面: API の呼び出しが `src/api/client.ts` で `/api/...` の絶対のパスに固定され (`request` が `fetch(path)`), 経路は `BrowserRouter` を `basename` なしで作り (`main.tsx`. `App.tsx` の `Route` は `/`, `/bundles/:id`, `/results` など), `Link` と `NavLink` の行き先は絶対の経路, 資産は `/` 始まり, Vite の `base` は既定の `/`. 殻が `/<段階>` の下に載せるには, 画面の根の部品を公開し, basename と API の頭を props で渡せるようにし, 資産を相対にする
 - プロジェクト: 一式は画面で場所を選ぶか, 問題の設定の置き場から実験を選んで登録する (`GET /api/experiments`, 一式の登録と問題の設定のつなぎ). 殻で選んだ 1 つのプロジェクトを受け取り, そのプロジェクトの実験と問題の設定を既定の候補にして, 場所の選びと問題の設定のつなぎを手で写さずに済むようにする
 - 共通の部品と言葉: 見出し, 段階の並び, 誤りの出し方は各アプリの画面が別々に持つ. 殻の段階の並びと共通の部品にそろえ, 段階の名前と画面の言葉を 5 つのアプリでそろえる
@@ -74,6 +73,7 @@ ML-Inference と ML-Quest は submodule. 形の決まりを 2 か所に持たな
 
 - 実験のディレクトリには書かない (ML-Found の約束). 画面で作る一式は, このアプリの置き場に作る
 - ML-Quest は submodule. 問題の設定のファイルは ML-Quest を通して読む (YAML を自分で解釈しない)
+- ML-EDA と ML-ModelControl は git の依存 (`backend/pyproject.toml` の `tool.uv.sources`. 版は `backend/uv.lock` が決める). 2 つ以上のアプリが使うライブラリは, ML-Quest の submodule と ML-EDA の lock の版を殻 (ML-Studio) の設計の「共通のライブラリの版」の表の版にそろえる (殻の 1 つの環境には 1 つの版しか入らず, 表の版でこのアプリのテストを通しておくため. 上げるときは `uv lock --upgrade-package ml-eda` で表の版になったことを確かめる). ML-ModelControl と ML-Inference はまだ表に無いので, lock と submodule の版のまま
 - 予測の表 (`predictions.csv`) は ML-Inference の `read_result` で 1 回だけ読む (読み方の決まりは ML-Inference の「書き出し」). このアプリは次の列の型を `read_result` の引数で渡す (読んだ後に列を読み直すと, 行の多い結果で表を 2 回読むため). 1. `override_types` (`column_types` より強い). 画面の都合: `status`, `reason`, `decision` は文字 (理由と判断の空を空の文字で出すため), 表の出力の `table_columns` の種類の列は文字 (欠けた行の有無に依らず種類の値を文字で出すため), 群分けの `grouping.texts` は文字 (推論したときの値のまま, 割り当てた行の表と代表の行に出すため). 引く都合: 並べるの `user` と `item` は文字 (番号の表と同じく文字にして引くため). 結論の都合: 分類の `prediction` は文字 (数字のクラスも, 決め方のクラスの名前と合わせるため. 文の出力を除く) 2. `fallback_types` (`column_types` に無い列だけ). 版 1 と 2 の補い: 表の出力の `table_columns` の整数の列, 並べるの `rank`, 群分けの `group` は欠損を持てる整数 (版 1 と 2 の結果は列の型を持たないので, このアプリが結果に残した型で補う). 型は `result.yaml` の中身から決めるので, 推論の直後に結論を出し直すときも, 書いた `result.yaml` を読んで渡す (`column_types` は `write_result` が書くときに決めるため)
 
 ## 3. 画面
@@ -94,6 +94,26 @@ ML-Inference と ML-Quest は submodule. 形の決まりを 2 か所に持たな
 | 結果 | 意思決定 (行動の文, 前提, 決め直し, 過去のデータでのたどり直しと差の幅. 問題の設定をつないだ一式では, 守る指標をこの方針で数えた値, 守る線, 守れたか), 外れ方の確かめ (目的の列のある入力の結果だけ. 今の記録がこの実績を覆った割合と測り直した幅を見て, 確認の上で一式に書き戻す. 何段も先まで予測できる一式では, 何段先までと予測を始める時刻の列を選ぶと段ごとの外れ方も測る. 回帰と予測の一式では, 外れ方を分ける列 (結果の列から, 予測と判断の列, 種類ごとの確率の列, 目的の列を除いたもの) を選ぶと種類ごとの外れ方も測る (外れ方は行の種類で違うため). 書き戻した後の推論と決め直しから使う. 一式の画面で作ったときの記録に戻せる), 結論の文, 判断の内訳 (帯グラフ), まとめる列ごとの表, 列の効き (押すと求める), 1 行の予測の理由 (予測の表の「理由」か行の番号で選んだ行だけを求める), 予測の表 (ページ分け, 予測しなかった行と判断で絞る), 決め方を変えて出し直す, CSV のダウンロード |
 
 ## 4. API
+
+単独の起動では全て `/api` の下. 起動ごとのトークン (Cookie か `x-provide-token` ヘッダー) が要る. 殻の下では下の表の `/api` が殻の頭 (`/api/infer`) に替わる.
+
+### アプリの組み立て
+
+API と, 確かめと画面の配信を, 2 つの FastAPI のアプリに分ける (殻の下では確かめを殻の 1 つだけにするため).
+
+- `create_api(data_dir=None, *, problems_dir=None, procedures=None, units=None)`: API だけのアプリ. 殻はこれを `/api/infer` の頭の下に mount する
+    - router (`api`, `problems`, `experiments`, `datasets`, `policies`, `policy_results`, `reviews`, `treated`, `prices`, `demands`, `searches`) は全て頭なし (`APIRouter()`) で, このアプリに加える. mount の下の経路の照合は mount の頭を除いた経路で行われるため
+    - トークン, Origin, ホスト名の確かめ, `/api/auth`, 画面の配信を持たない (載せる側が持つ). 仕様の画面 (`/docs`, `/redoc`, `/openapi.json`) も閉じる
+    - 置き場は `app.state.store` (一式と結果) と `app.state.problems_dir` (ML-Pathfinder の問題の設定の置き場), 読んだ自作の部品と手順のモジュールは `app.state.unit_modules` と `app.state.procedure_modules` に持ち, ルートは `request.app.state` から取る. Starlette では mount した sub-app の中の `request.app` は sub-app を指すので, 殻の下でもルートはそのまま動く
+    - `data_dir` はこのアプリの置き場 (無ければ既定. 下の「6. 置き場」). `problems_dir` は問題の設定の置き場. 渡さなければ作ったときの `ML_PATHFINDER_HOME` (無ければ既定) の下の `problems`. 殻は ML-Pathfinder と同じ置き場を渡す. `procedures` と `units` は起動の設定の自作の手順と部品のモジュール (無ければ `ML_PROVIDE_PROCEDURES` と `ML_PROVIDE_UNITS`. 下の「8. 受け持ちと出力の形 (一式の版 3 と 4)」)
+    - lifespan と startup, shutdown の処理を使わず, 自作の部品と手順のモジュールの読み込みも呼んだときに済ませる (mount した sub-app の lifespan は動かないため). 読めないモジュールがあれば `RuntimeError` で止める
+    - 部品と手順の登録簿はプロセスで 1 つで, 同じプロセスの他のアプリ (ML-CreateArchitecture が入れる自作の部品など) と共有する. 読み込み済みのモジュールは前の結果を使うので, `create_api` を何度呼んでも, 他のアプリが先に同じモジュールを読み込んでいても重ねて登録しない (下の「8. 受け持ちと出力の形 (一式の版 3 と 4)」の「繰り返しの手順と起動の設定」と「自作の部品と起動の設定」)
+    - 呼ぶたびに新しいアプリを返す (テストと殻で別の置き場を渡せるように)
+- `create_app(data_dir=None, token=None, allowed_hosts=None, procedures=None, units=None)`: 単独で起動するアプリ. 確かめ (トークン, Origin, ホスト名), `/api/auth`, 画面の配信を持つ外側のアプリに, `create_api(data_dir, procedures=procedures, units=units)` を `/api` で mount する. 確かめは外側の middleware なので, mount した API にも効く. トークンを確かめないのは `GET /api/auth` だけ (他のメソッドの `/api/auth` も確かめる). Cookie の名前はトークンから作る (`ml_provide_token_<印>`. 同じ端末の別の起動と重ならないように). `/api/auth` は mount より先に登録し, 画面の配信 (他のパスは index.html) は最後に置く. `/api` ちょうどと `/api/` の下の無いパスは画面でなく 404 を返す. 仕様の画面 (`/docs`, `/redoc`, `/openapi.json`) は外側のアプリでも閉じる (トークン無しで API の形を見せないため)
+- 仕様の書き出し (`ml-provide --openapi`) は `create_api` の仕様のパスに `/api` を付けて書き出す (外側のアプリの仕様には mount した API が入らないため). 自作の部品と手順のモジュールは読み込まない
+- ポートはアプリが持たず, 起動の `ml-provide --port` (か殻) が決める
+
+### 経路
 
 | メソッドとパス | 内容 |
 | --- | --- |
@@ -210,8 +230,11 @@ ML-Inference と ML-Quest は submodule. 形の決まりを 2 か所に持たな
 
 - 一式の登録は場所だけを覚える (学習のスクリプトが実験の中に作った一式を, 写さずに使う). 置き場で作った一式は, 登録を消すと一式も消す
 - 結果は一式ごとに新しい順に並べる. 一式を消しても結果は残す (一式の名前を結果にも書く)
+- 実験の一覧は ML-Pathfinder の置き場 (`ML_PATHFINDER_HOME`. 無ければ `~/.ml-pathfinder`) の `problems/<識別子>/problem.yaml` を読む (2 つのアプリを同じ置き場で使うため, 環境変数も同じもの). 殻の下では `create_api` の `problems_dir` で問題の設定の置き場を渡す (上の「4. API」)
 
 ## 7. 安全
+
+確かめ (トークン, Origin, ホスト名) と `/api/auth` は `create_app` の外側のアプリだけが持ち, `create_api` は持たない. 殻の下では殻が 1 つだけ持つ (段階ごとに確かめが重ならないように). `create_api` を確かめの無いアプリに載せて待ち受けない.
 
 既定では `127.0.0.1` だけで待ち受ける (他のホストを指定すると警告を出す). 起動ごとのトークン (Cookie かヘッダー) を持つ要求だけを API で受け付け, 他のサイトからの書き込み (Origin が接続先と違うもの) と別のホスト名での接続を断る. 手元のファイルを読めるので, トークンは他の人に渡さない.
 
@@ -383,12 +406,14 @@ ML-Inference の既製のモデルの一式 (`ready`) は, 学習せずにその
 ### 繰り返しの手順と起動の設定
 
 - 一式の手順は ML-Inference の登録簿 (公開の `PROCEDURES`. 自作の手順は `register_procedure` で足す) から名前で引く. 組み込みは `ddim`, `euler`, `greedy`, `sample`
-- 研究の自作の手順は, 起動の設定で明示したモジュールだけを読み込む (手元で任意のコードを読み込まないため). `ml-provide --procedures pkg.module,...` か環境変数 `ML_PROVIDE_PROCEDURES` (`,` で区切る) に書いたモジュールを起動のときに import し, モジュールが import のときに `register_procedure` で登録する. 読めないモジュールは起動を止める
+- 研究の自作の手順は, 起動の設定で明示したモジュールだけを読み込む (手元で任意のコードを読み込まないため). `ml-provide --procedures pkg.module,...` か環境変数 `ML_PROVIDE_PROCEDURES` (`,` で区切る) に書いたモジュールを起動のときに import し, モジュールが import のときに `register_procedure` で登録する. 読めないモジュールは起動を止める. 読む途中で止まったモジュールが登録した手順は登録簿から外す (同じプロセスで直して読み直せるように. ML-ModelControl の部品の読み込みと同じ)
+- 手順の登録簿はプロセスで 1 つ. 読み込み済みのモジュールは import し直さず前の結果を使うので, `create_api` を何度呼んでも, 同じプロセスの他のアプリが先に同じモジュールを読み込んでいても重ねて登録しない
 - 一式やファイルに書かれたコードは自動では読まない. 登録簿に無い手順の一式は「手順 … は登録簿にありません. 自作の手順なら, 登録するモジュールを起動の設定 (`--procedures` か `ML_PROVIDE_PROCEDURES`) に足してから起動し直してください」で止める
 
 ### 自作の部品と起動の設定
 
 - 研究の自作の部品 (ML-ModelControl の `register_unit` で登録する部品) も手順と同じく, 起動の設定で明示したモジュールだけを読み込む (手元で任意のコードを読み込まないため). `ml-provide --units pkg.units,...` か環境変数 `ML_PROVIDE_UNITS` (`,` で区切る. 引数が環境変数より先) に書いたモジュールを, 起動のときに手順のモジュールの前 (手順のモジュールが部品を使えるように) で ML-Inference の `register_units` (ML-ModelControl の `register_units_from`) に渡す. モジュールは `UNITS` か `register_units(register)` で部品を宣言する (書き方は ML-ModelControl の docs/DESIGN.md の「自作の部品のモジュール」). 読めないモジュール, 部品を宣言していないモジュールは起動を止める
+- 部品の登録簿 (ML-ModelControl の登録簿) はプロセスで 1 つで, 殻の下では ML-CreateArchitecture と共有する. 読み込み済みのモジュールは ML-ModelControl が前の結果を返すので, `create_api` を何度呼んでも, 他のアプリが先に同じモジュールを読み込んでいても重ねて登録しない. 同じ部品の名前を別々のモジュールで宣言すると, 後から読んだアプリが起動を止める
 - `GET /api/info` の `unit_modules` に, 読んだモジュールと登録した部品の名前 (`[{"name": "pkg.units", "units": ["my.Block"]}]`) を返す
 - 一式のモデルの定義に書かれた部品の名前からは何も読み込まない. 登録されていない部品を使う一式は, ML-Inference の `UnregisteredUnitError` (部品の名前とノード) に「自作の部品なら, 部品を宣言したモジュールを起動の設定 (`--units` か `ML_PROVIDE_UNITS`) に足してから起動し直してください」を添えて, 一式の画面 (一覧と一式の欄の誤り), 場所での登録, 画面で作る一式, 推論の誤りに出す
 
@@ -416,7 +441,7 @@ ML-Inference の既製のモデルの一式 (`ready`) は, 学習せずにその
 
 学習した実験の一式を, 場所を打たずに登録するための一覧. 骨組みのプロジェクトの学習のスクリプトは, 実験のディレクトリ (`outputs/<名前>/<日付>/<時刻>`) の中に推論の一式 (`inference`) か, 方策の骨組みなら方策の一式 (`policy`) を作る. 推論の一式と方策の一式は別の一覧にし, 同じ探し方で並べる.
 
-- プロジェクトは, ML-Pathfinder の問題の設定の置き場 (環境変数 `ML_PATHFINDER_HOME`. 無ければ ML-Pathfinder と同じ既定の場所. その中の `problems/<id>/problem.yaml`) の問題の設定が記録したプロジェクト (`project.path`. ML-Quest の `record_project` が書く) から得る. 読めない問題の設定, 記録の無い問題の設定, 無いディレクトリは飛ばし, 同じプロジェクトは 1 つにまとめる
+- プロジェクトは, ML-Pathfinder の問題の設定の置き場 (`create_api` の `problems_dir`. 渡さなければ環境変数 `ML_PATHFINDER_HOME`, 無ければ ML-Pathfinder と同じ既定の場所. その中の `problems/<id>/problem.yaml`) の問題の設定が記録したプロジェクト (`project.path`. ML-Quest の `record_project` が書く) から得る. 読めない問題の設定, 記録の無い問題の設定, 無いディレクトリは飛ばし, 同じプロジェクトは 1 つにまとめる
 - 実験は, プロジェクトの `outputs` の下を 5 つ下のディレクトリまで探し (リンクはたどらない), `inference.yaml` を持つ `inference` を推論の一式, `policy.json` を持つ `policy` を方策の一式とする. 一式の更新の時刻の新しい順に並べ, 500 件で打ち切る (打ち切ったことを画面に出す)
 - 行は, 問題の設定の名前, 出力先からの実験の場所 (名前/日付/時刻), 一式の場所, 一式を作った時刻. 登録済みの一式 (登録の場所か, 外れ方を書き戻したときに写した元の場所が同じもの. 方策の一式は登録の場所が同じもの) は「登録済み」として一式か方策の画面へつなぐ
 - 一覧から登録すると, 名前を「問題の設定の名前 (実験の場所)」にして場所で登録し (同じ `POST /api/bundles` か `POST /api/policies`), 一式か方策の画面に移る. 一式は写さない. 場所で選ぶ登録も残す (置き場に記録の無いプロジェクトと, 骨組みでない一式のため)

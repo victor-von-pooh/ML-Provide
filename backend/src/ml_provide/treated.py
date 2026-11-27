@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from ml_provide.api import MAX_ROWS, find_result_meta, read_frame
 from ml_provide.reviews import acted_rows, plain_value
 
-router = APIRouter(prefix="/api")
+router = APIRouter()
 
 
 @router.get("/results/{result_id}/treated")

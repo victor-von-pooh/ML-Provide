@@ -4,7 +4,7 @@ from pathlib import Path
 
 import uvicorn
 
-from ml_provide.app import create_app, get_token
+from ml_provide.app import build_openapi, create_app, get_token
 from ml_provide.procedures import module_names
 
 
@@ -59,8 +59,8 @@ def main() -> None:
 
     # 画面の型を生成するための仕様の書き出し
     if args.openapi is not None:
-        app = create_app(token="unused")
-        text = json.dumps(app.openapi(), ensure_ascii=False, indent=2)
+        # 仕様の書き出しでは自作の部品と手順のモジュールを読み込まない
+        text = json.dumps(build_openapi(), ensure_ascii=False, indent=2)
         args.openapi.write_text(text + "\n", encoding="utf-8")
         return
 

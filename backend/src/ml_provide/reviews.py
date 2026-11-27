@@ -16,7 +16,7 @@ from ml_provide.api import (
     user_error,
 )
 
-router = APIRouter(prefix="/api")
+router = APIRouter()
 
 # 確かめた人の名前の長さの上限 (記録の 1 行に収まる名前)
 MAX_REVIEWER = 80

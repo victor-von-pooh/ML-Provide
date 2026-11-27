@@ -3,7 +3,7 @@ import os
 import secrets
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -23,7 +23,7 @@ from ml_provide.problems import router as problem_router
 from ml_provide.procedures import configured_modules, load_modules
 from ml_provide.reviews import router as review_router
 from ml_provide.searches import router as search_router
-from ml_provide.settings import get_data_dir
+from ml_provide.settings import get_data_dir, get_problems_dir
 from ml_provide.store import Store
 from ml_provide.treated import router as treated_router
 from ml_provide.units import configured_units, load_unit_modules
@@ -41,8 +41,20 @@ UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 TOKEN_ENV = "ML_PROVIDE_TOKEN"
 TOKEN_COOKIE = "ml_provide_token"
 
-# トークンを受け取って Cookie に保存するパス
+# 単独の起動で API を置く頭と, トークンを受け取って Cookie に保存するパス
+API_PREFIX = "/api"
 AUTH_PATH = "/api/auth"
+
+# 仕様の名前と版
+TITLE = "ML-Provide"
+VERSION = "0.1.0"
+
+# API だけのアプリに加える router (どれも頭なし)
+ROUTERS = [
+    router, problem_router, experiment_router, dataset_router,
+    policy_router, policy_result_router, review_router, treated_router,
+    price_router, demand_router, search_router
+]
 
 
 def route_id(route: APIRoute) -> str:
@@ -97,64 +109,48 @@ async def check_origin(
     return response
 
 
-def make_auth_check(
-    token: str
-) -> Callable[[Request, Callable[[Request], Awaitable[Response]]],
-              Awaitable[Response]]:
+async def check_token(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
     """
-    API の呼び出しに起動ごとのトークンを求める処理を作る関数
+    API の呼び出しに起動ごとのトークンを求める関数
 
     Parameters
     ----------
-    token: str
-        起動ごとのトークン
+    request: Request
+        リクエスト (request.app は外側のアプリ. token を持つ)
+    call_next: Callable[[Request], Awaitable[Response]]
+        次の処理
 
     Returns
     ----------
-    check: Callable
-        トークンが無い API の呼び出しを 401 にする処理
+    response: Response
+        応答, Cookie かヘッダーのトークンが合わない API の呼び出しは 401
     """
+    # 手元のファイルを読めるので, 同じ端末の他の利用者からも使えないように
+    # 確認
+    token: str = request.app.state.token
+    path = request.url.path
+    # トークンを受け取る GET /api/auth だけを除く (他のメソッドは確かめる)
+    opening = path == AUTH_PATH and request.method == "GET"
+    if path.startswith(API_PREFIX) and not opening:
+        given = [
+            request.cookies.get(cookie_name(token), ""),
+            request.headers.get("x-provide-token", "")
+        ]
+        if not any(same_token(value, token) for value in given):
+            response: Response = JSONResponse(
+                {
+                    "detail": "起動したときに表示された URL "
+                    f"({AUTH_PATH}?token=...) を開いてください"
+                },
+                status_code=401
+            )
+            return response
 
-    async def check(
-        request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
-        """
-        Cookie かヘッダーのトークンを確かめる関数
+    response = await call_next(request)
 
-        Parameters
-        ----------
-        request: Request
-            リクエスト
-        call_next: Callable[[Request], Awaitable[Response]]
-            次の処理
-
-        Returns
-        ----------
-        response: Response
-            応答, トークンが合わない API の呼び出しは 401
-        """
-        # 手元のファイルを読めるので, 同じ端末の他の利用者からも使えないように確認
-        path = request.url.path
-        if path.startswith("/api") and path != AUTH_PATH:
-            given = [
-                request.cookies.get(cookie_name(token), ""),
-                request.headers.get("x-provide-token", "")
-            ]
-            if not any(same_token(value, token) for value in given):
-                response: Response = JSONResponse(
-                    {
-                        "detail": "起動したときに表示された URL "
-                        f"({AUTH_PATH}?token=...) を開いてください"
-                    },
-                    status_code=401
-                )
-                return response
-
-        response = await call_next(request)
-
-        return response
-
-    return check
+    return response
 
 
 def cookie_name(token: str) -> str:
@@ -220,6 +216,37 @@ def get_token(token: Optional[str]) -> str:
     return value
 
 
+def serve_index(request: Request, path: str) -> FileResponse:
+    """
+    画面のファイルか, 画面の中の移動先として index.html を返す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト (request.app は画面のディレクトリを持つ)
+    path: str
+        要求されたパス
+
+    Returns
+    ----------
+    response: FileResponse
+        ファイルか index.html
+    """
+    # 存在しない API は画面ではなく 404 として返却
+    if path == "api" or path.startswith("api/"):
+        raise HTTPException(404, "API が見つかりません")
+
+    static_dir: Path = request.app.state.static_dir
+    target = (static_dir / path).resolve()
+    if path and target.is_relative_to(static_dir) and target.is_file():
+        response = FileResponse(target)
+        return response
+
+    response = FileResponse(static_dir / "index.html")
+
+    return response
+
+
 def mount_frontend(app: FastAPI, static_dir: Path) -> None:
     """
     ビルド済みの画面を配信する設定を加える関数
@@ -235,42 +262,136 @@ def mount_frontend(app: FastAPI, static_dir: Path) -> None:
     ----------
     None
     """
-    index = static_dir / "index.html"
-    if not index.is_file():
+    if not (static_dir / "index.html").is_file():
         return
 
-    # JavaScript や CSS などのファイルの配信
+    # JavaScript や CSS などのファイルと, 他のパスの index.html の配信
+    app.state.static_dir = static_dir
     app.mount(
         "/assets", StaticFiles(directory=static_dir / "assets"), name="assets"
     )
+    app.add_api_route(
+        "/{path:path}", serve_index, methods=["GET"], include_in_schema=False
+    )
 
-    @app.get("/{path:path}", include_in_schema=False)
-    def serve_index(path: str) -> FileResponse:
-        """
-        画面のファイルか, 画面の中の移動先として index.html を返す関数
 
-        Parameters
-        ----------
-        path: str
-            要求されたパス
+def authenticate(request: Request, token: str = "") -> Response:
+    """
+    起動時の URL のトークンを Cookie に保存して画面に移る関数
 
-        Returns
-        ----------
-        response: FileResponse
-            ファイルか index.html
-        """
-        # 存在しない API は画面ではなく 404 として返却
-        if path == "api" or path.startswith("api/"):
-            raise HTTPException(404, "API が見つかりません")
+    Parameters
+    ----------
+    request: Request
+        リクエスト (request.app は外側のアプリ. token を持つ)
+    token: str = ""
+        URL で渡されたトークン
 
-        target = (static_dir / path).resolve()
-        if path and target.is_relative_to(static_dir) and target.is_file():
-            response = FileResponse(target)
-            return response
-
-        response = FileResponse(index)
-
+    Returns
+    ----------
+    response: Response
+        画面への移動, トークンが違う場合は 401
+    """
+    if not same_token(token, request.app.state.token):
+        response: Response = JSONResponse(
+            {"detail": "トークンが違います"}, status_code=401
+        )
         return response
+
+    response = RedirectResponse("/", status_code=303)
+    response.set_cookie(
+        cookie_name(token), token, httponly=True, samesite="strict"
+    )
+
+    return response
+
+
+def create_api(
+    data_dir: Optional[Path] = None, *, problems_dir: Optional[Path] = None,
+    procedures: Optional[list[str]] = None,
+    units: Optional[list[str]] = None
+) -> FastAPI:
+    """
+    確かめと画面の配信を持たない, API だけのアプリを組み立てる関数
+
+    殻 (ML-Studio) は /api/infer のような頭の下に mount し, トークン,
+    Origin, ホスト名の確かめは殻が持つ
+
+    Parameters
+    ----------
+    data_dir: Optional[Path] = None
+        アプリのデータの置き場, None の場合は既定の場所
+    problems_dir: Optional[Path] = None
+        ML-Pathfinder の問題の設定の置き場, None の場合は既定の場所
+        (環境変数 ML_PATHFINDER_HOME か, ホームの下)
+    procedures: Optional[list[str]] = None
+        自作の繰り返しの手順を登録するモジュール, None の場合は環境変数
+        ML_PROVIDE_PROCEDURES (起動の設定で明示したものだけを読む)
+    units: Optional[list[str]] = None
+        自作の部品を宣言するモジュール, None の場合は環境変数
+        ML_PROVIDE_UNITS (起動の設定で明示したものだけを読む)
+
+    Returns
+    ----------
+    app: FastAPI
+        頭なしの経路を持つアプリ (仕様の画面は閉じる)
+
+    Raises
+    ----------
+    RuntimeError
+        読めないモジュールがある場合
+    """
+    # 手元のファイルを読めるので, 仕様の画面は出さない
+    # (仕様の書き出しは build_openapi)
+    app = FastAPI(
+        title=TITLE, version=VERSION, generate_unique_id_function=route_id,
+        docs_url=None, redoc_url=None, openapi_url=None
+    )
+
+    # 一式と推論の結果の置き場と, 問題の設定の置き場をアプリに保存
+    # (ルートは request.app.state から)
+    home = data_dir or get_data_dir()
+    app.state.store = Store(home)
+    app.state.problems_dir = problems_dir or get_problems_dir()
+
+    # 起動の設定で明示した自作の部品と手順のモジュールだけの読み込み
+    # (手順のモジュールが部品を使えるように部品が先. 登録簿はプロセスで
+    # 1 つで, 読み込み済みのモジュールは前の結果なので, 何度呼んでも
+    # 重ねて登録しない)
+    app.state.unit_modules = load_unit_modules(configured_units(units))
+    app.state.procedure_modules = load_modules(
+        configured_modules(procedures)
+    )
+
+    # API の登録
+    for part in ROUTERS:
+        app.include_router(part)
+
+    return app
+
+
+def build_openapi() -> dict[str, Any]:
+    """
+    単独の起動での経路 (/api の下) の OpenAPI の仕様を作る関数
+
+    外側のアプリの仕様には mount した API が入らないので, API だけの
+    アプリの仕様のパスに頭を付ける. 自作の部品と手順のモジュールは読み
+    込まない
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    ----------
+    schema: dict[str, Any]
+        OpenAPI の仕様
+    """
+    schema = create_api(procedures=[], units=[]).openapi()
+    schema["paths"] = {
+        API_PREFIX + path: item for path, item in schema["paths"].items()
+    }
+
+    return schema
 
 
 def create_app(
@@ -280,7 +401,10 @@ def create_app(
     units: Optional[list[str]] = None
 ) -> FastAPI:
     """
-    アプリを組み立てる関数
+    単独で起動するアプリを組み立てる関数
+
+    トークン, Origin, ホスト名の確かめ, /api/auth, 画面の配信を持つ外側の
+    アプリに, API だけのアプリ (create_api) を /api で mount する
 
     Parameters
     ----------
@@ -301,24 +425,16 @@ def create_app(
     ----------
     app: FastAPI
         アプリ
+
+    Raises
+    ----------
+    RuntimeError
+        読めないモジュールがある場合 (起動を止める)
     """
-    # 手元のファイルを読めるので, 仕様の画面はトークン無しで見せない
-    # (仕様の書き出しは cli の --openapi)
+    # 確かめと画面の配信を持つ外側のアプリ (仕様の画面は閉じる)
     app = FastAPI(
-        title="ML-Provide", version="0.1.0",
-        generate_unique_id_function=route_id, docs_url=None,
-        redoc_url=None, openapi_url=None
-    )
-
-    # 登録した一式と推論の結果の置き場をアプリに保存
-    home = data_dir or get_data_dir()
-    app.state.store = Store(home)
-
-    # 起動の設定で明示した自作の部品と手順のモジュールだけの読み込み
-    # (手順のモジュールが部品を使えるように部品が先)
-    app.state.unit_modules = load_unit_modules(configured_units(units))
-    app.state.procedure_modules = load_modules(
-        configured_modules(procedures)
+        title=TITLE, version=VERSION, docs_url=None, redoc_url=None,
+        openapi_url=None
     )
 
     # トークンの無い呼び出し, 他のサイトからの書き込み,
@@ -331,52 +447,20 @@ def create_app(
             f"{AUTH_PATH}?token={app.state.token}",
             flush=True
         )
-    app.middleware("http")(make_auth_check(app.state.token))
+    app.middleware("http")(check_token)
     app.middleware("http")(check_origin)
     app.add_middleware(
         TrustedHostMiddleware, allowed_hosts=allowed_hosts or ALLOWED_HOSTS
     )
 
-    @app.get(AUTH_PATH, include_in_schema=False)
-    def authenticate(token: str = "") -> Response:
-        """
-        起動時の URL のトークンを Cookie に保存して画面に移る関数
-
-        Parameters
-        ----------
-        token: str = ""
-            URL で渡されたトークン
-
-        Returns
-        ----------
-        response: Response
-            画面への移動, トークンが違う場合は 401
-        """
-        if not same_token(token, app.state.token):
-            response: Response = JSONResponse(
-                {"detail": "トークンが違います"}, status_code=401
-            )
-            return response
-
-        response = RedirectResponse("/", status_code=303)
-        response.set_cookie(
-            cookie_name(token), token, httponly=True, samesite="strict"
-        )
-
-        return response
-
-    # API と画面の登録
-    app.include_router(router)
-    app.include_router(problem_router)
-    app.include_router(experiment_router)
-    app.include_router(dataset_router)
-    app.include_router(policy_router)
-    app.include_router(policy_result_router)
-    app.include_router(review_router)
-    app.include_router(treated_router)
-    app.include_router(price_router)
-    app.include_router(demand_router)
-    app.include_router(search_router)
+    # トークンの受け取り, API, 画面の登録 (/api/auth は API より先に照合)
+    app.add_api_route(
+        AUTH_PATH, authenticate, methods=["GET"], include_in_schema=False
+    )
+    app.mount(
+        API_PREFIX,
+        create_api(data_dir, procedures=procedures, units=units)
+    )
     mount_frontend(app, STATIC_DIR)
 
     return app
