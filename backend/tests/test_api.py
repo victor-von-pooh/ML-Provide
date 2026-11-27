@@ -240,6 +240,53 @@ def test_standalone_checks(
     for path in ["/docs", "/openapi.json"]:
         assert client.get(path).text == "画面", path
 
+    # HEAD も GET と同じく受け付け, 本体は返さない
+    for path in ["/", "/results", "/assets/a.js"]:
+        head = client.head(path)
+        assert head.status_code == 200 and head.content == b"", path
+
+    # NUL の字や長すぎる名前のように調べられない経路も index.html
+    for path in ["/a%00b", "/" + "a" * 300, "/a/" + "b" * 300 + "/c"]:
+        assert client.get(path).text == "画面", path
+
+
+def test_empty_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str]
+) -> None:
+    """
+    空のトークンを渡した場合にランダムに作り, 開き方を表示することを
+    確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        一時ディレクトリ
+    monkeypatch: pytest.MonkeyPatch
+        環境変数の差し替え
+    capsys: pytest.CaptureFixture[str]
+        表示の取り込み
+
+    Returns
+    ----------
+    None
+    """
+    monkeypatch.delenv("ML_PROVIDE_TOKEN", raising=False)
+    standalone = create_app(
+        data_dir=tmp_path, token="", allowed_hosts=["testserver"],
+        procedures=[], units=[]
+    )
+    token = standalone.state.token
+    assert token
+    assert f"/api/auth?token={token}" in capsys.readouterr().out
+
+    # 空のトークンでは呼べず, 作ったトークンで呼べる
+    client = TestClient(standalone)
+    assert client.get("/api/bundles",
+                      headers={"x-provide-token": ""}).status_code == 401
+    assert client.get("/api/bundles",
+                      headers={"x-provide-token": token}).json() == []
+
 
 def test_create_api_mounted(tmp_path: Path) -> None:
     """
