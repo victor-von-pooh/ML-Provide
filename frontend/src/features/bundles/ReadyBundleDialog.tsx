@@ -2,7 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { PackagePlus } from 'lucide-react'
 import { useState } from 'react'
 
-import { api } from '../../api/client'
+import { useApi } from '../../api/client'
 import type { Bundle } from '../../api/types'
 import { Dialog } from '../../components/Dialog'
 import { Button, ErrorBox, Spinner } from '../../components/ui'
@@ -35,6 +35,7 @@ export function ReadyBundleDialog({
   onClose: () => void
   onCreated: (bundle: Bundle) => void
 }) {
+  const api = useApi()
   const info = useQuery({ queryKey: ['info'], queryFn: api.info, staleTime: Infinity })
   const libraries = info.data?.ready_libraries ?? [EXAMPLE.library]
   const [library, setLibrary] = useState(EXAMPLE.library)

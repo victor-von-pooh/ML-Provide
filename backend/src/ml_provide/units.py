@@ -10,7 +10,7 @@ from typing import Any, Optional
 
 import ml_inference
 
-from ml_provide.procedures import module_names
+from ml_provide.procedures import drop_stopped, module_names
 
 # 自作の部品を宣言するモジュールを書く環境変数 (, で区切る)
 UNITS_ENV = "ML_PROVIDE_UNITS"
@@ -62,17 +62,22 @@ def load_unit_modules(names: list[str]) -> list[dict[str, Any]]:
 
     Raises
     ----------
-    RuntimeError
+    ValueError
         モジュールを読めない, 部品を宣言していない場合
     """
     # 読めないモジュールでの起動の停止 (気付かずに部品の無いまま動かない
     # ため)
     modules: list[dict[str, Any]] = []
     for name in names:
+        before = set(ml_inference.PROCEDURES)
         try:
             loaded = ml_inference.register_units([name])
         except Exception as error:
-            raise RuntimeError(
+            # 手順も登録するモジュールが途中で止まった場合の, そのモジュール
+            # の手順の除去 (手順の読み込みと同じ外し方. 読み直したときに
+            # 既にある名前の誤りにならないように)
+            drop_stopped(before)
+            raise ValueError(
                 f"起動の設定の部品のモジュール {name} を読めません: {error}"
             ) from error
         modules.append({"name": name, "units": list(loaded.get(name, []))})

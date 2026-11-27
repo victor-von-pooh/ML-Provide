@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 
-import { api } from '../../api/client'
+import { useApi } from '../../api/client'
 import type { AnomalyEvaluation, AnomalySummary, Judgment, Result } from '../../api/types'
 import { Button, Card, ErrorBox, Spinner } from '../../components/ui'
 import {
@@ -203,6 +203,7 @@ function TopRowsCard({ summary }: { summary: AnomalySummary }) {
  * 1 件ずつ「異常」か「正常」を付けるボタン
  */
 function ReviewCard({ result }: { result: Result }) {
+  const api = useApi()
   const client = useQueryClient()
   const triage = triageSummary(result)
   const [reviewer, setReviewer] = useState(loadReviewer)
@@ -376,6 +377,7 @@ function ReviewCard({ result }: { result: Result }) {
 
 /** 確認の記録 (書いた順) */
 function ReviewRecordsCard({ result }: { result: Result }) {
+  const api = useApi()
   const reviews = useQuery({
     queryKey: ['reviews', result.id],
     queryFn: () => api.reviews(result.id),

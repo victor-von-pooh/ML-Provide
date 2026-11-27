@@ -72,18 +72,22 @@ const resnet: Bundle = {
 
 const bundleProblem = vi.fn()
 
-vi.mock('../../api/client', () => ({
-  api: {
-    bundle: () => Promise.resolve(resnet),
-    results: () => Promise.resolve([]),
-    bundleProblem: () => bundleProblem(),
-    info: () => new Promise(() => {}),
-  },
-}))
+vi.mock('../../api/client', async () =>
+  (await import('../../test/mockClient')).mockClient({
+    api: {
+      bundle: () => Promise.resolve(resnet),
+      results: () => Promise.resolve([]),
+      bundleProblem: () => bundleProblem(),
+      info: () => new Promise(() => {}),
+    },
+  }),
+)
 
 // 作り方が既製のモデルをそのままの問題の設定をつないだ状態 (重みのハッシュ値が一式と違う)
 const linkedState: ProblemState = {
   path: '/project/problem.yaml',
+  problem_id: null,
+  hint_project: false,
   linked: {
     name: '写真の仕分け',
     path: '/project/problem.yaml',

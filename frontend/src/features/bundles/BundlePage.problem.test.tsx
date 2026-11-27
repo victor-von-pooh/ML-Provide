@@ -45,7 +45,15 @@ function makeBundle(id: string, kind: string, usesProblem: boolean): Bundle {
   }
 }
 
-const problem: ProblemState = { path: null, linked: null, error: null, hint: null, hint_note: null }
+const problem: ProblemState = {
+  path: null,
+  linked: null,
+  error: null,
+  hint: null,
+  hint_note: null,
+  problem_id: null,
+  hint_project: false,
+}
 
 // 一式の読み込みはテストで終える時を決める
 const pending: Array<() => void> = []
@@ -55,17 +63,19 @@ const bundles: Record<string, Bundle> = {
 }
 const bundleProblem = vi.fn((_id: string) => Promise.resolve(problem))
 
-vi.mock('../../api/client', () => ({
-  api: {
-    bundle: (id: string) =>
-      new Promise<Bundle>((resolve) => {
-        pending.push(() => resolve(bundles[id] as Bundle))
-      }),
-    results: () => Promise.resolve([]),
-    bundleProblem: (id: string) => bundleProblem(id),
-    info: () => new Promise(() => {}),
-  },
-}))
+vi.mock('../../api/client', async () =>
+  (await import('../../test/mockClient')).mockClient({
+    api: {
+      bundle: (id: string) =>
+        new Promise<Bundle>((resolve) => {
+          pending.push(() => resolve(bundles[id] as Bundle))
+        }),
+      results: () => Promise.resolve([]),
+      bundleProblem: (id: string) => bundleProblem(id),
+      info: () => new Promise(() => {}),
+    },
+  }),
+)
 
 /** 一式の画面を描く (一覧の読んだ値があれば先に置く) */
 function renderPage(id: string, listed?: Bundle[]) {

@@ -85,10 +85,15 @@ def main() -> None:
     units = None
     if args.units is not None:
         units = module_names(args.units)
-    app = create_app(
-        token=get_token(None), allowed_hosts=hosts, procedures=modules,
-        units=units
-    )
+    # 読めない自作の部品と手順のモジュールでの, 理由の表示と停止
+    try:
+        app = create_app(
+            token=get_token(None), allowed_hosts=hosts, procedures=modules,
+            units=units
+        )
+    except ValueError as error:
+        print(f"起動できません: {error}", flush=True)
+        raise SystemExit(1) from error
     shown = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
     print(
         "ML-Provide を開く: "

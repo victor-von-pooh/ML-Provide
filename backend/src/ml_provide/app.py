@@ -337,7 +337,7 @@ def create_api(
 
     Raises
     ----------
-    RuntimeError
+    ValueError
         読めないモジュールがある場合
     """
     # 手元のファイルを読めるので, 仕様の画面は出さない
@@ -428,7 +428,7 @@ def create_app(
 
     Raises
     ----------
-    RuntimeError
+    ValueError
         読めないモジュールがある場合 (起動を止める)
     """
     # 確かめと画面の配信を持つ外側のアプリ (仕様の画面は閉じる)

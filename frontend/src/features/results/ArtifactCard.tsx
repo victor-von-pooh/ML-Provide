@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Download } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { api } from '../../api/client'
+import { useApi } from '../../api/client'
 import type { ArtifactPreview, Result } from '../../api/types'
 import { Card, ErrorBox, Spinner } from '../../components/ui'
 import { gridPixels, imagePixels, labelColor, projectPoints } from '../../lib/artifacts'
@@ -174,6 +174,7 @@ export function ArtifactCard({
   names: Record<number, string>
   note?: string | null
 }) {
+  const api = useApi()
   // 行を選んでいなければ, 推論した最初の行
   const first = useQuery({
     queryKey: ['rows', result.id, 'first-ok'],

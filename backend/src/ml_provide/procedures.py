@@ -7,6 +7,7 @@
 
 import importlib
 import os
+import sys
 from pathlib import Path
 from typing import Any, Optional
 
@@ -92,7 +93,7 @@ def load_modules(names: list[str]) -> list[str]:
 
     Raises
     ----------
-    RuntimeError
+    ValueError
         モジュールを読めない場合
     """
     # 読めないモジュールでの起動の停止 (気付かずに手順の無いまま動かないため)
@@ -119,8 +120,9 @@ def load_module(name: str) -> None:
 
     Raises
     ----------
-    RuntimeError
-        モジュールを読めない場合 (途中で登録した手順は登録簿から外す)
+    ValueError
+        モジュールを読めない場合 (途中で止まったモジュールが登録した手順は
+        登録簿から外す)
     """
     # 読み込み済みのモジュールは sys.modules の前の結果 (登録し直さない)
     before = set(PROCEDURES)
@@ -128,12 +130,54 @@ def load_module(name: str) -> None:
         importlib.import_module(name)
     except Exception as error:
         # 途中で止まったモジュールの手順の除去 (同じプロセスで直して読み
-        # 直したときに, 既にある名前の誤りにならないように)
-        for added in set(PROCEDURES) - before:
-            PROCEDURES.pop(added, None)
-        raise RuntimeError(
+        # 直したときに, 既にある名前の誤りにならないように). 止まった
+        # モジュールは sys.modules から外れる. そのモジュールが読んで読み
+        # 終えた別のモジュールは sys.modules に残り, 読み直しで import
+        # し直さないので, その手順は残すこと
+        drop_stopped(before)
+        raise ValueError(
             f"起動の設定の手順のモジュール {name} を読めません: {error}"
         ) from error
+
+
+def drop_stopped(before: set[str]) -> None:
+    """
+    読み込みの途中で止まったモジュールが登録した手順を, 登録簿から外す関数
+
+    Parameters
+    ----------
+    before: set[str]
+        読み込む前の登録簿の手順の名前
+
+    Returns
+    ----------
+    None
+    """
+    # 読み込みの間に足された手順のうち, 定義したモジュールが止まったもの
+    for added in set(PROCEDURES) - before:
+        if stopped(PROCEDURES[added].function):
+            PROCEDURES.pop(added, None)
+
+
+def stopped(function: Any) -> bool:
+    """
+    手順の関数を定義したモジュールが, 読み込みの途中で止まったかを返す関数
+
+    Parameters
+    ----------
+    function: Any
+        登録した手順の関数
+
+    Returns
+    ----------
+    result: bool
+        定義したモジュール (関数の __module__) が sys.modules に無いか
+    """
+    # import が例外で止まったモジュールの sys.modules からの外れ
+    module = getattr(function, "__module__", None)
+    result = not isinstance(module, str) or module not in sys.modules
+
+    return result
 
 
 def registered() -> list[dict[str, Any]]:

@@ -24,13 +24,15 @@ const describeDataset = vi.fn(
     }),
 )
 
-vi.mock('../../api/client', () => ({
-  api: {
-    info: () => Promise.resolve({ procedures: [ddim], max_procedure_steps: 1000 }),
-    describeDataset: (path: string) => describeDataset(path),
-    createBundle: vi.fn(),
-  },
-}))
+vi.mock('../../api/client', async () =>
+  (await import('../../test/mockClient')).mockClient({
+    api: {
+      info: () => Promise.resolve({ procedures: [ddim], max_procedure_steps: 1000 }),
+      describeDataset: (path: string) => describeDataset(path),
+      createBundle: vi.fn(),
+    },
+  }),
+)
 
 /** 対話を描く */
 function renderDialog() {

@@ -99,18 +99,20 @@ const addReview = vi.fn((_id: string, row: string | number, judgment: string, re
   return Promise.resolve(record)
 })
 
-vi.mock('../../api/client', () => ({
-  api: {
-    result: () => Promise.resolve(result),
-    bundle: () => Promise.reject(new Error('無い')),
-    rows: () => Promise.resolve(rows),
-    queue: () => Promise.resolve(queueOverride ?? queueRows()),
-    reviews: () => Promise.resolve({ records }),
-    addReview: (id: string, row: string | number, judgment: string, reviewer: string) =>
-      addReview(id, row, judgment, reviewer),
-    downloadUrl: (id: string) => `/api/results/${id}/download`,
-  },
-}))
+vi.mock('../../api/client', async () =>
+  (await import('../../test/mockClient')).mockClient({
+    api: {
+      result: () => Promise.resolve(result),
+      bundle: () => Promise.reject(new Error('無い')),
+      rows: () => Promise.resolve(rows),
+      queue: () => Promise.resolve(queueOverride ?? queueRows()),
+      reviews: () => Promise.resolve({ records }),
+      addReview: (id: string, row: string | number, judgment: string, reviewer: string) =>
+        addReview(id, row, judgment, reviewer),
+      downloadUrl: (id: string) => `/api/results/${id}/download`,
+    },
+  }),
+)
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })

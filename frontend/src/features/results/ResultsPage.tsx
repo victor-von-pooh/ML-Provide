@@ -1,12 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
 
-import { api } from '../../api/client'
+import { useApi } from '../../api/client'
 import { Card, ErrorBox, PageHeader, Spinner } from '../../components/ui'
 import { PolicyResultList } from '../policies/PolicyResults'
 import { CompareResultsCard, MAX_COMPARE } from './CompareResultsCard'
 
 /** 全ての一式の結果と, 方策の結果 (新しい順). 一式の結果は選んで比べる */
 export function ResultsPage() {
+  const api = useApi()
   const results = useQuery({ queryKey: ['results', 'all'], queryFn: () => api.results() })
   const policies = useQuery({
     queryKey: ['policy-results', 'all'],

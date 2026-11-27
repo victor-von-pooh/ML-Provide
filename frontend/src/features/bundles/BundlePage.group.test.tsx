@@ -142,15 +142,17 @@ let current = customers
 const bundleProblem = vi.fn()
 const predict = vi.fn()
 
-vi.mock('../../api/client', () => ({
-  api: {
-    bundle: () => Promise.resolve(current),
-    results: () => Promise.resolve([]),
-    bundleProblem: () => bundleProblem(),
-    info: () => new Promise(() => {}),
-    predict: (id: string, body: unknown) => predict(id, body),
-  },
-}))
+vi.mock('../../api/client', async () =>
+  (await import('../../test/mockClient')).mockClient({
+    api: {
+      bundle: () => Promise.resolve(current),
+      results: () => Promise.resolve([]),
+      bundleProblem: () => bundleProblem(),
+      info: () => new Promise(() => {}),
+      predict: (id: string, body: unknown) => predict(id, body),
+    },
+  }),
+)
 
 /** 一覧から開いた一式の画面を描く */
 function show() {

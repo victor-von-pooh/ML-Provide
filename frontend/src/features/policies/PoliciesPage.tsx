@@ -3,7 +3,7 @@ import { Bot, FolderInput, ListChecks } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 
-import { api } from '../../api/client'
+import { useApi } from '../../api/client'
 import { PathPicker } from '../../components/PathPicker'
 import { ExperimentsDialog } from '../bundles/ExperimentsDialog'
 import { Button, Card, EmptyState, ErrorBox, PageHeader, Spinner } from '../../components/ui'
@@ -11,6 +11,7 @@ import { FALLBACK_LABELS, spaceLabel } from '../../lib/policy'
 
 /** 登録した強化学習の方策の一式の一覧 */
 export function PoliciesPage() {
+  const api = useApi()
   const navigate = useNavigate()
   const client = useQueryClient()
   const policies = useQuery({ queryKey: ['policies'], queryFn: api.policies })

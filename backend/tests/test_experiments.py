@@ -93,6 +93,12 @@ def test_list_experiments(client: TestClient, tmp_path: Path) -> None:
     (problems / "d").mkdir()
     (problems / "d" / "problem.yaml").write_text("[", encoding="utf-8")
 
+    # 同じプロジェクトを記録した別の問題の設定は, 識別子だけの追加
+    ml_quest.save_problem(
+        {**problem, "project": {"path": str(project.resolve())}},
+        problems / "e"
+    )
+
     listing = client.get("/api/experiments").json()
     assert listing["projects"] == 1 and not listing["truncated"]
     rows = listing["experiments"]
@@ -101,6 +107,15 @@ def test_list_experiments(client: TestClient, tmp_path: Path) -> None:
     ]
     assert rows[0]["path"] == str(new.resolve())
     assert rows[0]["problem"] == problem["name"]
+    assert rows[0]["problem_ids"] == ["b", "e"]
+
+    # 殻で選んだ問題の設定の識別子での, そのプロジェクトの実験の絞り込み
+    for problem_id, count in [("b", 2), ("e", 2), ("a", 0), ("zz", 0)]:
+        found = client.get(
+            "/api/experiments", params={"project": problem_id}
+        ).json()
+        assert len(found["experiments"]) == count, problem_id
+        assert found["projects"] == (1 if count else 0)
     assert rows[0]["project"] == str(project.resolve())
     assert rows[0]["bundle_id"] is None
 
@@ -240,6 +255,14 @@ def test_list_policy_experiments(
     assert rows[0]["path"] == str(policy.resolve())
     assert rows[0]["policy_id"] is None
     assert "bundle_id" not in rows[0]
+    assert rows[0]["problem_ids"] == ["b"]
+
+    # 殻で選んだ問題の設定の識別子での絞り (他の識別子なら空)
+    for problem_id, count in [("b", 1), ("other", 0)]:
+        found = client.get(
+            "/api/experiments/policies", params={"project": problem_id}
+        ).json()
+        assert len(found["experiments"]) == count, problem_id
 
     # 推論の一式の一覧には方策の一式が出ない
     bundles = client.get("/api/experiments").json()["experiments"]
@@ -252,3 +275,54 @@ def test_list_policy_experiments(
     assert view.status_code == 201, view.text
     rows = client.get("/api/experiments/policies").json()["experiments"]
     assert rows[0]["policy_id"] == view.json()["id"]
+
+
+def test_filter_before_limit(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    殻で選んだ問題の設定での絞りが, 上限で打ち切る前に効くことを確かめる
+    関数
+
+    名前の順で前の問題の設定のプロジェクトが上限を埋めても, 後ろの問題の
+    設定の実験を落とさないため
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    tmp_path: Path
+        一時ディレクトリ
+    monkeypatch: pytest.MonkeyPatch
+        上限の差し替え
+
+    Returns
+    ----------
+    None
+    """
+    # 上限 2 件で, 前の問題の設定 (a) に 2 件, 後ろ (z) に 1 件
+    monkeypatch.setattr(experiments, "MAX_EXPERIMENTS", 2)
+    added = client.post("/api/samples").json()
+    problem = example_problem("総菜の作る量")
+    for problem_id, count in [("a", 2), ("z", 1)]:
+        project = tmp_path / f"project-{problem_id}"
+        for index in range(count):
+            shutil.copytree(
+                added[0]["path"],
+                project / "outputs" / "run" / f"0{index}" / "inference"
+            )
+        ml_quest.save_problem(
+            {**problem, "project": {"path": str(project.resolve())}},
+            tmp_path / "pathfinder" / "problems" / problem_id
+        )
+
+    # 絞らなければ前の 2 件での打ち切り
+    listing = client.get("/api/experiments").json()
+    assert listing["truncated"] is True
+    assert {row["problem_ids"][0] for row in listing["experiments"]} == {"a"}
+
+    # 後ろの問題の設定に絞ったときの, その実験の表示
+    listing = client.get("/api/experiments", params={"project": "z"}).json()
+    assert listing["truncated"] is False
+    assert [row["problem_ids"] for row in listing["experiments"]] == [["z"]]
+

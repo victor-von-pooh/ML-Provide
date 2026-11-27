@@ -22,9 +22,11 @@ const second: Result = { ...first, id: 'r2', rules: {} }
 let view: Comparison
 const compare = vi.fn((_ids: string[]) => Promise.resolve(view))
 
-vi.mock('../../api/client', () => ({
-  api: { compare: (ids: string[]) => compare(ids) },
-}))
+vi.mock('../../api/client', async () =>
+  (await import('../../test/mockClient')).mockClient({
+    api: { compare: (ids: string[]) => compare(ids) },
+  }),
+)
 
 /** 比べの画面を ids 付きで描く */
 function show() {

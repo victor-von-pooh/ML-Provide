@@ -1,7 +1,7 @@
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import ml_quest
 import yaml
@@ -47,13 +47,15 @@ def known_projects(problems_dir: Path) -> list[dict[str, Any]]:
     ----------
     projects: list[dict[str, Any]]
         path (プロジェクトのディレクトリ), problem (問題の設定の名前),
-        problem_path (problem.yaml) の並び (同じプロジェクトは 1 つ)
+        problem_path (problem.yaml), problem_ids (そのプロジェクトを記録
+        した問題の設定の識別子. 置き場のディレクトリの名前) の並び (同じ
+        プロジェクトは 1 つ)
     """
     # 読めない問題の設定と, 記録の無いものと, 無いディレクトリは飛ばす
     projects: list[dict[str, Any]] = []
     if not problems_dir.is_dir():
         return projects
-    seen: set[str] = set()
+    seen: dict[str, dict[str, Any]] = {}
     for child in sorted(problems_dir.iterdir()):
         file = child / "problem.yaml"
         try:
@@ -64,18 +66,22 @@ def known_projects(problems_dir: Path) -> list[dict[str, Any]]:
             place = ml_quest.project_of(upgraded)["path"]
         except READ_ERRORS:
             continue
-        if not isinstance(place, str) or place in seen or not (
-            Path(place).is_dir()
-        ):
+        if not isinstance(place, str) or not Path(place).is_dir():
             continue
-        seen.add(place)
+        # 同じプロジェクトを記録した別の問題の設定は, 識別子だけの追加
+        # (殻で選んだどちらの問題の設定でも, その実験に絞れるように)
+        if place in seen:
+            seen[place]["problem_ids"].append(child.name)
+            continue
         name = problem.get("name")
-        projects.append({
+        seen[place] = {
             "path": place,
             "problem": name if isinstance(name, str) and name.strip()
             else file.parent.name,
-            "problem_path": str(file.resolve())
-        })
+            "problem_path": str(file.resolve()),
+            "problem_ids": [child.name]
+        }
+        projects.append(seen[place])
 
     return projects
 
@@ -157,8 +163,9 @@ def experiment_row(
     Returns
     ----------
     row: dict[str, Any]
-        path, project, problem, experiment (出力先からの実験の場所),
-        modified (一式の更新の時刻), key (登録済みならその id)
+        path, project, problem, problem_ids (プロジェクトを記録した問題
+        の設定の識別子), experiment (出力先からの実験の場所), modified
+        (一式の更新の時刻), key (登録済みならその id)
     """
     # 実験の場所は出力先からの相対 (名前/日付/時刻)
     resolved = bundle.resolve()
@@ -168,6 +175,7 @@ def experiment_row(
         "path": str(resolved),
         "project": project["path"],
         "problem": project["problem"],
+        "problem_ids": list(project["problem_ids"]),
         "experiment": run.as_posix(),
         "modified": datetime.fromtimestamp(stamp).astimezone().isoformat(),
         key: registered.get(str(resolved)),
@@ -178,7 +186,7 @@ def experiment_row(
 
 def collect_rows(
     problems_dir: Path, registered: dict[str, str], folder: str,
-    marker: str, key: str
+    marker: str, key: str, problem: Optional[str] = None
 ) -> dict[str, Any]:
     """
     問題の設定に記録したプロジェクトの, 一式を持つ実験の一覧を作る関数
@@ -195,6 +203,9 @@ def collect_rows(
         一式を見分けるファイルの名前
     key: str
         登録済みの id の項目の名前
+    problem: Optional[str] = None
+        問題の設定の識別子 (渡せば, その問題の設定が記録したプロジェクト
+        だけを見る)
 
     Returns
     ----------
@@ -203,7 +214,12 @@ def collect_rows(
         数), experiments (新しい順の行), truncated (上限で打ち切ったか)
     """
     # プロジェクトごとの実験 (読めなくなったものは飛ばす)
-    projects = known_projects(problems_dir)
+    # 上限を数える前の絞り込み (後ろのプロジェクトを打ち切りで落とさない
+    # ため)
+    projects = [
+        project for project in known_projects(problems_dir)
+        if problem is None or problem in project["problem_ids"]
+    ]
     rows: list[dict[str, Any]] = []
     truncated = False
     for project in projects:
@@ -233,7 +249,9 @@ def collect_rows(
 
 
 @router.get("/experiments")
-def list_experiments(request: Request) -> dict[str, Any]:
+def list_experiments(
+    request: Request, project: Optional[str] = None
+) -> dict[str, Any]:
     """
     問題の設定に記録したプロジェクトの, 推論の一式を持つ実験の一覧を返す
     関数
@@ -242,6 +260,9 @@ def list_experiments(request: Request) -> dict[str, Any]:
     ----------
     request: Request
         リクエスト (request.app は置き場と問題の設定の置き場を持つ)
+    project: Optional[str] = None
+        殻で選んだ問題の設定の識別子 (渡せば, その問題の設定が記録した
+        プロジェクトの実験だけ)
 
     Returns
     ----------
@@ -258,14 +279,17 @@ def list_experiments(request: Request) -> dict[str, Any]:
                 registered[entry[key]] = str(entry["id"])
     problems_dir: Path = request.app.state.problems_dir
     listing = collect_rows(
-        problems_dir, registered, BUNDLE_DIR, BUNDLE_FILE, "bundle_id"
+        problems_dir, registered, BUNDLE_DIR, BUNDLE_FILE, "bundle_id",
+        project
     )
 
     return listing
 
 
 @router.get("/experiments/policies")
-def list_policy_experiments(request: Request) -> dict[str, Any]:
+def list_policy_experiments(
+    request: Request, project: Optional[str] = None
+) -> dict[str, Any]:
     """
     問題の設定に記録したプロジェクトの, 方策の一式 (policy.json を持つ
     policy) を持つ実験の一覧を返す関数
@@ -274,6 +298,9 @@ def list_policy_experiments(request: Request) -> dict[str, Any]:
     ----------
     request: Request
         リクエスト (request.app は置き場と問題の設定の置き場を持つ)
+    project: Optional[str] = None
+        殻で選んだ問題の設定の識別子 (渡せば, その問題の設定が記録した
+        プロジェクトの実験だけ)
 
     Returns
     ----------
@@ -290,7 +317,8 @@ def list_policy_experiments(request: Request) -> dict[str, Any]:
     }
     problems_dir: Path = request.app.state.problems_dir
     listing = collect_rows(
-        problems_dir, registered, POLICY_DIR, POLICY_FILE, "policy_id"
+        problems_dir, registered, POLICY_DIR, POLICY_FILE, "policy_id",
+        project
     )
 
     return listing

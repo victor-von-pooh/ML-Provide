@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import { Sigma } from 'lucide-react'
 import { useState } from 'react'
 
-import { api } from '../../api/client'
+import { useApi } from '../../api/client'
 import type { Result } from '../../api/types'
 import { Button, Card, ErrorBox, Spinner } from '../../components/ui'
 import { formatValue } from '../../lib/format'
@@ -18,6 +18,7 @@ export function RowReasonCard({
   row: number | null
   onRow: (row: number) => void
 }) {
+  const api = useApi()
   // 求めるのは選んだ行だけ (推論の回数は列の数 × 回数なので, 押すまで求めない)
   // 表の「理由」で選んだ行は欄にも写す
   const [draft, setDraft] = useState(row === null ? '' : String(row))

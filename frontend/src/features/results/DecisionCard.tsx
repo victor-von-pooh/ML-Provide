@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { History, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 
-import { api } from '../../api/client'
+import { useApi } from '../../api/client'
 import type { BacktestGuard, Result } from '../../api/types'
 import { Button, Card, ErrorBox } from '../../components/ui'
 import { fromDecisionForm, toDecisionForm, type DecisionForm } from '../../lib/decision'
@@ -12,6 +12,7 @@ import { DecisionEditor } from './DecisionEditor'
 
 /** 意思決定 (何をどれだけするか, 前提, たどり直し) と決め直し */
 export function DecisionCard({ result, bundleAlive }: { result: Result; bundleAlive: boolean }) {
+  const api = useApi()
   const client = useQueryClient()
   const decided = result.decision
   const [form, setForm] = useState<DecisionForm>(() => toDecisionForm(decided?.decision))

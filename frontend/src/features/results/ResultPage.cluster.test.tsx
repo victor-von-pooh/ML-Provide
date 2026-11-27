@@ -160,15 +160,17 @@ const representativesCall = vi.fn((_id: string, count: number) =>
   }),
 )
 
-vi.mock('../../api/client', () => ({
-  api: {
-    result: () => Promise.resolve(result),
-    bundle: () => Promise.reject(new Error('無い')),
-    rows: (id: string, params: Record<string, unknown>) => rowsCall(id, params),
-    representatives: (id: string, count: number) => representativesCall(id, count),
-    downloadUrl: (id: string) => `/api/results/${id}/download`,
-  },
-}))
+vi.mock('../../api/client', async () =>
+  (await import('../../test/mockClient')).mockClient({
+    api: {
+      result: () => Promise.resolve(result),
+      bundle: () => Promise.reject(new Error('無い')),
+      rows: (id: string, params: Record<string, unknown>) => rowsCall(id, params),
+      representatives: (id: string, count: number) => representativesCall(id, count),
+      downloadUrl: (id: string) => `/api/results/${id}/download`,
+    },
+  }),
+)
 
 // 「行を見る」で表へ移る (jsdom は scrollIntoView を持たない)
 const scrolled = vi.fn()

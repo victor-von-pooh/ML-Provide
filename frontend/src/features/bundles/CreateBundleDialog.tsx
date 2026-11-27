@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 
-import { api } from '../../api/client'
+import { useApi } from '../../api/client'
 import type { Bundle, DatasetDescription } from '../../api/types'
 import { Dialog } from '../../components/Dialog'
 import { PathField } from '../../components/PathPicker'
@@ -26,6 +26,8 @@ import {
   ROLE_LABELS,
   stepsText,
 } from '../../lib/outputs'
+import { readDraft, useDraftWriter } from '../../lib/draft'
+import { useStage } from '../../lib/stage'
 import { useDebounced } from '../../lib/useDebounced'
 import { AutoDetails, InputFields, OutputFields, ProcedureFields } from './CreateBundleFields'
 
@@ -93,7 +95,114 @@ function ItemsSummary({ described }: { described: DatasetDescription }) {
   )
 }
 
-/** 学習の結果 (モデルの定義, データセット, 実験) から推論の一式を作る */
+/** 欄の書きかけの下書きの種類 */
+const DRAFT_KIND = 'create-bundle'
+
+/** 下書きに残す欄の中身 (入力の行の印は戻すときに付け直す) */
+interface CreateDraft {
+  name: string
+  spec: string
+  noData: boolean
+  dataset: string
+  weights: string
+  inputRows: Omit<InputRow, 'id'>[]
+  output: string
+  center: string
+  scale: string
+  trainScale: boolean
+  copyWeights: boolean
+  role: string
+  form: string
+  outputFields: OutputForm
+  procedureForm: ProcedureForm
+  itemInput: string
+  points: string
+  targetPoints: string
+  seed: string
+}
+
+/** 空の欄 (書きかけが無い形) */
+const EMPTY_DRAFT: CreateDraft = {
+  name: '',
+  spec: '',
+  noData: false,
+  dataset: '',
+  weights: '',
+  inputRows: [],
+  output: '',
+  center: '',
+  scale: '',
+  trainScale: false,
+  copyWeights: true,
+  role: '',
+  form: '',
+  outputFields: EMPTY_OUTPUT,
+  procedureForm: EMPTY_PROCEDURE,
+  itemInput: '',
+  points: '',
+  targetPoints: '',
+  seed: '',
+}
+
+/** 値が文字だけの辞書か */
+function isTextRecord(value: unknown): value is Record<string, string> {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.values(value).every((item) => typeof item === 'string')
+  )
+}
+
+/** 読んだ下書きを欄の中身にする (形の合わない欄は空の値. 辞書でなければ戻さない) */
+function restoreDraft(stored: unknown): CreateDraft | null {
+  if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return null
+  const value = stored as Record<string, unknown>
+  const draft: Record<string, unknown> = { ...EMPTY_DRAFT }
+  for (const [key, empty] of Object.entries(EMPTY_DRAFT)) {
+    const item = value[key]
+    if (typeof empty === 'string' || typeof empty === 'boolean') {
+      if (typeof item === typeof empty) draft[key] = item
+    }
+  }
+  // 入力の行は, 出どころを持つものだけ (auto は雑音だけの一式が足した行の印)
+  if (Array.isArray(value.inputRows)) {
+    draft.inputRows = value.inputRows.flatMap((row: unknown) => {
+      if (!row || typeof row !== 'object') return []
+      const item = row as Record<string, unknown>
+      if (typeof item.source !== 'string') return []
+      return [
+        {
+          name: typeof item.name === 'string' ? item.name : '',
+          source: item.source,
+          prepend: typeof item.prepend === 'string' ? item.prepend : '',
+          ...(item.auto === true ? { auto: true } : {}),
+        },
+      ]
+    })
+  }
+  const fields = value.outputFields
+  if (isTextRecord(fields)) draft.outputFields = { ...EMPTY_OUTPUT, ...fields }
+  const procedure = value.procedureForm
+  if (procedure && typeof procedure === 'object' && !Array.isArray(procedure)) {
+    const item = procedure as Record<string, unknown>
+    draft.procedureForm = {
+      name: typeof item.name === 'string' ? item.name : '',
+      steps: typeof item.steps === 'string' ? item.steps : '',
+      seed: typeof item.seed === 'string' ? item.seed : '',
+      options: isTextRecord(item.options) ? item.options : {},
+      extra: typeof item.extra === 'string' ? item.extra : '',
+    }
+  }
+  return draft as unknown as CreateDraft
+}
+
+/**
+ * 学習の結果 (モデルの定義, データセット, 実験) から推論の一式を作る
+ *
+ * 欄の書きかけは下書きに残し, 次に開いたときに戻す (殻の中で段階を移ると部品が外され,
+ * 書きかけを確かめずに捨てるため)
+ */
 export function CreateBundleDialog({
   onClose,
   onCreated,
@@ -101,24 +210,58 @@ export function CreateBundleDialog({
   onClose: () => void
   onCreated: (bundle: Bundle) => void
 }) {
-  const [name, setName] = useState('')
-  const [spec, setSpec] = useState('')
+  // 開いたときの下書き (捨てたら空の欄で作り直す)
+  const [restored, setRestored] = useState(() => readDraft(DRAFT_KIND, restoreDraft))
+  const [round, setRound] = useState(0)
+  return (
+    <Dialog title="学習の結果から一式を作る" onClose={onClose}>
+      <CreateBundleForm
+        key={round}
+        initial={restored?.value ?? EMPTY_DRAFT}
+        restoredAt={restored?.time ?? null}
+        onDiscard={() => {
+          setRestored(null)
+          setRound((value) => value + 1)
+        }}
+        onCreated={onCreated}
+      />
+    </Dialog>
+  )
+}
+
+/** 一式を作る欄 (initial は戻した下書きか空の欄) */
+function CreateBundleForm({
+  initial,
+  restoredAt,
+  onDiscard,
+  onCreated,
+}: {
+  initial: CreateDraft
+  restoredAt: string | null
+  onDiscard: () => void
+  onCreated: (bundle: Bundle) => void
+}) {
+  const api = useApi()
+  const [name, setName] = useState(initial.name)
+  const [spec, setSpec] = useState(initial.spec)
   // データセットを使わない雑音だけの一式 (拡散やフローの生成のモデル)
-  const [noData, setNoData] = useState(false)
-  const [dataset, setDataset] = useState('')
-  const [weights, setWeights] = useState('')
-  const [inputRows, setInputRows] = useState<InputRow[]>([])
-  const [output, setOutput] = useState('')
-  const [center, setCenter] = useState('')
-  const [scale, setScale] = useState('')
-  const [trainScale, setTrainScale] = useState(false)
-  const [copyWeights, setCopyWeights] = useState(true)
+  const [noData, setNoData] = useState(initial.noData)
+  const [dataset, setDataset] = useState(initial.dataset)
+  const [weights, setWeights] = useState(initial.weights)
+  const [inputRows, setInputRows] = useState<InputRow[]>(() =>
+    initial.inputRows.map((row) => ({ ...newInputRow(row.source, row.auto), ...row })),
+  )
+  const [output, setOutput] = useState(initial.output)
+  const [center, setCenter] = useState(initial.center)
+  const [scale, setScale] = useState(initial.scale)
+  const [trainScale, setTrainScale] = useState(initial.trainScale)
+  const [copyWeights, setCopyWeights] = useState(initial.copyWeights)
   // 受け持ちと出力の形 (空はタスクから. 正解の無いデータセットと雑音だけの一式は出力の形が要る)
-  const [role, setRole] = useState('')
-  const [form, setForm] = useState('')
-  const [outputFields, setOutputFields] = useState<OutputForm>(EMPTY_OUTPUT)
+  const [role, setRole] = useState(initial.role)
+  const [form, setForm] = useState(initial.form)
+  const [outputFields, setOutputFields] = useState<OutputForm>(initial.outputFields)
   // 繰り返しの手順 (登録簿から選ぶ)
-  const [procedureForm, setProcedureForm] = useState<ProcedureForm>(EMPTY_PROCEDURE)
+  const [procedureForm, setProcedureForm] = useState<ProcedureForm>(initial.procedureForm)
   const info = useQuery({ queryKey: ['info'], queryFn: api.info, staleTime: Infinity })
   const procedures = info.data?.procedures ?? []
   const procedureEntry = procedures.find((entry) => entry.name === procedureForm.name)
@@ -141,12 +284,12 @@ export function CreateBundleDialog({
   const describing =
     !noData && !!dataset.trim() && (datasetPath !== dataset.trim() || described.isFetching)
   const itemInputs = (itemsData?.entries ?? []).filter((entry) => entry.role === 'input')
-  const [itemInput, setItemInput] = useState('')
+  const [itemInput, setItemInput] = useState(initial.itemInput)
   const chosenInput = itemInputs.find((entry) => entry.name === itemInput) ?? itemInputs[0]
   const needsPoints = !!chosenInput?.points
-  const [points, setPoints] = useState('')
-  const [targetPoints, setTargetPoints] = useState('')
-  const [seed, setSeed] = useState('')
+  const [points, setPoints] = useState(initial.points)
+  const [targetPoints, setTargetPoints] = useState(initial.targetPoints)
+  const [seed, setSeed] = useState(initial.seed)
   // 列のデータセットと雑音だけの一式の欄 (ファイルの組のデータセットは 1 件の扱いの欄だけ)
   const built = buildInputs(inputRows, noData, !!procedureForm.name)
   const maxSteps = info.data?.max_procedure_steps ?? MAX_PROCEDURE_STEPS
@@ -218,8 +361,41 @@ export function CreateBundleDialog({
         procedure: builtProcedure.procedure,
       })
     },
-    onSuccess: onCreated,
+    onSuccess: (bundle) => {
+      // 作り終えた欄の書きかけは要らない
+      discardDraft()
+      onCreated(bundle)
+    },
   })
+  // 欄の書きかけを下書きに残す (殻で選んだ問題の設定が替わるときは待たずに書く)
+  const drafted: CreateDraft = {
+    name,
+    spec,
+    noData,
+    dataset,
+    weights,
+    inputRows: inputRows.map(({ id: _id, ...row }) => row),
+    output,
+    center,
+    scale,
+    trainScale,
+    copyWeights,
+    role,
+    form,
+    outputFields,
+    procedureForm,
+    itemInput,
+    points,
+    targetPoints,
+    seed,
+  }
+  const { project } = useStage()
+  const discardDraft = useDraftWriter(
+    DRAFT_KIND,
+    JSON.stringify(drafted) !== JSON.stringify(EMPTY_DRAFT),
+    drafted,
+    project,
+  )
   // 畳んだ欄の名前 (見出しと誤りに添える名前を同じにする)
   const sectionOutput = noData ? '出力の形' : '受け持ちと出力の形'
   // 片方だけの欄と数でない値は, 送る前に知らせる (ファイルの組のデータセットは点の欄だけ)
@@ -276,7 +452,28 @@ export function CreateBundleDialog({
     !describeFailed &&
     !describing
   return (
-    <Dialog title="学習の結果から一式を作る" onClose={onClose}>
+    <>
+      {restoredAt && (
+        <div
+          role="status"
+          className="mb-3 flex items-center justify-between gap-2 rounded-lg border border-line p-2 text-xs text-ink-2"
+        >
+          <span>
+            作っていない書きかけ ({new Date(restoredAt).toLocaleString('ja-JP')}) を欄に戻しました.
+          </span>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              // 待っている書き込みも止めてから, 空の欄で作り直す
+              discardDraft()
+              onDiscard()
+            }}
+            disabled={create.isPending}
+          >
+            書きかけを捨てる
+          </Button>
+        </div>
+      )}
       <form
         className="flex flex-col gap-3"
         onSubmit={(event) => {
@@ -555,6 +752,6 @@ export function CreateBundleDialog({
           </Button>
         </div>
       </form>
-    </Dialog>
+    </>
   )
 }

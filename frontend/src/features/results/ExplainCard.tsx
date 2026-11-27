@@ -1,13 +1,14 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Sigma } from 'lucide-react'
 
-import { api } from '../../api/client'
+import { useApi } from '../../api/client'
 import type { Result } from '../../api/types'
 import { Button, Card, ErrorBox } from '../../components/ui'
 import { formatValue } from '../../lib/format'
 
 /** 列ごとの効き (どの列が予測を動かしているか) */
 export function ExplainCard({ result, bundleAlive }: { result: Result; bundleAlive: boolean }) {
+  const api = useApi()
   const client = useQueryClient()
   const explain = useMutation({
     mutationFn: () => api.explain(result.id),

@@ -132,15 +132,17 @@ const treated = vi.fn((_id: string, offset: number, _limit: number): Promise<Tre
   }),
 )
 
-vi.mock('../../api/client', () => ({
-  api: {
-    result: () => Promise.resolve(result),
-    bundle: () => Promise.reject(new Error('無い')),
-    rows: () => Promise.resolve(rows),
-    treated: (id: string, offset: number, limit: number) => treated(id, offset, limit),
-    downloadUrl: (id: string) => `/api/results/${id}/download`,
-  },
-}))
+vi.mock('../../api/client', async () =>
+  (await import('../../test/mockClient')).mockClient({
+    api: {
+      result: () => Promise.resolve(result),
+      bundle: () => Promise.reject(new Error('無い')),
+      rows: () => Promise.resolve(rows),
+      treated: (id: string, offset: number, limit: number) => treated(id, offset, limit),
+      downloadUrl: (id: string) => `/api/results/${id}/download`,
+    },
+  }),
+)
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })

@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 
-import { api } from '../../api/client'
+import { useApi } from '../../api/client'
 import type {
   DemandEvaluation,
   DemandQuantiles,
@@ -346,6 +346,7 @@ function QuantileCard({
 
 /** 発注の数. 商品ごとの発注の数の一覧 (発注の数の大きい順. ページを送る) */
 function OrdersCard({ result, decided }: { result: Result; decided: OrderDecisionSummary | null }) {
+  const api = useApi()
   const [offset, setOffset] = useState(0)
   const orders = useQuery({
     queryKey: ['orders', result.id, offset],

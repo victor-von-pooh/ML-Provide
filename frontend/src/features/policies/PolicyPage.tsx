@@ -3,7 +3,7 @@ import { Play, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 
-import { api } from '../../api/client'
+import { useApi } from '../../api/client'
 import type { PolicyGuards, PolicySpec } from '../../api/types'
 import { Button, Card, ErrorBox, PageHeader, Spinner } from '../../components/ui'
 import {
@@ -52,6 +52,7 @@ function GuardsList({ guards }: { guards: PolicyGuards }) {
 
 /** 観測を入れて行動と守りの結果を見る */
 function ActCard({ id, spec }: { id: string; spec: PolicySpec }) {
+  const api = useApi()
   const size = spaceSize(spec.observation_space)
   // 初めの値は観測の大きさの 0 の並び (大きな観測は空)
   const [text, setText] = useState(size <= 64 ? Array(size).fill('0').join(', ') : '')
@@ -134,6 +135,7 @@ function ActCard({ id, spec }: { id: string; spec: PolicySpec }) {
 
 /** 方策の一式の画面 */
 export function PolicyPage() {
+  const api = useApi()
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const client = useQueryClient()
