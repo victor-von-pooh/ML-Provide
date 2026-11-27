@@ -139,6 +139,12 @@ OWN_COLUMNS = frozenset({
     "gain_if_acted", "expected_gain",
 })
 
+# 測り直す入力の無い結果の文
+REMEASURE_INPUT = (
+    "測り直すには, 目的の列を持つ入力のファイルの結果が要ります (書いた文"
+    "と何段も先の予測の結果は除く)"
+)
+
 # 分割の結果に列の効きと 1 行の理由を求めたときの文
 SPLIT_UNEXPLAINED = (
     "元のデータセットの分割の結果は, 前処理の前の列が無いので, 列の効きと"
@@ -3310,9 +3316,14 @@ def backtest_result(request: Request, result_id: str) -> dict[str, Any]:
     meta = read_meta(place)
     require_column(meta)
     decided = meta.get("decision") or {}
-    source = result_source(meta)
     if not decided.get("decision"):
         raise HTTPException(400, "先に意思決定の決め方を選んでください")
+    try:
+        source = result_source(
+            meta, get_store(request).find(str(meta.get("bundle_id")))
+        )
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
     if source is None or meta.get("forecast"):
         raise HTTPException(
             400, "たどり直すには, 目的の列を持つ入力のファイルの結果が"
@@ -3392,18 +3403,23 @@ def remeasure_result(
     place = find_result(request, result_id)
     meta = read_meta(place)
     require_column(meta)
-    source = result_source(meta)
-    if source is None or meta.get("forecast"):
-        raise HTTPException(
-            400, "測り直すには, 目的の列を持つ入力のファイルの結果が要ります"
-            " (書いた文と何段も先の予測の結果は除く)"
-        )
+    if (not meta.get("split") and not meta.get("source_path")) or meta.get(
+        "forecast"
+    ):
+        raise HTTPException(400, REMEASURE_INPUT)
     store = get_store(request)
     with PREDICT_LOCK:
         # 登録は鍵の中で読み直し (同時の書き戻しで二重に写さないように)
         entry = store.find(str(meta.get("bundle_id")))
         if entry is None:
             raise HTTPException(400, "一式が登録されていないので測り直せません")
+        # 分割は一式の実験から見つけ直し, 記録と同じときだけ読む
+        try:
+            source = result_source(meta, entry)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        if source is None:
+            raise HTTPException(400, REMEASURE_INPUT)
 
         # 学習の実験の中の一式は書き換えず, 置き場に写した方への書き戻し
         # (実験は書き換えないという ML-Found の約束). 登録を移すのは

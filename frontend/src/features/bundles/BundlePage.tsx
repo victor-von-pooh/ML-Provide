@@ -831,7 +831,9 @@ function PredictCard({
   })
   const splitName = (splittable && testSplit.data?.split) || null
   const split = splitName ? (testSplit.data ?? null) : null
-  // 分割を選んだ後に候補が消えたら, ファイルの欄に戻す (隠れた欄の値を送らないため)
+  // 分割を選んだ後に候補が消えたら, ファイルの欄に戻す (隠れた欄の値を送らないため. 選んだ
+  // 状態もファイルにし, 候補が戻っても何も押さずに分割へ戻らないように)
+  if (chosen === 'split' && !split) setMode('file')
   const mode = chosen === 'split' && !split ? 'file' : chosen
   const useSplit = mode === 'split' && splitName !== null
   // 目的の列の過去の値を使う回帰と予測の一式は, 何段も先まで予測できる

@@ -337,7 +337,7 @@ def split_source(entry: dict[str, Any], name: str) -> dict[str, str]:
 
 
 def result_source(
-    meta: dict[str, Any]
+    meta: dict[str, Any], entry: Optional[dict[str, Any]]
 ) -> Optional[Union[Path, dict[str, str]]]:
     """
     結果を読み直すときの入力を返す関数
@@ -346,23 +346,49 @@ def result_source(
     ----------
     meta: dict[str, Any]
         結果の result.yaml
+    entry: Optional[dict[str, Any]]
+        結果の一式の登録 (登録が無ければ None)
 
     Returns
     ----------
-    source: Optional[Any]
-        分割の結果は分割の辞書 (データセットが無ければ None), 他は入力の
-        ファイルの場所 (無ければ None)
+    source: Optional[Union[Path, dict[str, str]]]
+        分割の結果は ML-Inference の分割の辞書 ({"dataset": 場所,
+        "split": 名前}), 他は入力のファイルの場所 (無ければ None)
+
+    Raises
+    ----------
+    ValueError
+        分割の結果で, 一式が登録されていない場合, 一式の実験から分割を
+        見つけ直せない場合 (データセットが消えたなど), 見つけ直した分割が
+        記録と違う場合 (理由付き)
     """
-    # 分割は記録した場所と名前からの作り直し (結果はサーバだけが書くので,
-    # 記録した場所をそのまま使う. 説明とレシピは ML-Inference が照合)
+    # 分割は推論と同じ道で一式の実験から見つけ直し, 記録と同じときだけ
+    # (記録した場所をそのまま読まず, 実験が指すデータセットの変化にも
+    # 気づくため)
     split = meta.get("split")
     if isinstance(split, dict):
-        place, name = split.get("dataset"), split.get("name")
-        if isinstance(place, str) and isinstance(name, str) and (
-            Path(place) / "dataset.yaml"
-        ).is_file():
-            return {"dataset": place, "split": name}
-        return None
+        if entry is None:
+            raise ValueError(
+                "一式が登録されていないので, 記録した分割を一式の実験から"
+                "たどり直せません"
+            )
+        found = find_test_split(entry)
+        if found["split"] is None:
+            raise ValueError(
+                "記録した分割のデータセットを一式の実験から見つけられません "
+                f"({found['reason']})"
+            )
+        if found["dataset"] != split.get("dataset") or (
+            found["split"] != split.get("name")
+        ):
+            raise ValueError(
+                "一式の実験が指すデータセットが, 推論したときの分割の"
+                "データセットと違います. 分割を選んで推論し直してください"
+            )
+        source: Union[Path, dict[str, str]] = {
+            "dataset": str(found["dataset"]), "split": str(found["split"])
+        }
+        return source
     path = meta.get("source_path")
     if isinstance(path, str) and Path(path).exists():
         return Path(path)

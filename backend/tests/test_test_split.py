@@ -77,7 +77,10 @@ def linear_spec(width: int, outputs: int) -> dict[str, Any]:
     return spec
 
 
-def write_experiment(project: Path, dataset: str = "data/dataset") -> Path:
+def write_experiment(
+    project: Path, dataset: str = "data/dataset",
+    task: str = "classification"
+) -> Path:
     """
     学習のプロジェクト, 書き出したデータセット, 実験と実験の中の一式を
     作る関数
@@ -88,6 +91,9 @@ def write_experiment(project: Path, dataset: str = "data/dataset") -> Path:
         プロジェクトのディレクトリ
     dataset: str = "data/dataset"
         実験の config.yaml の data.dataset に書く場所
+    task: str = "classification"
+        classification (解約の 2 クラス) か regression (目的の列 label を
+        対数と標準化で変換した数)
 
     Returns
     ----------
@@ -104,13 +110,16 @@ def write_experiment(project: Path, dataset: str = "data/dataset") -> Path:
     frame = pd.DataFrame({
         "plan": rng.choice(["月", "年"], size=120),
         "a": rng.normal(size=120),
-        "label": rng.choice(["続く", "解約"], size=120),
+        "label": rng.choice(["続く", "解約"], size=120)
+        if task == "classification" else rng.uniform(10, 100, size=120),
     })
     (project / "data").mkdir()
     frame.to_csv(project / "data" / "churn.csv", index=False)
     recipe = {
-        "format_version": 1, "target": "label", "task": "classification",
+        "format_version": 1, "target": "label", "task": task,
         "steps": [{"op": "one_hot", "columns": ["plan"]},
+                  *([{"op": "log", "columns": ["label"]}]
+                    if task == "regression" else []),
                   {"op": "standardize", "columns": "auto"}],
         "split": {"method": "random", "valid": 0.2, "test": 0.25,
                   "seed": 0},
@@ -127,7 +136,7 @@ def write_experiment(project: Path, dataset: str = "data/dataset") -> Path:
     (run / "config.yaml").write_text(
         yaml.safe_dump({"data": {"dataset": dataset}}), encoding="utf-8"
     )
-    spec = linear_spec(3, 2)
+    spec = linear_spec(3, 2 if task == "classification" else 1)
     torch.save(build_model(spec, seed=0).state_dict(), run / "w.pt")
     bundle = run / "inference"
     ml_inference.make_bundle(
@@ -228,6 +237,35 @@ def test_predict_test_split(client: TestClient, tmp_path: Path) -> None:
     compared = client.get("/api/results/compare",
                           params={"ids": f"{result['id']},{again['id']}"})
     assert "source" in compared.json()["basis"]
+
+    # 記録の分割のデータセットを書き換えた結果は, 見つけ直した分割と違う
+    # ので読まない (プロジェクトの外の同じ中身の写しも)
+    place = tmp_path / "home" / "results" / result["id"] / "result.yaml"
+    recorded = place.read_text(encoding="utf-8")
+    copy = tmp_path / "copy"
+    shutil.copytree(dataset, copy)
+    changed = yaml.safe_load(recorded)
+    changed["split"]["dataset"] = str(copy)
+    place.write_text(yaml.safe_dump(changed, allow_unicode=True),
+                     encoding="utf-8")
+    response = client.post(f"/api/results/{result['id']}/remeasure",
+                           json={"write": False})
+    assert response.status_code == 400
+    assert "推論したときの分割のデータセットと違います" in (
+        response.json()["detail"]
+    )
+    place.write_text(recorded, encoding="utf-8")
+
+    # データセットが消えた分割の結果は, その理由で断る
+    moved = dataset.with_name("moved")
+    dataset.rename(moved)
+    response = client.post(f"/api/results/{result['id']}/remeasure",
+                           json={"write": False})
+    assert response.status_code == 400
+    assert "記録した分割のデータセットを一式の実験から見つけられません" in (
+        response.json()["detail"]
+    )
+    moved.rename(dataset)
 
     # 書き戻して置き場に写した一式も, 写した元の実験から見つける
     saved = client.post(f"/api/results/{result['id']}/remeasure",
@@ -386,3 +424,42 @@ def test_split_outside_experiment(
     found = client.get(f"/api/bundles/{entry['id']}/test-split").json()
     assert found["split"] is None
     assert "実験" in found["reason"]
+
+
+def test_regression_split_backtest(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """
+    目的の列を変換した回帰の一式で, テスト用の分割を推論し, 元の値に
+    戻った目的の列でたどり直せることを確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    tmp_path: Path
+        一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 量を決める意思決定で分割を推論し, 結果からたどり直す
+    project = tmp_path / "project"
+    entry = register(
+        client, write_experiment(project, task="regression")
+    )
+    decision = {"type": "quantity", "under_cost": 9, "over_cost": 1}
+    response = client.post(
+        f"/api/bundles/{entry['id']}/predict",
+        json={"split": "test", "decision": decision},
+    )
+    assert response.status_code == 201, response.text
+    result = response.json()
+    rows = client.get(f"/api/results/{result['id']}/rows",
+                      params={"offset": 0, "limit": 50}).json()
+    assert all(10 <= r["label"] <= 100 for r in rows["rows"])
+    traced = client.post(f"/api/results/{result['id']}/backtest")
+    assert traced.status_code == 200, traced.text
+    assert traced.json()["backtest"]["rows"] == 30
+
