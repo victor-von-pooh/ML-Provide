@@ -1,9 +1,44 @@
-import type { EffectDistribution, Result, TreatSummary, UpliftSummary } from '../api/types'
+import type {
+  EffectDistribution,
+  Result,
+  TreatSummary,
+  UpliftInfo,
+  UpliftSummary,
+} from '../api/types'
 import { formatNumber, formatValue } from './format'
 
 /** 効果の決め方の日本語の名前 */
 export const LEARNER_LABELS: Record<string, string> = {
   t_learner: '処置の群と対照の群の 2 つの予測の差 (T-learner)',
+  s_learner: '処置の列を入力の終わりに足した 1 つの予測の差 (S-learner)',
+}
+
+/** 効果の決め方ごとの, 処置したときとしないときの予測の出し方 */
+export const LEARNER_TEXTS: Record<string, string> = {
+  t_learner:
+    '処置したときの予測は処置の群の行で学んだ予測, しないときの予測は対照の群の行で学んだ予測です',
+  s_learner:
+    '処置したときの予測は処置の列を 1 に, しないときの予測は 0 にして入力の終わりに足した 1 つの予測です',
+}
+
+/** 効果の決め方の名前と予測の出し方の文 (知らない決め方は名前だけ) */
+export function learnerText(learner: string): string {
+  const label = LEARNER_LABELS[learner] ?? learner
+  const text = LEARNER_TEXTS[learner]
+  return text ? `${label}. ${text}` : label
+}
+
+/** モデルの入力の幅と出力の文 (s_learner は処置の列を入力の終わりに足し, 出力は結果の予測 1 つ) */
+export function modelText(uplift: UpliftInfo): string {
+  const columns = uplift.features.length
+  const input = uplift.input ? `${uplift.input} ` : ''
+  if (uplift.learner === 's_learner') {
+    const output = uplift.output ?? 'outcome'
+    return `入力 ${input}の幅 ${columns + 1} (見積もりに使う列 ${columns} と処置の列 ${uplift.treatment} の 1. 処置の列には一式が 1 と 0 を入れます). 出力は結果の予測 ${output} の 1 つで, 処置の列を 1 と 0 にして 2 回予測します`
+  }
+  const treated = uplift.treated ?? 'treated'
+  const control = uplift.control ?? 'control'
+  return `入力 ${input}の幅 ${columns} (見積もりに使う列. 処置の列は入れません). 出力は処置したときの予測 ${treated} としないときの予測 ${control} の 2 つです`
 }
 
 /** 結果の種類の日本語の名前 (ML-Inference の結論の文と同じ言葉) */

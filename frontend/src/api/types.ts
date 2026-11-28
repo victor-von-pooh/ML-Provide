@@ -102,7 +102,7 @@ export interface Description {
   group?: GroupInfo | null
   /** 異常の度合いの一式 (版 11) の度合いの決め方, 列, 件数の上限, 正常の行の分布, 実験の評価 */
   anomaly?: AnomalyInfo | null
-  /** 効果の一式 (版 12) の効果の決め方, 列, 配る数の上限, 学習用の行の効果の分布, 実験の評価と Qini の曲線 */
+  /** 効果の一式 (版 12 と 18) の効果の決め方, 列, 配る数の上限, 学習用の行の効果の分布, 実験の評価と Qini の曲線 */
   uplift?: UpliftInfo | null
   /** 値段の一式 (版 13) の列, 値段の候補と変える幅の上限, 学習用の分割の要約, 実験の評価 */
   price?: PriceInfo | null
@@ -451,7 +451,7 @@ export interface QiniCurve {
 
 /** 効果の一式の uplift の欄 */
 export interface UpliftInfo {
-  /** t_learner (処置の群と対照の群の 2 つの予測の差) */
+  /** t_learner (処置の群と対照の群の 2 つの予測の差) か s_learner (処置の列を入力の終わりに足した 1 つの予測の差) */
   learner: string
   /** binary (結果が起きたか) か amount (量) */
   outcome: string
@@ -460,6 +460,14 @@ export interface UpliftInfo {
   id: string
   /** 処置の列 */
   treatment: string
+  /** モデルの入力の名前 */
+  input?: string
+  /** t_learner のモデルの処置したときの予測の出力の名前 */
+  treated?: string
+  /** t_learner のモデルのしないときの予測の出力の名前 */
+  control?: string
+  /** s_learner のモデルの結果の予測の出力の名前 (処置の列を 1 と 0 にして 2 回予測する) */
+  output?: string
   /** 配る数の上限 (無ければ null) */
   budget: number | null
   /** 評価の上位 K 割の K (0 より大きく 1 以下) */
@@ -1132,8 +1140,13 @@ export interface Result {
   ranking?: RankingInfo | null
   /** 群分けの結果の群を作る列と学習のときの群の要約 */
   grouping?: GroupingInfo | null
-  /** 効果の結果の, 一式の実験の Qini の曲線, 結果の種類, K */
-  uplift?: { curves: Record<string, QiniCurve>; outcome: string; k: number } | null
+  /** 効果の結果の, 一式の実験の Qini の曲線, 結果の種類, K, 効果の決め方 (t_learner か s_learner) */
+  uplift?: {
+    curves: Record<string, QiniCurve>
+    outcome: string
+    k: number
+    learner?: string
+  } | null
   /** 値段の結果の, 予測した行の弾力性の分布 (数えた行が無ければ null) と弾力性の上げ幅 */
   price?: { step: number; elasticity: ElasticityDistribution | null } | null
   /** 需要の結果の, 予測した行の水準ごとの分位点の平均と分位点の幅の分布 */

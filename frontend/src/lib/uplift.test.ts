@@ -1,7 +1,9 @@
-import type { Result } from '../api/types'
+import type { Result, UpliftInfo } from '../api/types'
 import {
   budgetProblem,
   distributionText,
+  learnerText,
+  modelText,
   resultK,
   topText,
   treatSummary,
@@ -52,6 +54,25 @@ describe('効果の欄と結果', () => {
     )
     expect(resultK(base, summary)).toBe(0.2)
     expect(resultK(base, { top_k: null } as never)).toBeNull()
+  })
+
+  it('効果の決め方の名前と, 入力の幅と出力の文 (S-learner は処置の列を足した幅と出力 1 つ)', () => {
+    expect(learnerText('s_learner')).toBe(
+      '処置の列を入力の終わりに足した 1 つの予測の差 (S-learner). 処置したときの予測は処置の列を 1 に, しないときの予測は 0 にして入力の終わりに足した 1 つの予測です',
+    )
+    expect(learnerText('t_learner')).toMatch(
+      /^処置の群と対照の群の 2 つの予測の差 \(T-learner\)\. /,
+    )
+    expect(learnerText('x_learner')).toBe('x_learner')
+    const base = { features: ['age', 'visits'], treatment: 'coupon', input: 'x' }
+    const single = { ...base, learner: 's_learner', output: 'outcome' } as UpliftInfo
+    expect(modelText(single)).toBe(
+      '入力 x の幅 3 (見積もりに使う列 2 と処置の列 coupon の 1. 処置の列には一式が 1 と 0 を入れます). 出力は結果の予測 outcome の 1 つで, 処置の列を 1 と 0 にして 2 回予測します',
+    )
+    const pair = { ...base, learner: 't_learner', treated: 'treated', control: 'control' }
+    expect(modelText(pair as UpliftInfo)).toBe(
+      '入力 x の幅 2 (見積もりに使う列. 処置の列は入れません). 出力は処置したときの予測 treated としないときの予測 control の 2 つです',
+    )
   })
 
   it('学習用の行の効果の分布の文', () => {

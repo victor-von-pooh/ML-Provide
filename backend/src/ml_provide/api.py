@@ -1816,7 +1816,8 @@ def demand_meta(
 
 def uplift_meta(bundle: Any) -> Optional[dict[str, Any]]:
     """
-    効果の結果に残す, 実験の Qini の曲線, 結果の種類, K を返す関数
+    効果の結果に残す, 実験の Qini の曲線, 結果の種類, K, 効果の決め方を
+    返す関数
 
     Parameters
     ----------
@@ -1827,9 +1828,10 @@ def uplift_meta(bundle: Any) -> Optional[dict[str, Any]]:
     ----------
     uplift: Optional[dict[str, Any]]
         curves (分割ごとの rows, fraction, qini, random の並び), outcome
-        (binary か amount), k. 効果の一式でなければ None
+        (binary か amount), k, learner (t_learner か s_learner). 効果の
+        一式でなければ None
     """
-    # 一式の登録を消した後も結果の画面に曲線を出すための写し
+    # 一式の登録を消した後も結果の画面に曲線と決め方を出すための写し
     if not bundle.from_uplift:
         return None
     found = bundle.info["uplift"]
@@ -1837,6 +1839,7 @@ def uplift_meta(bundle: Any) -> Optional[dict[str, Any]]:
         "curves": copy.deepcopy(found.get("curves") or {}),
         "outcome": str(found["outcome"]),
         "k": float(found["k"]),
+        "learner": str(found["learner"]),
     }
 
     return uplift

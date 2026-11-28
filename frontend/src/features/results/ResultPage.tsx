@@ -1007,7 +1007,13 @@ export function ResultPage() {
               </ul>
             </details>
           )}
-          {uplift && <UpliftTerms outcome={uplift.outcome} k={resultK(data, uplift)} />}
+          {uplift && (
+            <UpliftTerms
+              outcome={uplift.outcome}
+              k={resultK(data, uplift)}
+              learner={data.uplift?.learner}
+            />
+          )}
           {priced && <PriceTerms cost={priced.cost} step={data.price?.step} />}
           {demand && <DemandTerms horizon={demand.horizon} stock={demand.stock} />}
           {summary && <DecisionBars counts={summary} />}
