@@ -608,9 +608,9 @@ function CreateBundleForm({
                   />
                 </div>
                 <p className="text-xs text-ink-3 md:col-span-2">
-                  問題の設定の段階で書き出した学習のプロジェクトで学習した実験なら, config の
-                  data.input_points と data.target_points, 種は data.seed + 1 (検証用の分割の種)
-                  を書きます. 違う数だと黙って違う予測になります
+                  骨組みの学習のプロジェクトで学習した実験なら, config の data.input_points と
+                  data.target_points, 種は data.seed + 1 (検証用の分割の種) を書きます.
+                  違う数だと黙って違う予測になります
                 </p>
               </>
             )}

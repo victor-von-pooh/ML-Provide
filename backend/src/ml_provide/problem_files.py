@@ -167,7 +167,7 @@ def linked_guard(
     created = entry.get("problem_created")
     if created and str(problem.get("created_at")) != created:
         return None, (
-            "つないだ問題が別の問題に置き換わっているので, "
+            "つないだ問題のファイルが別の問題で上書きされているので, "
             "守る指標は数えていません"
         )
     try:

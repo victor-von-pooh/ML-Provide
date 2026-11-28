@@ -918,7 +918,7 @@ def problem_state(
         created = entry.get("problem_created")
         if created and str(problem.get("created_at")) != created:
             raise HTTPException(
-                422, f"{path} がつないだときと別の問題に置き換わって"
+                422, f"{path} がつないだときと別の問題で上書きされて"
                 "います"
             )
         state["linked"] = linked_view(entry, path, problem)

@@ -360,7 +360,7 @@ def test_backtest_without_guard_of_broken_problem(
     ml_quest.save_problem(other, project)
     replay = client.post(replay_url)
     assert replay.status_code == 200, replay.text
-    assert any("置き換わっているので, 守る指標は数えていません" in s
+    assert any("上書きされているので, 守る指標は数えていません" in s
                for s in replay.json()["backtest"]["sentences"])
 
     # 読めない, 消えた場合も, 数えずに知らせる
@@ -539,7 +539,7 @@ def test_link_problems(client: TestClient, tmp_path: Path) -> None:
     replaced = dict(shop_problem(), created_at="2020-01-01T00:00:00+09:00")
     ml_quest.save_problem(replaced, path)
     state = client.get(url).json()
-    assert state["linked"] is None and "置き換わって" in state["error"]
+    assert state["linked"] is None and "上書きされて" in state["error"]
     assert state["path"] == str((path / "problem.yaml").resolve())
 
 

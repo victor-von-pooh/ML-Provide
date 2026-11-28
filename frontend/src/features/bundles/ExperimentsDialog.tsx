@@ -127,7 +127,7 @@ export function ExperimentsDialog({
         <p role="status" className="text-sm text-ink-2">
           一式を持つ実験がありません ({data.projects} 個の学習のプロジェクトを見ました).
           問題の設定の段階で学習のプロジェクトを書き出して学習するか, 「場所で登録」を使います.
-          問題の設定の置き場: <span className="font-mono text-xs">{data.problems}</span>
+          問題の設定の段階の置き場: <span className="font-mono text-xs">{data.problems}</span>
         </p>
       )}
       {data && data.experiments.length > 0 && (
