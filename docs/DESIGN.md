@@ -46,6 +46,10 @@ ML-Provide の今の設計と決まりをまとめる. まだやっていない�
 | 結論の決め方を変えて出し直す, 結果を保存し比べる | 結論の決め直し, 結果の保存と一覧, 結果どうしの比べ, CSV の書き出し, 1 行の予測の理由 | 統合以外は無し |
 | 問題の損得と結論の決め方を既定にする | 一式に問題をつなぐ (「問題とのつなぎ」). 候補の探し方 (一式の上に無ければ殻で選んだ問題) と食い違いの表示 | 無し |
 | 置き場, トークン, 待ち受けを外から決められる | `create_app(data_dir, token, allowed_hosts, procedures, units)` と環境変数 `ML_PROVIDE_HOME`, `ML_PROVIDE_TOKEN`. ポートは `--port` (起動のコマンドだけ). 確かめを持たない API だけのアプリ (`create_api`) を殻の頭の下に mount できる (「4. API」). 画面の根の部品 (`StageApp`) に経路の頭, API の頭, 殻で選んだ問題を渡して載せられる (「3. 画面」の「根の部品」). 画面の部品は殻の共通の部品の写しを使う (「3. 画面」の「共通の部品」) | 無し |
+| 殻に段階の進みを返す (殻の R13) | 進みに使う物は API にある. 一式は問題につないだ一式と, 出どころに問題を含む一式と, 登録の場所が問題の学習のプロジェクトの出力先の下にある方策の一式. `GET /api/experiments?project=` (問題が記録した学習のプロジェクトの, 推論の一式を持つ実験) と `GET /api/experiments/policies?project=` (方策の一式を持つ実験), `GET /api/bundles` の `problem_id` (一式につないだ問題) と `problem_ids` (一式の出どころの学習のプロジェクトを記録した問題). 推論の段階はジョブを持たないので, 進みに「動いている」は無い | `GET /progress` (ML-Quest の `stage_needs` で推論が要らない問題は `skip`, `needs.infer.training` が真で一式も一式を持つ実験も無ければ前提が足りない `blocked`) と, 一式を作る, 登録する, 外す, 問題をつなぐ, 外れ方を書き戻すときの `onProgressChange` (TODO.md の高と中) |
+| 問題を直したときに一式が古いと分かる (殻の R15) | 一式の画面が, つないだ問題と一式のずれ (目的の列, 意思決定, 結論の決め方. `GET /api/bundles/{id}/problem` の `issues`) と, つないだ後に問題が別の問題で上書きされたこと (`error`) を表示のたびに比べて出す (一式の元の実験は書き換わらないので比べない) | 進みの「古い」 (TODO.md の高の `GET /progress`) |
+| 前提が足りないときに学習・評価の段階へ戻れる (殻の R16) | 実験の一覧の対話の枠が, 選んだ問題の学習のプロジェクトに一式を持つ実験が無いときに, 全ての問題の実験を出すか「場所で登録」を使うと出す | 段階の頭の, 学習・評価の段階を名指す文と, その段階へ移るボタン (TODO.md の高). 出すのは `needs.infer.training` が真の問題だけ (偽の問題は実験が無くても一式を作れるため). 推論は最後の段階なので, 次の段階へのボタン (殻の R14 と `nextStage`) は持たない |
+| 開いている一式と選んだ問題を合わせる (殻の R18) | `/bundles/{id}` は再読み込みと直接の URL で URL の一式を開き, 殻で選んだ問題が替わっても一覧へ移らない (1 つの問題から一式がいくつもできるため) | 一式が選んだ問題の物でないときの文と, 一式の一覧へ移るボタン (TODO.md の低) |
 
 ### 統合先
 
@@ -61,7 +65,7 @@ ML-Inference と ML-Quest は submodule. 形の決まりを 2 か所に持たな
 | 推論の結果 (`predictions.csv`, `result.yaml`, `artifacts/`) | ML-Inference | 置き場に書いて読む (`write_result`, `read_result`. 予測の表の読み方は下) | 1 から 5 (版 3 は読み直すと値が変わる列の型 `column_types` を持つ. 版 4 は数と文字の混ざる列の型 `mixed` と, その列の数に見える文字の行の位置 `text_rows` も持つ. 版 5 は書き出したデータセットの分割を推論した結果で, 入力の分割 `split` (`dataset` と `name`) を持ち, ML-Inference の `source` は空. このアプリは `source` に人が読む入力の文を書き, `split` から分割を読み直す). `RESULT_FORMAT_VERSION` より新しい版は「この版の結果は読めません」で止める (一覧では飛ばす) |
 | 人の確かめの記録 (結果のディレクトリの `reviews.csv`) | ML-Inference | 異常の度合いの結果で画面で付けた判断を `record_review` で足し, `read_reviews` で読む (CSV を自分で読み書きしない) | 版を持たない (列は ML-Inference が決める) |
 | 問題 (`problem.yaml`) | ML-Quest | 読むだけ (受け渡しの `handoff` の `inference` と, 今のやり方 `action.current`, 写しの元の場所 `problem_origin`, 書き出した学習のプロジェクトの記録 `project`). 書き戻さない | 1 と 2. 新しい版は読めない理由を出して止まる |
-| データセット | ML-EDA (ML-Fathom で書き出す) | 一式を作るときに `make_bundle` に渡す. 読めるのは `make_bundle` が読む形 (版 1 の列のデータセットと, 版 2 と版 3 のファイルの組). 一式を作る画面でファイルの組の項目と中身の手順を見せるために, ML-EDA の `load_items` で読む (書かない). 見本の一式は ML-Inference の `make_sample_bundle` が作る (図形の領域の見本は, ML-EDA の合成の画像と領域を書き出したデータセットから `make_bundle` で作る) |
+| データセット | ML-EDA (ML-Fathom で書き出す) | 一式を作るときに `make_bundle` に渡す. 一式を作る画面でファイルの組の項目と中身の手順を見せるために, ML-EDA の `load_items` で読む (書かない). 見本の一式は ML-Inference の `make_sample_bundle` が作る (図形の領域の見本は, ML-EDA の合成の画像と領域を書き出したデータセットから `make_bundle` で作る) | `make_bundle` が読む形 (版 1 の列のデータセットと, 版 2 と版 3 のファイルの組) |
 | 既製のモデルの出どころ (重みの説明とライセンス) | ML-Inference (`READY_LIBRARIES`), ML-ModelControl (`pretrained_info`) | 一式を作る前の下見で, 種類の名前の表, 前処理, 重みのファイルの名前を `READY_LIBRARIES[library](model, weights)` で読み, ライセンスの情報を ML-ModelControl の `pretrained_info` で読む (このアプリが ML-ModelControl を直接使うのはここだけ). 読んだライセンスの情報を `make_ready_bundle` に渡す | ML-Inference に従う |
 | モデルの定義 | ML-ModelControl (ML-CreateArchitecture で組む) | 一式を作るときに `make_bundle` に渡す | ML-Inference に従う |
 | 実験のディレクトリ (重み, `run.json`) | ML-Found | 一式を作るときに読む. 書かない |  |
