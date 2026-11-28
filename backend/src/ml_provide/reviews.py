@@ -49,7 +49,7 @@ def require_anomaly(meta: dict[str, Any]) -> None:
     """
     if meta.get("kind") != "anomaly":
         raise HTTPException(
-            400, "人の確認は異常の度合いの一式の結果だけで使えます"
+            400, "人の確かめは異常の度合いの一式の結果だけで使えます"
         )
 
 
@@ -129,7 +129,7 @@ def duplicate_problem(
     shown = ", ".join(repeated[:5]) + (" など" if len(repeated) > 5 else "")
     problem = (
         f"行の id の列 {column} に同じ値の行があります ({shown}). 記録が"
-        "どの行を指すか決まらないので, 人の確認を使えません. id が重ならない"
+        "どの行を指すか決まらないので, 人の確かめを使えません. id が重ならない"
         "表で推論し直してください"
     )
 

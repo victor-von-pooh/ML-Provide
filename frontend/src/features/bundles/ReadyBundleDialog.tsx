@@ -182,7 +182,7 @@ export function ReadyBundleDialog({
               className={`${FIELD} font-mono`}
             />
             <p id="ready-sha256-note" className="mt-1 text-xs text-ink-3">
-              問題の設定や前に作った一式で決めておいた値. 書くと, 読んだ重みと違えば作りません
+              問題や前に作った一式で決めておいた値. 書くと, 読んだ重みと違えば作りません
             </p>
             {hashProblem && (
               <p role="alert" className="mt-1 text-xs text-critical-text">

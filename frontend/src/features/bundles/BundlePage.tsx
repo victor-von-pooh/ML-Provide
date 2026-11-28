@@ -179,7 +179,7 @@ function RankRows({ rank }: { rank: NonNullable<Description['rank']> }) {
         学習用の反応にいた利用者 {rank.users.toLocaleString()} 人と品物{' '}
         {rank.items.toLocaleString()} 件 (埋め込みの幅 {rank.width})
       </Row>
-      <Row label="並べる件数の既定">{rank.k} 件 (問題の設定の件数)</Row>
+      <Row label="並べる件数の既定">{rank.k} 件 (問題の件数)</Row>
       <Row label="反応の表の列">
         <span className="font-mono text-xs">{rankColumnsText(rank.columns)}</span>
         <span className="block text-xs text-ink-2">
@@ -204,7 +204,7 @@ function SearchRows({ search }: { search: NonNullable<Description['search']> }) 
             : '写真に種類が無いので評価はありません. 並んだ写真と近さを見て確かめます'}
         </span>
       </Row>
-      <Row label="返す件数の既定">{search.k} 件 (問題の設定の件数)</Row>
+      <Row label="返す件数の既定">{search.k} 件 (問題の件数)</Row>
       <Row label="待ち時間の上限">
         {search.max_latency_ms === null
           ? '決めていません'
@@ -310,12 +310,12 @@ function AnomalyRows({
       </Row>
       <Row label="行の id の列">
         <span className="font-mono text-xs">{anomaly.id}</span>
-        <span className="block text-xs text-ink-2">人の確認の記録が行を指す列です</span>
+        <span className="block text-xs text-ink-2">人の確かめの記録が行を指す列です</span>
       </Row>
       <Row label="前処理">
         <span className="font-mono text-xs">{steps.join(' → ') || 'なし'}</span>
       </Row>
-      <Row label="人の確認に回す件数の上限">
+      <Row label="人の確かめに回す件数の上限">
         1 回に {anomaly.capacity.toLocaleString()} 件 (実験の評価の上位 K 件は{' '}
         {anomaly.k.toLocaleString()} 件)
       </Row>
@@ -1184,9 +1184,7 @@ function PredictCard({
             <div>
               <label htmlFor="predict-ahead">何段も先まで予測する</label>
               {linked?.horizon != null && linked.horizon > 1 && (
-                <p className="text-xs text-ink-2">
-                  問題の設定では {linked.horizon} 期先まで予測します
-                </p>
+                <p className="text-xs text-ink-2">問題では {linked.horizon} 期先まで予測します</p>
               )}
               <p id="predict-ahead-note" className="text-xs text-ink-3">
                 目的の列が空の先の行を,
@@ -1203,13 +1201,14 @@ function PredictCard({
           </p>
         )}
         {anomaly && (
-          <section aria-label="人の確認">
+          <section aria-label="人の確かめ">
             <div className="max-w-xs">
               <label
                 htmlFor="predict-capacity"
                 className="mb-1 block text-xs font-medium text-ink-2"
               >
-                人の確認に回す件数の上限 (既定は一式の {anomaly.capacity} 件. {MAX_CAPACITY} 件まで)
+                人の確かめに回す件数の上限 (既定は一式の {anomaly.capacity} 件. {MAX_CAPACITY}{' '}
+                件まで)
               </label>
               <input
                 id="predict-capacity"
@@ -1439,8 +1438,8 @@ function PredictCard({
                 {!linked.handled
                   ? `「${linked.name}」: ${linked.text}`
                   : linked.decision
-                    ? `問題の設定「${linked.name}」の損得と結論の決め方を既定にしています`
-                    : `問題の設定「${linked.name}」は意思決定しない (予測を見て人が決める) ので, 意思決定は空にしています`}
+                    ? `問題「${linked.name}」の損得と結論の決め方を既定にしています`
+                    : `問題「${linked.name}」は意思決定しない (予測を見て人が決める) ので, 意思決定は空にしています`}
               </p>
             )}
             <DecisionEditor
@@ -1755,7 +1754,7 @@ export function BundlePage() {
   // 読まない種類の一式なら, サーバーは問題の設定を読まずに空の状態を返す)
   const listed = client.getQueryData<Bundle[]>(['bundles'])?.find((item) => item.id === id)
   const noProblem = (bundle.data?.uses_problem ?? listed?.uses_problem) === false
-  // 殻で選んだ問題の設定は, 一式の上に候補が無い場合の候補にする
+  // 殻で選んだ問題は, 一式の上に候補が無い場合の候補にする
   const { project } = useStage()
   const problem = useQuery({
     queryKey: ['bundle-problem', id, project],
@@ -1799,7 +1798,7 @@ export function BundlePage() {
               const message = data.copied_from
                 ? 'この一式を消しますか? (学習の実験から写した一式なので, 写しを消します. 写した元の実験の一式は残ります. 結果は残ります)'
                 : data.managed
-                  ? 'この一式を消しますか? (このアプリが作った一式なので, ファイルも消します. 結果は残ります)'
+                  ? 'この一式を消しますか? (推論の段階が作った一式なので, ファイルも消します. 結果は残ります)'
                   : '登録を外しますか? (一式のファイルは残ります)'
               if (window.confirm(message)) remove.mutate()
             }}
@@ -1827,7 +1826,7 @@ export function BundlePage() {
             />
             {!noProblem && problem.isPending && (
               <p role="status" className="text-xs text-ink-3">
-                問題の設定を読んでいます…
+                問題を読んでいます…
               </p>
             )}
             {!noProblem && problem.error && (

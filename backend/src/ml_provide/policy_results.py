@@ -133,7 +133,7 @@ def read_meta(place: Path) -> dict[str, Any]:
     version = meta.get("format_version")
     if not isinstance(version, int) or version > POLICY_RESULT_VERSION:
         raise ValueError(
-            "この方策の結果は新しい版のため, このアプリでは読めません"
+            "この方策の結果は新しい版のため, 推論の段階では読めません"
         )
 
     return meta

@@ -77,10 +77,10 @@ def problem_file(text: str) -> Path:
         found = path.is_file()
     except (OSError, ValueError, RuntimeError) as error:
         raise HTTPException(
-            422, f"問題の設定の場所として読めません: {error}"
+            422, f"問題の場所として読めません: {error}"
         ) from error
     if not found:
-        raise HTTPException(404, f"{path} に問題の設定がありません")
+        raise HTTPException(404, f"{path} に問題がありません")
     if path.suffix.lower() not in SUFFIXES:
         raise HTTPException(
             422, f"{path.name} は YAML のファイル (.yaml) ではありません"
@@ -114,13 +114,13 @@ def read_problem(path: Path) -> dict[str, Any]:
         problem: dict[str, Any] = ml_quest.load_problem(path)
     except READ_ERRORS as error:
         raise HTTPException(
-            422, f"問題の設定を読めません: {error}"
+            422, f"問題を読めません: {error}"
         ) from error
     if not isinstance(problem.get("name"), str) or not problem.get(
         "created_at"
     ):
         raise HTTPException(
-            422, f"{path.name} は問題の設定のファイルではありません"
+            422, f"{path.name} は問題のファイルではありません"
         )
 
     return problem
@@ -161,20 +161,20 @@ def linked_guard(
         problem = read_problem(path)
     except HTTPException as error:
         return None, (
-            "つないだ問題の設定を読めないので, 守る指標は数えていません "
+            "つないだ問題を読めないので, 守る指標は数えていません "
             f"({error.detail})"
         )
     created = entry.get("problem_created")
     if created and str(problem.get("created_at")) != created:
         return None, (
-            "つないだ問題の設定が別の問題の設定に置き換わっているので, "
+            "つないだ問題が別の問題に置き換わっているので, "
             "守る指標は数えていません"
         )
     try:
         name = ml_quest.active_value(problem, "issue.guard.name")
     except SHAPE_ERRORS:
         return None, (
-            "つないだ問題の設定の形が崩れているので, 守る指標は数えて"
+            "つないだ問題の形が崩れているので, 守る指標は数えて"
             "いません"
         )
     if not isinstance(name, str) or not name.strip():
@@ -185,8 +185,8 @@ def linked_guard(
         stages = ml_quest.handoff(problem)
     except SHAPE_ERRORS as error:
         raise HTTPException(
-            400, f"つないだ問題の設定の守る指標「{name.strip()}」を数える"
-            f"には, 問題の設定を推論に渡せる形に直してください ({error}). "
+            400, f"つないだ問題の守る指標「{name.strip()}」を数える"
+            f"には, 問題を推論に渡せる形に直してください ({error}). "
             "守る指標を数えずにたどり直すなら, 一式の画面でつなぎを外して"
             "ください"
         ) from error

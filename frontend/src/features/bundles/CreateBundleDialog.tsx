@@ -367,7 +367,7 @@ function CreateBundleForm({
       onCreated(bundle)
     },
   })
-  // 欄の書きかけを下書きに残す (殻で選んだ問題の設定が替わるときは待たずに書く)
+  // 欄の書きかけを下書きに残す (殻で選んだ問題が替わるときは待たずに書く)
   const drafted: CreateDraft = {
     name,
     spec,
@@ -482,11 +482,11 @@ function CreateBundleForm({
         }}
       >
         <p className="text-xs text-ink-2">
-          モデルの定義, ML-EDA (ML-Fathom の画面) で書き出したデータセット (列のデータセットか,
-          画像と領域, 撮影と点群の版 2 か版 3 のデータセット), ML-Found の実験 (か重みのファイル)
-          を選びます. 雑音だけから作る生成のモデル (拡散やフロー) はデータセットを使いません.
-          学習用の見本 (雑音だけの一式は手順で作った 2 件) を推論できることを確かめてから,
-          このアプリの置き場に作ります (元のファイルは変えません).
+          モデルの定義, データの分析の段階で書き出したデータセット (列のデータセットか, 画像と領域,
+          撮影と点群の版 2 か版 3 のデータセット), 学習の実験 (か重みのファイル) を選びます.
+          雑音だけから作る生成のモデル (拡散やフロー) はデータセットを使いません. 学習用の見本
+          (雑音だけの一式は手順で作った 2 件) を推論できることを確かめてから,
+          推論の段階の置き場に作ります (元のファイルは変えません).
         </p>
         <div>
           <label htmlFor="bundle-name" className="mb-1 block text-xs font-medium text-ink-2">
@@ -608,9 +608,9 @@ function CreateBundleForm({
                   />
                 </div>
                 <p className="text-xs text-ink-3 md:col-span-2">
-                  ML-Quest の骨組みで学習した実験なら, config の data.input_points と
-                  data.target_points, 種は data.seed + 1 (検証用の分割の種) を書きます.
-                  違う数だと黙って違う予測になります
+                  問題の設定の段階で書き出した学習のプロジェクトで学習した実験なら, config の
+                  data.input_points と data.target_points, 種は data.seed + 1 (検証用の分割の種)
+                  を書きます. 違う数だと黙って違う予測になります
                 </p>
               </>
             )}

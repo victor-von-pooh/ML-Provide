@@ -289,16 +289,16 @@ test('日々の売上の見本に問題の設定をつなぐと, 損得, 根拠,
 
   // つなぐと, 問題の設定の損得と根拠
   await page
-    .getByLabel('問題の設定 (problem.yaml か, それを持つディレクトリ)')
+    .getByLabel('問題 (problem.yaml か, それを持つディレクトリ)')
     .fill(path.resolve(import.meta.dirname, '.work', 'problem'))
   await page.getByRole('button', { name: 'つなぐ', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '問題の設定: 総菜の作る量' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '問題: 総菜の作る量' })).toBeVisible()
   await expect(page.getByText('損得の根拠: 欠品は粗利 200 円, 廃棄は原価 150 円')).toBeVisible()
   await expect(under).toHaveValue('200')
-  await expect(page.getByText(/問題の設定「総菜の作る量」の損得/)).toBeVisible()
+  await expect(page.getByText(/問題「総菜の作る量」の損得/)).toBeVisible()
   // 今のやり方は列を足さずに, 問題の設定の決まり (7 期前) で比べる
   await expect(
-    page.getByText('空なので, 問題の設定の今のやり方 (7 期前の値と同じ量) で比べます.'),
+    page.getByText('空なので, 問題の今のやり方 (7 期前の値と同じ量) で比べます.'),
   ).toBeVisible()
 
   // その値で推論し, 今のやり方の列の無い過去のデータでたどり直せる
@@ -325,7 +325,7 @@ test('日々の売上の見本に問題の設定をつなぐと, 損得, 根拠,
     .first()
     .click()
   await page.getByRole('button', { name: 'つなぎを外す' }).click()
-  await expect(page.getByRole('heading', { name: '問題の設定', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '問題', exact: true })).toBeVisible()
   await expect(under).toHaveValue('3')
 })
 
@@ -336,7 +336,7 @@ test('受け持ちが列の予測でない問題の設定は, つなぐとまだ
   await page.getByRole('link', { name: '見本: 日々の売上の予測 (時系列, 先の予測)' }).click()
   // 前のテストがつないだままでも, 外してから始める (テストの順に依らない)
   const unlink = page.getByRole('button', { name: 'つなぎを外す' })
-  const field = page.getByLabel('問題の設定 (problem.yaml か, それを持つディレクトリ)')
+  const field = page.getByLabel('問題 (problem.yaml か, それを持つディレクトリ)')
   await expect(unlink.or(field)).toBeVisible()
   if (await unlink.isVisible()) await unlink.click()
   const under = page.getByLabel('1 単位足りないときの損 (欠品の利益など)')
@@ -344,13 +344,13 @@ test('受け持ちが列の予測でない問題の設定は, つなぐとまだ
 
   await field.fill(path.resolve(import.meta.dirname, '.work', 'problem-generate'))
   await page.getByRole('button', { name: 'つなぐ', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '問題の設定: 総菜の作る量' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '問題: 総菜の作る量' })).toBeVisible()
   await expect(page.getByText('受け持ち: 作る, 正解の種類は画像')).toBeVisible()
   await expect(page.getByText(/推論の結論はまだ扱いません/).first()).toBeVisible()
   await expect(under).toHaveValue('3')
 
   await page.getByRole('button', { name: 'つなぎを外す' }).click()
-  await expect(page.getByRole('heading', { name: '問題の設定', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '問題', exact: true })).toBeVisible()
 })
 
 test('効果を確率の差で渡すと, 向きの欄が出て, 無作為の試験で確かめると書く', async ({ page }) => {
@@ -512,9 +512,9 @@ test('実験の一覧から一式を登録し, 写しが指す元の問題の設
     page.getByRole('heading', { name: '総菜の作る量 (sales/2026-01-02/09-00-00)' }),
   ).toBeVisible({ timeout: 30_000 })
   await expect(page.locator('#problem-hint')).toHaveText(original)
-  await expect(page.getByText(/が指す元の問題の設定です/)).toBeVisible()
+  await expect(page.getByText(/が指す元の問題です/)).toBeVisible()
   await page.getByRole('button', { name: 'これをつなぐ' }).click()
-  await expect(page.getByRole('heading', { name: '問題の設定: 総菜の作る量' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '問題: 総菜の作る量' })).toBeVisible()
   const under = page.getByLabel('1 単位足りないときの損 (欠品の利益など)')
   await expect(under).toHaveValue('200')
 
@@ -737,7 +737,7 @@ test('拡散のモデルの実験から, データセットを使わずに雑音
   await expect(page.getByText(/t ← 手順の時刻, x ← 手順の中身/)).toBeVisible()
   // 手順の設定は読める文で, 雑音だけの一式には問題の設定の欄を出さない
   await expect(page.getByText('(設定: eta 0)')).toBeVisible()
-  await expect(page.getByRole('heading', { name: /^問題の設定/ })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: /^問題(: |$)/ })).toHaveCount(0)
   const id = new URL(page.url()).pathname.split('/').pop() ?? ''
   try {
     await expect(page.getByLabel(/^推論するデータ/)).toHaveCount(0)
@@ -906,9 +906,9 @@ test('並べるの骨組みの実験の中に作った並べるの一式を, 実
   const id = new URL(page.url()).pathname.split('/').pop() ?? ''
   try {
     await expect(page.getByText(/利用者 4 人と品物 6 件/)).toBeVisible()
-    await expect(page.getByText('3 件 (問題の設定の件数)')).toBeVisible()
+    await expect(page.getByText('3 件 (問題の件数)')).toBeVisible()
     await expect(page.getByLabel(/^並べる件数 K/)).toHaveValue('3')
-    await expect(page.getByRole('heading', { name: /^問題の設定/ })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: /^問題(: |$)/ })).toHaveCount(0)
     await expect(page.getByRole('region', { name: '意思決定' })).toHaveCount(0)
 
     // 利用者の表のファイルを 2 件ずつ, 前に反応した品物を除き, 後の反応で数える
@@ -980,7 +980,7 @@ test('まとめるの骨組みの実験の中に作った群分けの一式を, 
     await expect(
       page.getByRole('table', { name: '学習の群の安定性 (モデル, 比べる相手, 差)' }),
     ).toContainText('0.970')
-    await expect(page.getByRole('heading', { name: /^問題の設定/ })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: /^問題(: |$)/ })).toHaveCount(0)
     await expect(page.getByRole('region', { name: '意思決定' })).toHaveCount(0)
 
     // 新しい行の表を群に割り当てる
@@ -1180,7 +1180,7 @@ async function registerFresh(request: APIRequestContext, place: string): Promise
   return ((await response.json()) as { id: string }).id
 }
 
-test('異常の度合いの一式を場所で登録して推論し, 人の確認に回した行に 1 件ずつ判断を付けて記録を見る', async ({
+test('異常の度合いの一式を場所で登録して推論し, 人の確かめに回した行に 1 件ずつ判断を付けて記録を見る', async ({
   page,
 }) => {
   const root = path.resolve(import.meta.dirname, '.work', 'anomaly')
@@ -1194,11 +1194,11 @@ test('異常の度合いの一式を場所で登録して推論し, 人の確認
       page.getByRole('table', { name: '実験の評価 (分割ごとの上位 K 件の適合率と PR-AUC)' }),
     ).toContainText('0.333')
     await expect(page.getByRole('region', { name: '意思決定' })).toHaveCount(0)
-    await expect(page.getByRole('heading', { name: '問題の設定' })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: '問題', exact: true })).toHaveCount(0)
 
     // 新しい行の度合いを出し, 上位 2 件を人の確認に回す
     await page.getByLabel(/^度合いを出す行の表/).fill(path.join(root, 'readings.csv'))
-    await page.getByLabel(/^人の確認に回す件数の上限/).fill('2')
+    await page.getByLabel(/^人の確かめに回す件数の上限/).fill('2')
     await page.getByRole('button', { name: '推論する' }).click()
     await expect(page.getByText(/^14 行のうち 13 行の異常の度合い/)).toBeVisible({
       timeout: 30_000,
@@ -1215,7 +1215,7 @@ test('異常の度合いの一式を場所で登録して推論し, 人の確認
     await expect(top.getByRole('row').nth(1)).toContainText('vibration')
 
     // 名前を書いて 1 件ずつ判断を付けると, 待ち行列の今の判断と記録が変わる
-    const queue = page.getByRole('table', { name: /^人の確認に回した行/ })
+    const queue = page.getByRole('table', { name: /^人の確かめに回した行/ })
     await expect(queue.getByRole('row')).toHaveCount(3)
     await page.getByLabel(/^確かめた人の名前/).fill('佐藤')
     const first = queue.getByRole('row').nth(1)
@@ -1227,7 +1227,7 @@ test('異常の度合いの一式を場所で登録して推論し, 人の確認
       .nth(2)
       .getByRole('button', { name: /を正常とする$/ })
       .click()
-    const log = page.getByRole('table', { name: /^確認の記録/ })
+    const log = page.getByRole('table', { name: /^確かめの記録/ })
     await expect(log.getByRole('row')).toHaveCount(3)
     await expect(log.getByRole('row').nth(1)).toContainText('異常')
     await expect(log.getByRole('row').nth(2)).toContainText('正常')
@@ -1253,7 +1253,7 @@ test('効果の一式を場所で登録して推論し, 効果の上位から配
     ).toContainText('検証用')
     await expect(page.getByRole('img', { name: /^検証用の Qini の曲線/ })).toBeVisible()
     await expect(page.getByRole('region', { name: '意思決定' })).toHaveCount(0)
-    await expect(page.getByRole('heading', { name: '問題の設定' })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: '問題', exact: true })).toHaveCount(0)
 
     // 新しい顧客の効果を見積もり, 上位 5 件に配る
     const customers = path.join(root, 'customers.csv')
@@ -1309,7 +1309,7 @@ test('値段の一式を場所で登録して推論し, 選んだ値段と利益
     await expect(page.getByText('-10 %, 0 %, +10 %, +20 %').first()).toBeVisible()
     await expect(page.getByRole('table', { name: /^実験の評価/ })).toContainText('検証用')
     await expect(page.getByRole('region', { name: '意思決定' })).toHaveCount(0)
-    await expect(page.getByRole('heading', { name: '問題の設定' })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: '問題', exact: true })).toHaveCount(0)
     await expect(page.getByLabel(/^値段の候補/)).toHaveValue('-0.1, 0, 0.1, 0.2')
     await expect(page.getByLabel(/^変える幅の上限/)).toHaveValue('0.1')
 
@@ -1386,7 +1386,7 @@ test('需要の一式を場所で登録して推論し, 発注の数と見込み
     await expect(page.getByText('0.1, 0.25, 0.5, 0.75, 0.9').first()).toBeVisible()
     await expect(page.getByRole('table', { name: /^実験の評価/ })).toContainText('検証用')
     await expect(page.getByRole('region', { name: '意思決定' })).toHaveCount(0)
-    await expect(page.getByRole('heading', { name: '問題の設定' })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: '問題', exact: true })).toHaveCount(0)
     await expect(page.getByLabel(/^品切れの損/)).toHaveValue('3')
     await expect(page.getByLabel(/^売れ残りの損/)).toHaveValue('1')
     await expect(page.getByLabel(/^発注の数の上限/)).toHaveValue('60')
@@ -1486,7 +1486,7 @@ test('既製のモデルの一式を下見して作り, ライセンスの警告
     await expect(page.getByText(/e2e-colors-0123abcd\.pth/)).toBeVisible()
     await expect(page.getByText(/置き場にありません/)).toBeVisible()
     await expect(page.getByRole('region', { name: '意思決定' })).toHaveCount(0)
-    await expect(page.getByText(/作り方が既製のモデルをそのままの問題の設定/)).toBeVisible()
+    await expect(page.getByText(/作り方が既製のモデルをそのままの問題/)).toBeVisible()
 
     // 画像のディレクトリを推論し, 種類の名前と確信度を見る (読めない画像は飛ばす)
     await page.getByLabel(/推論する画像/).fill(images)
@@ -1516,10 +1516,8 @@ test('検索の一式を場所で登録して問いの写真を推論し, 近い
     await expect(page.getByText(/Recall@K 1\.000, NDCG@K 1\.000/)).toBeVisible()
     await expect(page.getByLabel(/^返す件数 K/)).toHaveValue('3')
     // 問題の設定の欄は無く, 無い理由 (件数と上限は一式が写して持つ) を書く
-    await expect(
-      page.getByText(/問題の設定の欄はありません. 返す件数と待ち時間の上限/),
-    ).toBeVisible()
-    await expect(page.getByRole('heading', { name: /^問題の設定/ })).toHaveCount(0)
+    await expect(page.getByText(/問題の欄はありません. 返す件数と待ち時間の上限/)).toBeVisible()
+    await expect(page.getByRole('heading', { name: /^問題(: |$)/ })).toHaveCount(0)
 
     // 問いの写真を推論して, 問いごとの近い写真を見る
     await page.getByLabel(/^問いの写真/).fill(path.join(root, 'queries'))

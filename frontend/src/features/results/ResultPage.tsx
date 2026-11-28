@@ -1126,7 +1126,7 @@ export function ResultPage() {
               />
             ) : anomaly ? (
               <StatTile
-                label="人の確認に回す"
+                label="人の確かめに回す"
                 value={`${triage?.acted ?? 0} 件`}
                 hint={triage ? `上限 ${triage.capacity} 件` : '振り分けなし'}
               />

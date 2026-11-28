@@ -82,7 +82,7 @@ export function clearDraft(kind: string): void {
  * @param kind - 欄の種類
  * @param dirty - 書きかけがあるか
  * @param value - 書く中身 (JSON にできる値)
- * @param flushKey - 替わったときに待たずに書く値 (殻で選んだ問題の設定)
+ * @param flushKey - 替わったときに待たずに書く値 (殻で選んだ問題)
  * @param delay - 待つ時間 (ミリ秒)
  * @returns 書きかけを捨てる関数 (作り終えたときなど. 待っている書き込みも止める)
  */

@@ -1371,12 +1371,12 @@ export interface ProblemState {
   error: string | null
   /**
    * つないでいない一式の, 上のディレクトリで見つけた候補 (元の場所を持つ写しなら元).
-   * 上に無ければ殻で選んだ問題の設定
+   * 上に無ければ殻で選んだ問題
    */
   hint: string | null
   /** 候補が元の問題の設定か, 学習の時点の写しかを伝える文 */
   hint_note: string | null
-  /** 候補が殻で選んだ問題の設定か (一式の上に候補が無い場合) */
+  /** 候補が殻で選んだ問題か (一式の上に候補が無い場合) */
   hint_project: boolean
 }
 

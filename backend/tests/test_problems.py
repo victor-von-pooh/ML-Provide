@@ -631,7 +631,7 @@ def test_version1_and_version2(client: TestClient, tmp_path: Path) -> None:
                       encoding="utf-8")
     refused = client.put(url, json={"path": str(future)})
     assert refused.status_code == 422
-    assert "問題の設定を読めません" in refused.json()["detail"]
+    assert "問題を読めません" in refused.json()["detail"]
 
 
 def generate_problem() -> dict[str, Any]:
@@ -740,7 +740,7 @@ def test_origin_hint(client: TestClient, tmp_path: Path) -> None:
     url = f"/api/bundles/{bundle['id']}/problem"
     state = client.get(url).json()
     assert state["hint"] == str((original / "problem.yaml").resolve())
-    assert "元の問題の設定です" in state["hint_note"]
+    assert "元の問題です" in state["hint_note"]
 
     # つないだ元を直すと, 次に読むときから使う
     client.put(url, json={"path": state["hint"]})

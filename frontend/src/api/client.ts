@@ -72,7 +72,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T
 }
 
-/** 殻で選んだ問題の設定の識別子の検索の文 (選んでいなければ空) */
+/** 殻で選んだ問題の識別子の検索の文 (選んでいなければ空) */
 const projectQuery = (project: string | null): string =>
   project ? `?project=${encodeURIComponent(project)}` : ''
 
@@ -102,7 +102,7 @@ export function createApi(base: string) {
       ),
     createReadyBundle: (body: ReadyCreateBody) =>
       request<Bundle>(`${base}/bundles/ready`, json('POST', body)),
-    /** 実験の一覧 (project は殻で選んだ問題の設定の識別子. 渡せばそのプロジェクトの実験だけ) */
+    /** 実験の一覧 (project は殻で選んだ問題の識別子. 渡せばそのプロジェクトの実験だけ) */
     experiments: (project: string | null = null) =>
       request<ExperimentList>(`${base}/experiments${projectQuery(project)}`),
     policyExperiments: (project: string | null = null) =>
@@ -115,7 +115,7 @@ export function createApi(base: string) {
     restoreUncertainty: (id: string) =>
       request<Bundle>(`${base}/bundles/${id}/restore-uncertainty`, json('POST', {})),
     deleteBundle: (id: string) => request<void>(`${base}/bundles/${id}`, { method: 'DELETE' }),
-    /** つないだ問題の設定 (project は殻で選んだ問題の設定の識別子. 一式の上に候補が無い場合の候補) */
+    /** つないだ問題の設定 (project は殻で選んだ問題の識別子. 一式の上に候補が無い場合の候補) */
     bundleProblem: (id: string, project: string | null = null) =>
       request<ProblemState>(`${base}/bundles/${id}/problem${projectQuery(project)}`),
     linkProblem: (id: string, path: string | null, project: string | null = null) =>

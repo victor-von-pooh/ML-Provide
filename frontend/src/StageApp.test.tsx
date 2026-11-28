@@ -46,7 +46,7 @@ const BUNDLE: Bundle = {
   uses_problem: true,
 }
 
-/** つないでいない一式の状態 (殻で選んだ問題の設定を候補にした形) */
+/** つないでいない一式の状態 (殻で選んだ問題を候補にした形) */
 function unlinked(project: string | null): ProblemState {
   return {
     path: null,
@@ -232,7 +232,7 @@ describe('StageApp', () => {
     // 絞りは上限で打ち切る前に効くように API に渡す
     const asked = fetchMock.mock.calls.map(([input]) => String(input))
     expect(asked).toContain('/api/infer/experiments?project=aaaa')
-    fireEvent.click(within(dialog).getByRole('checkbox', { name: /全ての問題の設定の実験を出す/ }))
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /全ての問題の実験を出す/ }))
     expect(await within(dialog).findByText('run/2')).toBeInTheDocument()
   })
 
@@ -250,7 +250,7 @@ describe('StageApp', () => {
     window.history.replaceState(null, '', '/infer/bundles/b1')
     const fetchMock = stubApi('bbbb')
     const { onProjectChange } = renderStage({ project: 'aaaa' })
-    expect(await screen.findByText(/選んだプロジェクトの問題の設定を候補にしました/)).toBeVisible()
+    expect(await screen.findByText(/選んだ問題を候補にしました/)).toBeVisible()
     const asked = fetchMock.mock.calls.map(([input]) => String(input))
     expect(asked).toContain('/api/infer/bundles/b1/problem?project=aaaa')
     fireEvent.click(screen.getByRole('button', { name: 'これをつなぐ' }))

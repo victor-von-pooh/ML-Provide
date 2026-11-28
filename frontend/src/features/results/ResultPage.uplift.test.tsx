@@ -198,7 +198,7 @@ describe('効果の結果の画面', () => {
     expect(screen.getByText('上限 2 件')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '結論の決め方を変える' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /意思決定/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: '人の確認' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '人の確かめ' })).not.toBeInTheDocument()
   })
 
   it('曲線の図は矢印のキーで点を選ぶと値を出し, 表でも読める', async () => {

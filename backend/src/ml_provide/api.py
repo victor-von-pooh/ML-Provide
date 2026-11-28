@@ -1424,7 +1424,7 @@ def anomaly_decision(
         capacity > MAX_CAPACITY
     ):
         raise HTTPException(
-            400, f"人の確認に回す件数の上限は {MAX_CAPACITY} 件までに"
+            400, f"人の確かめに回す件数の上限は {MAX_CAPACITY} 件までに"
             f"してください (今は {capacity} 件)"
         )
 
@@ -2170,7 +2170,7 @@ def read_meta(place: Path) -> dict[str, Any]:
     newest = ml_inference.RESULT_FORMAT_VERSION
     if not isinstance(version, int) or version > newest:
         raise NewerResult(
-            f"format_version {version} の結果は, このアプリの ML-Inference "
+            f"format_version {version} の結果は, 推論の段階の ML-Inference "
             f"(結果の形の版 {newest} まで) では読めません"
         )
 
@@ -3278,9 +3278,9 @@ def check_guard_kind(
          if counted in items), counted
     )
     raise HTTPException(
-        400, f"問題の設定の守る指標「{(guard or {}).get('name')}」が数える量"
+        400, f"問題の守る指標「{(guard or {}).get('name')}」が数える量"
         f" ({described}) は, この結果の意思決定の型では数えられません. "
-        "意思決定の型を問題の設定に合わせて決め直すか, 問題の設定の守る"
+        "意思決定の型を問題に合わせて決め直すか, 問題の守る"
         "指標を選び直してください"
     )
 
@@ -3447,7 +3447,7 @@ def remeasure_result(
     view["copied_to"] = str(copied) if copied else None
     if copied:
         view["sentences"] = [
-            "学習の実験の中の一式は書き換えず, ML-Provide の置き場に写して"
+            "学習の実験の中の一式は書き換えず, 推論の段階の置き場に写して"
             "から書き戻しました (この一式の登録は写した方を指します)",
             *view["sentences"],
         ]

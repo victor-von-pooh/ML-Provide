@@ -67,7 +67,7 @@ def version_of(path: Path) -> str:
         version = hashlib.sha256(path.read_bytes()).hexdigest()
     except OSError as error:
         raise HTTPException(
-            422, f"問題の設定を読めません: {error}"
+            422, f"問題を読めません: {error}"
         ) from error
 
     return version
@@ -134,22 +134,22 @@ def origin_hint(copy: Path, ready: bool = False) -> tuple[str, str]:
     if origin is None:
         hint = (
             str(copy),
-            "この問題の設定は元の場所を持ちません (origin が無い). 写しの場合は"
-            ", ML-Pathfinder で直した損得は届かないので, 元があれば元を"
+            "この問題は元の場所を持ちません (origin が無い). 写しの場合は"
+            ", 問題の設定の段階で直した損得は届かないので, 元があれば元を"
             "つないでください"
         )
         return hint
     if Path(origin) != copy and is_usable(Path(origin), ready):
         hint = (
             origin,
-            f"学習の時点の写し ({copy}) が指す元の問題の設定です. "
-            "ML-Pathfinder で直した損得が推論に届きます"
+            f"学習の時点の写し ({copy}) が指す元の問題です. "
+            "問題の設定の段階で直した損得が推論に届きます"
         )
         return hint
     hint = (
         str(copy),
-        f"写しが指す元の問題の設定 ({origin}) が無いか推論に渡せないので, "
-        "学習の時点の写しを候補にしました. ML-Pathfinder で直した損得は"
+        f"写しが指す元の問題 ({origin}) が無いか推論に渡せないので, "
+        "学習の時点の写しを候補にしました. 問題の設定の段階で直した損得は"
         "届きません"
     )
 
@@ -422,8 +422,8 @@ def issues_of(
     bundle_target = bundle.dataset.info.get("target")
     if target and bundle_target and target != bundle_target:
         issues.append(
-            f"問題の設定の目的の列 {target} と, 一式の目的の列 "
-            f"{bundle_target} が違います (別の問題の設定かもしれません)"
+            f"問題の目的の列 {target} と, 一式の目的の列 "
+            f"{bundle_target} が違います (別の問題かもしれません)"
         )
     # 「データに無い」の知らせは列が全て分かる場合だけ (説明とレシピから
     # 集めた列では, 自動で見つけた列を誤って無いと知らせるため)
@@ -541,7 +541,7 @@ def with_baseline(
         rule["time"] = fallback_time
     else:
         notes.append(
-            "今のやり方 (k 期前と平均) は時刻の列で数えるので, 問題の設定にも"
+            "今のやり方 (k 期前と平均) は時刻の列で数えるので, 問題にも"
             "一式の過去の値の手順にも時刻の列が無いと, たどり直しで比べません"
         )
         result = (decision, notes)
@@ -622,7 +622,7 @@ def ready_issues(
             )
         if want != have:
             issues.append(
-                f"既製のモデル: 問題の設定の{label} {want} と, 一式の{label} "
+                f"既製のモデル: 問題の{label} {want} と, 一式の{label} "
                 f"{have} が違います"
             )
 
@@ -637,12 +637,12 @@ def ready_issues(
         return issues
     if have is None:
         issues.append(
-            "既製のモデル: 一式に重みのハッシュ値の記録が無いので, 問題の"
-            "設定の重みのハッシュ値を確かめられません"
+            "既製のモデル: 一式に重みのハッシュ値の記録が無いので, 問題の重み"
+            "のハッシュ値を確かめられません"
         )
     elif want.strip().lower() != have.strip().lower():
         issues.append(
-            f"既製のモデル: 問題の設定の重みのハッシュ値 {want.strip()[:12]}… "
+            f"既製のモデル: 問題の重みのハッシュ値 {want.strip()[:12]}… "
             f"と, 一式が読んだ重みのハッシュ値 {have.strip()[:12]}… が違います"
             " (別の重みかもしれません)"
         )
@@ -684,7 +684,7 @@ def ready_view(
             "conclusion": dict(bundle.info.get("conclusion") or {}),
             "basis": None, "issues": [],
             "text": (
-                "この問題の設定の作り方は既製のモデルをそのままではないので, "
+                "この問題の作り方は既製のモデルをそのままではないので, "
                 "既製のモデルの一式には使いません. 結論の決め方は一式の既定値"
                 "のままです"
             ),
@@ -694,8 +694,8 @@ def ready_view(
         "handled": True, "decision": None, "conclusion": conclusion,
         "basis": None,
         "text": (
-            "既製のモデルの一式は意思決定を使えないので, 問題の設定の意思決定"
-            "は使いません. 結論の決め方は問題の設定の値を既定にします"
+            "既製のモデルの一式は意思決定を使えないので, 問題の意思決定"
+            "は使いません. 結論の決め方は問題の値を既定にします"
         ),
         "issues": ready_issues(bundle, planned) + [
             f"結論の決め方: {message}" for message in
@@ -769,7 +769,7 @@ def linked_view(
         handled = is_column_part(problem)
     except SHAPE_ERRORS as error:
         raise HTTPException(
-            422, f"問題の設定を推論に渡せません: {error}"
+            422, f"問題を推論に渡せません: {error}"
         ) from error
     try:
         bundle = read_bundle(str(entry["path"]))
@@ -800,7 +800,7 @@ def linked_view(
     }
     if not handled:
         text = (
-            f"この問題の設定の受け持ち ({role}) の推論の結論はまだ扱いません. "
+            f"この問題の受け持ち ({role}) の推論の結論はまだ扱いません. "
             "意思決定と結論の決め方は一式の既定値のままです"
         )
     elif decision:
@@ -918,7 +918,7 @@ def problem_state(
         created = entry.get("problem_created")
         if created and str(problem.get("created_at")) != created:
             raise HTTPException(
-                422, f"{path} がつないだときと別の問題の設定に置き換わって"
+                422, f"{path} がつないだときと別の問題に置き換わって"
                 "います"
             )
         state["linked"] = linked_view(entry, path, problem)
@@ -1005,7 +1005,7 @@ def link_problem(
     # 問題の設定を使わない種類の一式 (並べる, 検索など) にはつながない
     if not uses_problem(bundle_kind(str(entry["path"]))):
         raise HTTPException(
-            400, "この一式は問題の設定を使わないので, つなげません"
+            400, "この一式は問題を使わないので, つなげません"
         )
     path = problem_file(str(body.path))
     problem = read_problem(path)

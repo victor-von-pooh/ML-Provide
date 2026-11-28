@@ -118,7 +118,7 @@ describe('異常の度合いの一式の画面', () => {
 
     // 推論の欄は表のファイルと件数の上限だけで, 結論の決め方と意思決定は出さない
     expect(screen.getByLabelText(/^度合いを出す行の表/)).toBeVisible()
-    expect(screen.getByLabelText(/^人の確認に回す件数の上限/)).toHaveValue(3)
+    expect(screen.getByLabelText(/^人の確かめに回す件数の上限/)).toHaveValue(3)
     expect(screen.queryByRole('region', { name: '意思決定' })).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: '結論の決め方' })).not.toBeInTheDocument()
     expect(screen.queryByText(/結論は推論した件数だけです/)).not.toBeInTheDocument()
@@ -131,7 +131,7 @@ describe('異常の度合いの一式の画面', () => {
     fireEvent.change(await screen.findByLabelText(/^度合いを出す行の表/), {
       target: { value: '/data/readings.csv' },
     })
-    const capacity = screen.getByLabelText(/^人の確認に回す件数の上限/)
+    const capacity = screen.getByLabelText(/^人の確かめに回す件数の上限/)
     fireEvent.change(capacity, { target: { value: '0' } })
     expect(screen.getByRole('alert')).toHaveTextContent('1 から 1000 の整数')
     expect(screen.getByRole('button', { name: '推論する' })).toBeDisabled()
