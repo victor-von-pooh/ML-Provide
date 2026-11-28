@@ -52,7 +52,7 @@
 
 ### 必要なもの
 
-- [uv](https://docs.astral.sh/uv/) (Python は uv が用意する. 3.10 以上)
+- [uv](https://docs.astral.sh/uv/) 0.13.10 以上 (Python は uv が用意する. 3.10 以上)
 - Node.js 24 以上と [pnpm](https://pnpm.io/) 11 以上 (`corepack enable` で `package.json` の版が入る)
 
 ### 導入と起動
