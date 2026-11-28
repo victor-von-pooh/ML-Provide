@@ -40,7 +40,9 @@ def describe_dataset(path: str) -> dict[str, Any]:
     root = Path(path).expanduser().resolve()
     file = root / "dataset.yaml"
     if not file.is_file():
-        raise HTTPException(404, f"{root} に dataset.yaml がありません")
+        raise HTTPException(
+            404, f"データセット {root} が見つかりません (dataset.yaml がありません)"
+        )
     try:
         info = yaml.safe_load(file.read_text(encoding="utf-8"))
     except READ_ERRORS as error:

@@ -127,10 +127,14 @@ describe('並べるの一式の画面', () => {
 
     // 件数の誤りと, 除くのに表が無い誤り
     fireEvent.change(screen.getByLabelText(/^並べる件数 K/), { target: { value: '0' } })
-    expect(screen.getByRole('alert')).toHaveTextContent('並べる件数は 1 から 1,000 の整数')
+    expect(document.getElementById('predict-problem-0')).toHaveTextContent(
+      '並べる件数は 1 から 1,000 の整数',
+    )
     fireEvent.change(screen.getByLabelText(/^並べる件数 K/), { target: { value: '2' } })
     fireEvent.click(screen.getByLabelText('前に反応した品物を除く'))
-    expect(screen.getByRole('alert')).toHaveTextContent('前に反応した品物の表を選んでください')
+    expect(document.getElementById('predict-problem-0')).toHaveTextContent(
+      '前に反応した品物の表を選んでください',
+    )
     expect(submit).toBeDisabled()
     fireEvent.change(screen.getByLabelText(/^前に反応した品物の表/), {
       target: { value: '/data/seen.csv' },

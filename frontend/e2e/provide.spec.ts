@@ -1202,7 +1202,7 @@ test('骨組みの学習が実験の中に書き出した方策の一式を, 実
     observations,
     'x,v,theta,omega\n0.5478467492858172,-0.9208531449445188,-0.18361059042552214,-1.9338894578858836\n2.5,0,0,0\n',
   )
-  await page.getByLabel(/^観測のファイル/).fill(observations)
+  await page.getByLabel(/^観測のファイル \(/).fill(observations)
   await page.getByRole('button', { name: 'まとめて決める' }).click()
   const bars = page.getByRole('list', { name: '守りの結果ごとの件数' })
   await expect(bars).toContainText('そのまま1 件', { timeout: 30_000 })

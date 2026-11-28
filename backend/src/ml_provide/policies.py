@@ -166,7 +166,9 @@ def find_policy(request: Request, policy_id: str) -> dict[str, Any]:
         None
     )
     if entry is None:
-        raise HTTPException(404, "方策の一式が見つかりません")
+        raise HTTPException(
+            404, f"方策の一式 {policy_id} が見つかりません"
+        )
 
     return entry
 
@@ -473,7 +475,9 @@ def delete_policy(request: Request, policy_id: str) -> Response:
             (item for item in policies if item.get("id") == policy_id), None
         )
         if target is None:
-            raise HTTPException(404, "方策の一式が見つかりません")
+            raise HTTPException(
+                404, f"方策の一式 {policy_id} が見つかりません"
+            )
         write_policies(store, [item for item in policies
                                if item is not target])
     forget_policy(str(target.get("path")))

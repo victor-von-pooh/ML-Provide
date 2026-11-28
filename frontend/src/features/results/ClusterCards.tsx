@@ -94,7 +94,7 @@ export function ClusterSummaryTable({
                 <th scope="row" className="px-4 py-1.5 text-left font-medium whitespace-nowrap">
                   {clusterName(group)}
                 </th>
-                <td className="tabular px-3 py-1.5 text-right">{row.rows.toLocaleString()}</td>
+                <td className="tabular-nums px-3 py-1.5 text-right">{row.rows.toLocaleString()}</td>
                 <td className="px-3 py-1.5">
                   <span className="flex items-center gap-2">
                     {!total && (
@@ -105,15 +105,15 @@ export function ClusterSummaryTable({
                         />
                       </span>
                     )}
-                    <span className="tabular">{formatPercent(row.share)}</span>
+                    <span className="tabular-nums">{formatPercent(row.share)}</span>
                   </span>
                 </td>
                 {learned && (
-                  <td className="tabular px-3 py-1.5 text-right">
+                  <td className="tabular-nums px-3 py-1.5 text-right">
                     {total ? '–' : formatPercent(learnedShare.get(group))}
                   </td>
                 )}
-                <td className="tabular px-3 py-1.5 text-right">{scoreText(row.stability)}</td>
+                <td className="tabular-nums px-3 py-1.5 text-right">{scoreText(row.stability)}</td>
                 {columns.map((name) => (
                   <td
                     key={name}
@@ -300,9 +300,9 @@ export function ClusterRepresentativesTable({
                         />
                       </td>
                     )}
-                    <td className="tabular px-3 py-1.5 text-right">{order + 1}</td>
-                    <td className="tabular px-3 py-1.5 text-right">{line.row}</td>
-                    <td className="tabular px-3 py-1.5 text-right">
+                    <td className="tabular-nums px-3 py-1.5 text-right">{order + 1}</td>
+                    <td className="tabular-nums px-3 py-1.5 text-right">{line.row}</td>
+                    <td className="tabular-nums px-3 py-1.5 text-right">
                       {formatValue(line.distance, true)}
                     </td>
                     {shown.map((name) => (
@@ -371,11 +371,11 @@ export function ClusterStabilityView({ stability }: { stability: ClusterStabilit
                   <span className="font-medium">{line.label}</span>
                   <span className="block text-xs text-ink-3">{line.note}</span>
                 </th>
-                <td className="tabular px-3 py-1.5 text-right font-semibold">
+                <td className="tabular-nums px-3 py-1.5 text-right font-semibold">
                   {scoreText(line.model)}
                 </td>
-                <td className="tabular px-3 py-1.5 text-right">{scoreText(line.baseline)}</td>
-                <td className="tabular px-3 py-1.5 text-right">{diffText(line.diff)}</td>
+                <td className="tabular-nums px-3 py-1.5 text-right">{scoreText(line.baseline)}</td>
+                <td className="tabular-nums px-3 py-1.5 text-right">{diffText(line.diff)}</td>
               </tr>
             ))}
           </tbody>
@@ -431,8 +431,8 @@ export function ClusterFarTable({
               <th scope="row" className="px-4 py-1.5 text-left font-medium whitespace-nowrap">
                 {clusterName(item.group)}
               </th>
-              <td className="tabular px-3 py-1.5 text-right">{item.rows.toLocaleString()}</td>
-              <td className="tabular px-3 py-1.5 text-right">
+              <td className="tabular-nums px-3 py-1.5 text-right">{item.rows.toLocaleString()}</td>
+              <td className="tabular-nums px-3 py-1.5 text-right">
                 {item.threshold === null ? '–' : formatValue(item.threshold, true)}
               </td>
               {onPick && (
@@ -455,8 +455,8 @@ export function ClusterFarTable({
             <th scope="row" className="px-4 py-1.5 text-left font-medium whitespace-nowrap">
               {ALL_ROWS}
             </th>
-            <td className="tabular px-3 py-1.5 text-right">{far.rows.toLocaleString()}</td>
-            <td className="tabular px-3 py-1.5 text-right">–</td>
+            <td className="tabular-nums px-3 py-1.5 text-right">{far.rows.toLocaleString()}</td>
+            <td className="tabular-nums px-3 py-1.5 text-right">–</td>
             {onPick && <td />}
           </tr>
         </tbody>

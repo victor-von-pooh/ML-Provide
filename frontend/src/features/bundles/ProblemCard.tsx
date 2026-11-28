@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { useApi } from '../../api/client'
 import type { ProblemState } from '../../api/types'
 import { PathField } from '../../components/PathPicker'
-import { Button, Card, ErrorBox } from '../../components/ui'
+import { Button, Card, ErrorBox } from '../../components/common'
 import { useStage } from '../../lib/stage'
 
 /**
@@ -55,6 +55,7 @@ export function ProblemCard({
           問題{linked ? `: ${linked.name}` : ''}
         </span>
       }
+      name="問題"
     >
       {linked ? (
         <div className="space-y-2 text-sm">

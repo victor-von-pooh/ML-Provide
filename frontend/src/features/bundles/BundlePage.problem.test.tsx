@@ -103,14 +103,18 @@ describe('一式の画面の問題の設定の読み込み', () => {
     await waitFor(() => expect(bundleProblem).toHaveBeenCalledWith('t1'))
     expect(pending).toHaveLength(1)
     pending[0]?.()
-    expect(await screen.findByRole('heading', { name: 't1' })).toBeInTheDocument()
+    // 読み込み中の見出しも識別子なので, 読み終えてから確かめる
+    await waitFor(() => expect(screen.queryByText('読み込み中')).toBeNull())
+    expect(screen.getByRole('heading', { level: 1, name: 't1' })).toBeInTheDocument()
   })
 
   it('一覧で問題の設定の欄を出さないと分かる一式は, 問題の設定を読まない', async () => {
     renderPage('n1', [bundles.n1 as Bundle])
     await waitFor(() => expect(pending).toHaveLength(1))
     pending[0]?.()
-    expect(await screen.findByRole('heading', { name: 'n1' })).toBeInTheDocument()
+    // 読み込み中の見出しも識別子なので, 読み終えてから確かめる
+    await waitFor(() => expect(screen.queryByText('読み込み中')).toBeNull())
+    expect(screen.getByRole('heading', { level: 1, name: 'n1' })).toBeInTheDocument()
     expect(bundleProblem).not.toHaveBeenCalled()
     expect(screen.queryByText('問題を読んでいます…')).toBeNull()
   })

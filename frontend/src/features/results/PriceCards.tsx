@@ -9,7 +9,7 @@ import type {
   PriceSummary,
   Result,
 } from '../../api/types'
-import { Button, Card, ErrorBox, Spinner } from '../../components/ui'
+import { Button, Card, ErrorBox, Spinner } from '../../components/common'
 import { EVALUATION_SPLITS } from '../../lib/anomaly'
 import { formatNumber, formatValue } from '../../lib/format'
 import {
@@ -43,7 +43,7 @@ function Heading({ children, right = false }: { children: React.ReactNode; right
 
 /** 数の欄 */
 function NumberCell({ children }: { children: React.ReactNode }) {
-  return <td className="tabular px-3 py-1.5 text-right whitespace-nowrap">{children}</td>
+  return <td className="tabular-nums px-3 py-1.5 text-right whitespace-nowrap">{children}</td>
 }
 
 /** 弾力性 (%) を書く (無ければ –) */
@@ -167,25 +167,25 @@ function ProfitCard({ result, decided }: { result: Result; decided: PriceDecisio
         <div className="flex flex-col gap-3">
           <dl className="grid gap-x-4 gap-y-1 text-sm md:grid-cols-[16rem_1fr]">
             <dt className="text-ink-2">選んだ値段の見込みの利益の和</dt>
-            <dd className="tabular font-semibold">{formatValue(decided.total)}</dd>
+            <dd className="tabular-nums font-semibold">{formatValue(decided.total)}</dd>
             <dt className="text-ink-2">今の値段のままの利益の和</dt>
-            <dd className="tabular">{formatValue(decided.current_total)}</dd>
+            <dd className="tabular-nums">{formatValue(decided.current_total)}</dd>
             <dt className="text-ink-2">差 (選んだ値段 − 今の値段)</dt>
-            <dd className="tabular">{formatValue(decided.gain)}</dd>
+            <dd className="tabular-nums">{formatValue(decided.gain)}</dd>
             <dt className="text-ink-2">比 (選んだ値段 / 今の値段)</dt>
-            <dd className="tabular">{ratioText(decided.ratio)}</dd>
+            <dd className="tabular-nums">{ratioText(decided.ratio)}</dd>
             <dt className="text-ink-2">値段を変える行</dt>
             <dd>
               {formatNumber(decided.changed)} / {formatNumber(decided.rows)} 行 (上げる{' '}
               {formatNumber(decided.raised)} 行, 下げる {formatNumber(decided.lowered)} 行)
             </dd>
             <dt className="text-ink-2">値段の候補 (変える割合)</dt>
-            <dd className="tabular">{candidatesText(decided.candidates)}</dd>
+            <dd className="tabular-nums">{candidatesText(decided.candidates)}</dd>
             <dt className="text-ink-2">変える幅の上限</dt>
-            <dd className="tabular">{limitText(decided.max_change)}</dd>
+            <dd className="tabular-nums">{limitText(decided.max_change)}</dd>
             <dt className="text-ink-2">上限を超える候補の方が利益の大きい行</dt>
             <dd>
-              <span className="tabular font-semibold">{formatNumber(decided.limited)} 行</span>
+              <span className="tabular-nums font-semibold">{formatNumber(decided.limited)} 行</span>
               <span className="block text-xs text-ink-3">
                 上限は値段を急に大きく変えないための決まりなので, 上限を超える候補は選びません.
                 多ければ上限を広げたときの利益を推論し直して比べられます
@@ -273,7 +273,7 @@ function ElasticityCard({
       )}
       <p className="mt-2 text-sm">
         学習用の分割の弾力性の平均 (実験):{' '}
-        <span className="tabular">{elasticityCell(summary.train?.elasticity)}</span>
+        <span className="tabular-nums">{elasticityCell(summary.train?.elasticity)}</span>
         {summary.train && (
           <span className="text-ink-2">
             {' '}
@@ -304,6 +304,7 @@ function PricesCard({ result, decided }: { result: Result; decided: PriceDecisio
   return (
     <Card
       title={`選んだ値段 (${decided ? `${formatNumber(decided.rows)} 行` : '決めない'})`}
+      name="選んだ値段"
       padded={false}
     >
       {!decided ? (
@@ -411,9 +412,11 @@ export function PriceCards({ result, summary }: { result: Result; summary: Price
               <p className="font-medium">渡した表の売れた数で数え直した誤差</p>
               <p className="mt-1">
                 平均絶対誤差{' '}
-                <span className="tabular font-semibold">{formatValue(summary.measured.mae)}</span>,
-                二乗平均平方根誤差{' '}
-                <span className="tabular">{formatValue(summary.measured.rmse)}</span> (
+                <span className="tabular-nums font-semibold">
+                  {formatValue(summary.measured.mae)}
+                </span>
+                , 二乗平均平方根誤差{' '}
+                <span className="tabular-nums">{formatValue(summary.measured.rmse)}</span> (
                 {formatNumber(summary.measured.rows)} 行
                 {summary.measured.excluded > 0 &&
                   `. 売れた数を読めずに除いた行 ${formatNumber(summary.measured.excluded)} 行`}

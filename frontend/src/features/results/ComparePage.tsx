@@ -5,7 +5,8 @@ import { Link, useSearchParams } from 'react-router'
 
 import { useApi } from '../../api/client'
 import type { Comparison } from '../../api/types'
-import { Card, ErrorBox, PageHeader, Spinner } from '../../components/ui'
+import { Card, ErrorBox, PageHeader, Spinner } from '../../components/common'
+import { Crumbs } from '../../components/ui'
 import { compareSections } from '../../lib/compare'
 
 // 全ての結果で同じものの名前
@@ -63,7 +64,7 @@ function CompareTable({ data, onlyDiffers }: { data: Comparison; onlyDiffers: bo
                   {row.values.map((value, index) => (
                     <td
                       key={data.results[index]?.id ?? index}
-                      className="tabular max-w-xs px-4 py-1.5 break-words"
+                      className="tabular-nums max-w-xs px-4 py-1.5 break-words"
                     >
                       {value}
                     </td>
@@ -98,7 +99,7 @@ export function ComparePage() {
             ? `${data.basis.map((name) => BASIS[name]).join(', ')}の ${data.results.length} つの結果`
             : '同じ一式か同じ入力の結果を並べます'
         }
-        breadcrumb={<Link to="/results">結果</Link>}
+        breadcrumb={<Crumbs items={[{ to: '/results', label: '結果' }]} />}
       />
       {compare.isPending && <Spinner />}
       {compare.error && <ErrorBox error={compare.error} live={false} />}

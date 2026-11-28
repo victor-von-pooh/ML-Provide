@@ -1,6 +1,6 @@
 import { Plus, X } from 'lucide-react'
 
-import { Button } from '../../components/ui'
+import { Button } from '../../components/common'
 import type { RulesForm } from '../../lib/rules'
 
 const field = 'h-8 rounded-lg border border-line bg-surface px-2 text-sm'

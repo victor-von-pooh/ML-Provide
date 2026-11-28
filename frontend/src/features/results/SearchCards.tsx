@@ -3,7 +3,7 @@ import { useState } from 'react'
 
 import { useApi } from '../../api/client'
 import type { Result, SearchResultInfo } from '../../api/types'
-import { Button, Card, ErrorBox, Spinner } from '../../components/ui'
+import { Button, Card, ErrorBox, Spinner } from '../../components/common'
 import { searchPage, type SearchQuery } from '../../lib/search'
 
 /** 1 ページに出す問いの数 (行は問いの数 × 件数. API の 1 回の上限は 500 行) */
@@ -151,7 +151,7 @@ export function SearchCards({ result, search }: { result: Result; search: Search
           </div>
         ) : rows.error ? (
           <div className="p-4">
-            <ErrorBox error={rows.error} />
+            <ErrorBox error={rows.error} live={false} />
           </div>
         ) : (
           <>

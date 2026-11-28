@@ -225,6 +225,7 @@ def test_standalone_checks(
         "/api/bundles/nothing", headers={"origin": "http://testserver"}
     )
     assert same.status_code == 404, same.text
+    assert same.json()["detail"] == "一式 nothing が見つかりません"
 
     # 別のホスト名は断る
     other = client.get("/api/bundles", headers={"host": "evil.example"})
@@ -237,6 +238,10 @@ def test_standalone_checks(
     assert client.get("/assets/a.js").text == "1"
     for path in ["/api", "/api/nothing", "/api/openapi.json", "/api/docs"]:
         assert client.get(path).status_code == 404, path
+    # 見つからない物の文は「<物> <識別子> が見つかりません」の形
+    assert client.get("/api").json()["detail"] == (
+        "API の経路 /api が見つかりません"
+    )
     for path in ["/docs", "/openapi.json"]:
         assert client.get(path).text == "画面", path
 
@@ -451,7 +456,9 @@ def test_create_predict_conclude(tmp_path: Path, client: TestClient) -> None:
     csv = client.get(f"/api/results/{result['id']}/download")
     assert csv.status_code == 200 and "decision" in csv.text
     assert client.delete(f"/api/results/{result['id']}").status_code == 204
-    assert client.get(f"/api/results/{result['id']}").status_code == 404
+    gone = client.get(f"/api/results/{result['id']}")
+    assert gone.status_code == 404
+    assert gone.json()["detail"] == f"結果 {result['id']} が見つかりません"
 
 
 def test_register_and_delete(tmp_path: Path, client: TestClient) -> None:
@@ -797,6 +804,7 @@ def test_row_reason(
     assert negative.status_code == 422
     missing = client.post(f"/api/results/{result['id']}/rows/40/reason")
     assert missing.status_code == 404
+    assert missing.json()["detail"] == "行 40 が見つかりません"
     paths["csv"].unlink()
     gone = client.post(f"/api/results/{result['id']}/rows/3/reason")
     assert gone.status_code == 400 and "入力のファイル" in gone.text
@@ -1293,3 +1301,29 @@ def test_comparison_reasons() -> None:
     assert ["群分けの結果と他の結果" in r for r in found["reasons"]] == [
         True
     ]
+
+
+def test_browse_missing(client: TestClient, tmp_path: Path) -> None:
+    """
+    開く場所が無いときとディレクトリでないときの 404 の文を確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        トークン付きのクライアント
+    tmp_path: Path
+        pytest が用意する一時ディレクトリ
+    """
+    missing = tmp_path / "none"
+    response = client.get("/api/browse", params={"path": str(missing)})
+    assert response.status_code == 404
+    assert response.json()["detail"] == (
+        f"ディレクトリ {missing.resolve()} が見つかりません"
+    )
+    file = tmp_path / "a.txt"
+    file.write_text("a", encoding="utf-8")
+    response = client.get("/api/browse", params={"path": str(file)})
+    assert response.status_code == 404
+    assert response.json()["detail"] == (
+        f"{file.resolve()} はディレクトリではありません"
+    )

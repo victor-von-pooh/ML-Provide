@@ -6,7 +6,7 @@ import { Link, useNavigate } from 'react-router'
 import { useApi } from '../../api/client'
 import type { Bundle } from '../../api/types'
 import { PathPicker } from '../../components/PathPicker'
-import { Button, Card, EmptyState, ErrorBox, PageHeader, Spinner } from '../../components/ui'
+import { Button, Card, EmptyState, ErrorBox, PageHeader, Spinner } from '../../components/common'
 import { formatNumber, KIND_LABELS, TASK_LABELS } from '../../lib/format'
 import { FORM_LABELS, isColumnOutput, ROLE_LABELS } from '../../lib/outputs'
 import { classesText } from '../../lib/ready'
@@ -125,7 +125,7 @@ export function BundlesPage() {
   return (
     <>
       <PageHeader
-        title="推論の一式"
+        title="推論"
         subtitle="学習したモデル, 前処理, 重みをまとめたもの. 選んで新しいデータを推論します"
         actions={actions}
       />
@@ -156,70 +156,74 @@ export function BundlesPage() {
         </label>
       )}
       {bundles.isPending && <Spinner />}
-      {bundles.error && <ErrorBox error={bundles.error} />}
-      {bundles.data?.length === 0 && (
-        <EmptyState icon={Package} title="一式がありません">
-          学習のスクリプトが作った一式 (inference.yaml を持つディレクトリ)
-          を実験の一覧か場所で登録するか, モデルの定義, データセット, 実験から作ります.
-          学習しないライブラリの学習済みのモデル (torchvision の ResNet18 など)
-          は「既製のモデルから作る」で作ります. 試すだけなら「見本の一式を入れる」で,
-          小さな見本のデータで学習した一式 (表の分類, 表の回帰, 時系列の先の予測, 文の分類)
-          を入れられます.
-        </EmptyState>
-      )}
-      {shown && shown.length === 0 && hidden > 0 && (
-        <p role="status" className="text-sm text-ink-2">
-          選んだ問題の一式がありません. 「全ての一式を出す」に印を付けると他の一式が出ます.
-          この問題の一式は「学習の結果から作る」か「実験の一覧から登録」で足せます.
-        </p>
-      )}
-      {shown && shown.length > 0 && (
-        <Card padded={false}>
-          <table className="w-full text-sm">
-            <caption className="sr-only">登録した推論の一式</caption>
-            <thead className="text-xs text-ink-3">
-              <tr className="border-b border-line">
-                <th scope="col" className="px-4 py-2 text-left font-normal">
-                  名前
-                </th>
-                <th scope="col" className="px-4 py-2 text-left font-normal">
-                  データとタスク
-                </th>
-                <th scope="col" className="px-4 py-2 text-left font-normal">
-                  学習の結果
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((bundle) => {
-                const run = bundle.description?.run
-                return (
-                  <tr key={bundle.id} className="border-b border-line last:border-0">
-                    <th scope="row" className="px-4 py-2 text-left font-medium">
-                      <Link
-                        to={`/bundles/${bundle.id}`}
-                        className="text-accent-text hover:underline"
-                      >
-                        {bundle.name}
-                      </Link>
-                    </th>
-                    <td className="px-4 py-2">
-                      {bundle.ok ? (
-                        bundleSummary(bundle)
-                      ) : (
-                        <span className="text-critical-text">読めません: {bundle.error}</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2 text-ink-2">
-                      {run?.monitor && run.best_value != null
-                        ? `${run.monitor} ${formatNumber(run.best_value)} (エポック ${run.best_epoch ?? '–'})`
-                        : '–'}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+      {bundles.error && <ErrorBox error={bundles.error} live={false} />}
+      {bundles.data && (
+        <Card title="推論の一式" padded={false}>
+          {bundles.data.length === 0 && (
+            <div className="p-4">
+              <EmptyState icon={Package} title="一式がありません" level={3}>
+                学習のスクリプトが作った一式 (inference.yaml を持つディレクトリ)
+                を実験の一覧か場所で登録するか, モデルの定義, データセット, 実験から作ります.
+                学習しないライブラリの学習済みのモデル (torchvision の ResNet18 など)
+                は「既製のモデルから作る」で作ります. 試すだけなら「見本の一式を入れる」で,
+                小さな見本のデータで学習した一式 (表の分類, 表の回帰, 時系列の先の予測, 文の分類)
+                を入れられます.
+              </EmptyState>
+            </div>
+          )}
+          {shown && shown.length === 0 && hidden > 0 && (
+            <p role="status" className="p-4 text-sm text-ink-2">
+              選んだ問題の一式がありません. 「全ての一式を出す」に印を付けると他の一式が出ます.
+              この問題の一式は「学習の結果から作る」か「実験の一覧から登録」で足せます.
+            </p>
+          )}
+          {shown && shown.length > 0 && (
+            <table className="w-full text-sm">
+              <caption className="sr-only">登録した推論の一式</caption>
+              <thead className="text-xs text-ink-3">
+                <tr className="border-b border-line">
+                  <th scope="col" className="px-4 py-2 text-left font-normal">
+                    名前
+                  </th>
+                  <th scope="col" className="px-4 py-2 text-left font-normal">
+                    データとタスク
+                  </th>
+                  <th scope="col" className="px-4 py-2 text-left font-normal">
+                    学習の結果
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((bundle) => {
+                  const run = bundle.description?.run
+                  return (
+                    <tr key={bundle.id} className="border-b border-line last:border-0">
+                      <th scope="row" className="px-4 py-2 text-left font-medium">
+                        <Link
+                          to={`/bundles/${bundle.id}`}
+                          className="text-accent-text hover:underline"
+                        >
+                          {bundle.name}
+                        </Link>
+                      </th>
+                      <td className="px-4 py-2">
+                        {bundle.ok ? (
+                          bundleSummary(bundle)
+                        ) : (
+                          <span className="text-critical-text">読めません: {bundle.error}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 text-ink-2">
+                        {run?.monitor && run.best_value != null
+                          ? `${run.monitor} ${formatNumber(run.best_value)} (エポック ${run.best_epoch ?? '–'})`
+                          : '–'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
         </Card>
       )}
       {shown && shown.length > 0 && hidden > 0 && (

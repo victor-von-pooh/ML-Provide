@@ -450,7 +450,9 @@ def find_place(request: Request, result_id: str) -> Path:
     """
     place = result_place(get_store(request), result_id)
     if place is None:
-        raise HTTPException(404, "方策の結果が見つかりません")
+        raise HTTPException(
+            404, f"方策の結果 {result_id} が見つかりません"
+        )
 
     return place
 
@@ -666,7 +668,9 @@ def get_rows(
                 if not status or row.get("status") == status
             ]
     except FileNotFoundError as error:
-        raise HTTPException(404, "方策の結果が見つかりません") from error
+        raise HTTPException(
+            404, f"方策の結果 {result_id} が見つかりません"
+        ) from error
     rows = {
         "total": len(records),
         "offset": offset,
@@ -732,7 +736,9 @@ def download(request: Request, result_id: str) -> Response:
                   newline="") as handle:
             lines = list(csv.reader(handle))
     except FileNotFoundError as error:
-        raise HTTPException(404, "方策の結果が見つかりません") from error
+        raise HTTPException(
+            404, f"方策の結果 {result_id} が見つかりません"
+        ) from error
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerows([[safe_cell(cell) for cell in line] for line in lines])
@@ -766,7 +772,9 @@ def delete_result(request: Request, result_id: str) -> Response:
     try:
         shutil.rmtree(place)
     except FileNotFoundError as error:
-        raise HTTPException(404, "方策の結果が見つかりません") from error
+        raise HTTPException(
+            404, f"方策の結果 {result_id} が見つかりません"
+        ) from error
     response = Response(status_code=204)
 
     return response

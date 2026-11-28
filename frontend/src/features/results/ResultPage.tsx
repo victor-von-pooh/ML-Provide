@@ -2,11 +2,12 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import clsx from 'clsx'
 import { Download, RefreshCw, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { useNavigate, useParams } from 'react-router'
 
 import { useApi } from '../../api/client'
 import type { Counts, Result } from '../../api/types'
-import { Button, Card, ErrorBox, PageHeader, Spinner, StatTile } from '../../components/ui'
+import { Button, Card, ErrorBox, PageHeader, Spinner, StatTile } from '../../components/common'
+import { Crumbs, FieldProblems, PageStatus } from '../../components/ui'
 import { formatNumber, formatPercent, formatValue } from '../../lib/format'
 import {
   FORM_LABELS,
@@ -114,7 +115,7 @@ function DecisionBars({ counts }: { counts: Counts }) {
               style={{ width: `${(item.count / most) * 100}%` }}
             />
           </span>
-          <span className="tabular text-right text-sm text-ink-2">
+          <span className="tabular-nums text-right text-sm text-ink-2">
             {item.count.toLocaleString()} ({formatPercent(item.share)})
           </span>
         </li>
@@ -167,15 +168,15 @@ function GroupTable({ result }: { result: Result }) {
                 <th scope="row" className="px-4 py-1.5 text-left font-medium">
                   {group.group}
                 </th>
-                <td className="tabular px-4 py-1.5 text-right">
+                <td className="tabular-nums px-4 py-1.5 text-right">
                   {group.predicted.toLocaleString()}
                 </td>
                 {regression && (
                   <>
-                    <td className="tabular px-4 py-1.5 text-right">
+                    <td className="tabular-nums px-4 py-1.5 text-right">
                       {formatValue(group.values?.sum)}
                     </td>
-                    <td className="tabular px-4 py-1.5 text-right">
+                    <td className="tabular-nums px-4 py-1.5 text-right">
                       {formatValue(group.values?.mean)}
                     </td>
                   </>
@@ -183,7 +184,7 @@ function GroupTable({ result }: { result: Result }) {
                 {names.map((name) => {
                   const found = group.decisions?.find((d) => d.decision === name)
                   return (
-                    <td key={name} className="tabular px-4 py-1.5 text-right">
+                    <td key={name} className="tabular-nums px-4 py-1.5 text-right">
                       {found ? found.count.toLocaleString() : '–'}
                     </td>
                   )
@@ -402,7 +403,7 @@ function RowsTable({
         </>
       }
     >
-      {rows.error && <ErrorBox error={rows.error} />}
+      {rows.error && <ErrorBox error={rows.error} live={false} />}
       {rows.isPending && <Spinner />}
       {rows.data && (
         <>
@@ -842,11 +843,7 @@ function ConcludeCard({ result }: { result: Result }) {
         columns={columns}
         idBase="conclude"
       />
-      {problems.map((problem) => (
-        <p key={problem} className="mt-1 text-xs text-critical-text">
-          {problem}
-        </p>
-      ))}
+      <FieldProblems idBase="conclude" problems={problems} />
       {conclude.error && (
         <div className="mt-2">
           <ErrorBox error={conclude.error} />
@@ -903,8 +900,16 @@ export function ResultPage() {
       navigate(bundleAlive ? `/bundles/${result.data?.bundle_id}` : '/results')
     },
   })
-  if (result.isPending) return <Spinner />
-  if (result.error) return <ErrorBox error={result.error} />
+  if (result.isPending || result.error) {
+    return (
+      <PageStatus
+        id={id}
+        thing="結果"
+        error={result.error}
+        crumbs={[{ to: '/results', label: '結果' }]}
+      />
+    )
+  }
   const data = result.data
   const summary = data.summary
   const values = summary?.values
@@ -952,11 +957,13 @@ export function ResultPage() {
           </span>
         }
         breadcrumb={
-          bundleAlive ? (
-            <Link to={`/bundles/${data.bundle_id}`}>{data.bundle?.name ?? '一式'}</Link>
-          ) : (
-            <Link to="/results">結果</Link>
-          )
+          <Crumbs
+            items={[
+              bundleAlive
+                ? { to: `/bundles/${data.bundle_id}`, label: data.bundle?.name ?? '一式' }
+                : { to: '/results', label: '結果' },
+            ]}
+          />
         }
         actions={
           <>

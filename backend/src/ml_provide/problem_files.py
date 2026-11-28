@@ -80,7 +80,7 @@ def problem_file(text: str) -> Path:
             422, f"問題の場所として読めません: {error}"
         ) from error
     if not found:
-        raise HTTPException(404, f"{path} に問題がありません")
+        raise HTTPException(404, f"問題 {path} が見つかりません")
     if path.suffix.lower() not in SUFFIXES:
         raise HTTPException(
             422, f"{path.name} は YAML のファイル (.yaml) ではありません"

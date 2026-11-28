@@ -5,7 +5,7 @@ import { useState } from 'react'
 
 import { useApi } from '../../api/client'
 import type { Result } from '../../api/types'
-import { Button, Card, ErrorBox, Spinner } from '../../components/ui'
+import { Button, Card, ErrorBox, Spinner } from '../../components/common'
 import { formatValue } from '../../lib/format'
 
 /** 選んだ 1 行の予測の理由 (列ごとにその行の値が予測をどちらへどれだけ動かしたか) */
@@ -81,7 +81,7 @@ export function RowReasonCard({
             {data.prediction !== null && (
               <>
                 {' '}
-                の予測 <span className="tabular">{formatValue(data.prediction)}</span>
+                の予測 <span className="tabular-nums">{formatValue(data.prediction)}</span>
               </>
             )}
             : {data.reason ?? '効いた列はありません'}
@@ -111,7 +111,7 @@ export function RowReasonCard({
                       style={{ width }}
                     />
                   </span>
-                  <span className="tabular text-right text-sm text-ink-2">
+                  <span className="tabular-nums text-right text-sm text-ink-2">
                     {item.effect === null
                       ? '求められない'
                       : `${effect > 0 ? '+' : ''}${formatValue(effect, probability)}`}

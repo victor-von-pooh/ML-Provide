@@ -1,12 +1,11 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { ArrowUp, File, Folder, Home, Package } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 import { useApi } from '../api/client'
 import { formatBytes } from '../lib/format'
-import { Dialog } from './Dialog'
-import { Button, ErrorBox, Spinner } from './ui'
+import { Button, Dialog, ErrorBox, Spinner } from './common'
 
 /** 手元のファイルかディレクトリを選ぶ対話 (推論の一式のディレクトリには印) */
 export function PathPicker({
@@ -37,8 +36,10 @@ export function PathPicker({
   })
   const [picked, setPicked] = useState<string | null>(null)
   const [missing, setMissing] = useState('')
+  // 開いたらパスを打つ欄に focus を置く (打って移るのが最初の操作のため)
+  const pathInput = useRef<HTMLInputElement>(null)
   return (
-    <Dialog title={title} onClose={onClose}>
+    <Dialog title={title} onClose={onClose} initialFocus={pathInput}>
       {description && <p className="mb-3 text-xs text-ink-2">{description}</p>}
       <form
         className="mb-3 flex gap-2"
@@ -63,8 +64,11 @@ export function PathPicker({
           パス
         </label>
         <input
+          ref={pathInput}
           id="picker-path"
           value={typed}
+          aria-invalid={missing ? true : undefined}
+          aria-describedby={missing ? 'picker-path-error' : undefined}
           onChange={(event) => setTyped(event.target.value)}
           placeholder={listing.data?.path ?? '~/'}
           className="h-8 flex-1 rounded-lg border border-line bg-surface px-2 font-mono text-sm"
@@ -72,9 +76,9 @@ export function PathPicker({
         <Button type="submit">移動</Button>
       </form>
       {missing && (
-        <p role="alert" className="mb-2 text-xs text-critical-text">
-          {missing}
-        </p>
+        <div className="mb-2">
+          <ErrorBox id="picker-path-error" error={missing} live={false} />
+        </div>
       )}
       <div className="mb-2 flex items-center gap-2 text-xs text-ink-3">
         <Button

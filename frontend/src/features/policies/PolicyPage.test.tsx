@@ -116,7 +116,7 @@ describe('方策の一式の画面', () => {
     const button = await screen.findByRole('button', { name: 'まとめて決める' })
     expect(button).toBeDisabled()
     expect(await screen.findByText('まだ結果がありません.')).toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText(/^観測のファイル/), {
+    fireEvent.change(screen.getByLabelText(/^観測のファイル \(/), {
       target: { value: ' /data/observations.csv ' },
     })
     fireEvent.click(button)

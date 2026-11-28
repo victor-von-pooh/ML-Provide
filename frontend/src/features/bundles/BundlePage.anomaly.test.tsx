@@ -133,7 +133,7 @@ describe('異常の度合いの一式の画面', () => {
     })
     const capacity = screen.getByLabelText(/^人の確かめに回す件数の上限/)
     fireEvent.change(capacity, { target: { value: '0' } })
-    expect(screen.getByRole('alert')).toHaveTextContent('1 から 1000 の整数')
+    expect(document.getElementById('predict-problem-0')).toHaveTextContent('1 から 1000 の整数')
     expect(screen.getByRole('button', { name: '推論する' })).toBeDisabled()
     fireEvent.change(capacity, { target: { value: '5' } })
     fireEvent.click(screen.getByRole('button', { name: '推論する' }))

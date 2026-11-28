@@ -6,7 +6,8 @@ import { Link, useNavigate } from 'react-router'
 import { useApi } from '../../api/client'
 import { PathPicker } from '../../components/PathPicker'
 import { ExperimentsDialog } from '../bundles/ExperimentsDialog'
-import { Button, Card, EmptyState, ErrorBox, PageHeader, Spinner } from '../../components/ui'
+import { Button, Card, EmptyState, ErrorBox, PageHeader, Spinner } from '../../components/common'
+import { Crumbs } from '../../components/ui'
 import { FALLBACK_LABELS, spaceLabel } from '../../lib/policy'
 
 /** 登録した強化学習の方策の一式の一覧 */
@@ -29,6 +30,7 @@ export function PoliciesPage() {
     <>
       <PageHeader
         title="方策の一式"
+        breadcrumb={<Crumbs />}
         subtitle="強化学習で学習した方策. 観測を入れて, 守りを当てた行動を見ます"
         actions={
           <>
@@ -63,7 +65,7 @@ export function PoliciesPage() {
         </div>
       )}
       {policies.isPending && <Spinner />}
-      {policies.error && <ErrorBox error={policies.error} />}
+      {policies.error && <ErrorBox error={policies.error} live={false} />}
       {policies.data?.length === 0 && (
         <EmptyState icon={Bot} title="方策の一式がありません">
           学習の基盤が書き出した方策の一式 (policy.json と policy.pt を持つ policy のディレクトリ)

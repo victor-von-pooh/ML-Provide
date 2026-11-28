@@ -1,4 +1,5 @@
 import type { Description } from '../../api/types'
+import { Card } from '../../components/common'
 import {
   FORM_LABELS,
   isColumnOutput,
@@ -39,17 +40,14 @@ export function OutputNotices({
   return (
     <div role="note" aria-label="一式の注意" className="flex flex-col gap-1">
       {origin && (
-        <p className="rounded-lg border border-warning-text/40 bg-surface p-2 text-sm text-warning-text">
-          {origin}
-        </p>
+        <Card tone="warning" landmark={false}>
+          <p className="text-sm text-warning-text">{origin}</p>
+        </Card>
       )}
       {warnings?.map((warning, i) => (
-        <p
-          key={`${i}:${warning}`}
-          className="rounded-lg border border-critical-text/40 bg-surface p-2 text-sm text-critical-text"
-        >
-          学習済みの重みの警告: {warning}
-        </p>
+        <Card key={`${i}:${warning}`} tone="warning" landmark={false}>
+          <p className="text-sm text-critical-text">学習済みの重みの警告: {warning}</p>
+        </Card>
       ))}
     </div>
   )

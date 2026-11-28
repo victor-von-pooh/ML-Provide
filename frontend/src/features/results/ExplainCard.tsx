@@ -3,7 +3,7 @@ import { Sigma } from 'lucide-react'
 
 import { useApi } from '../../api/client'
 import type { Result } from '../../api/types'
-import { Button, Card, ErrorBox } from '../../components/ui'
+import { Button, Card, ErrorBox } from '../../components/common'
 import { formatValue } from '../../lib/format'
 
 /** 列ごとの効き (どの列が予測を動かしているか) */
@@ -61,7 +61,7 @@ export function ExplainCard({ result, bundleAlive }: { result: Result; bundleAli
                     style={{ width: `${((item.effect ?? 0) / most) * 100}%` }}
                   />
                 </span>
-                <span className="tabular text-right text-sm text-ink-2">
+                <span className="tabular-nums text-right text-sm text-ink-2">
                   {item.kind === 'time'
                     ? '求めない'
                     : item.effect == null
