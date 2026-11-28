@@ -126,14 +126,15 @@ describe('並べるの一式の画面', () => {
     expect(submit).toBeEnabled()
 
     // 件数の誤りと, 除くのに表が無い誤り
-    fireEvent.change(screen.getByLabelText(/^並べる件数 K/), { target: { value: '0' } })
-    expect(document.getElementById('predict-problem-0')).toHaveTextContent(
-      '並べる件数は 1 から 1,000 の整数',
-    )
+    const k = screen.getByLabelText(/^並べる件数 K/)
+    fireEvent.change(k, { target: { value: '0' } })
+    expect(k).toHaveAccessibleDescription('並べる件数は 1 から 1,000 の整数で書いてください')
+    expect(k).toHaveAttribute('aria-invalid', 'true')
     fireEvent.change(screen.getByLabelText(/^並べる件数 K/), { target: { value: '2' } })
     fireEvent.click(screen.getByLabelText('前に反応した品物を除く'))
-    expect(document.getElementById('predict-problem-0')).toHaveTextContent(
-      '前に反応した品物の表を選んでください',
+    // 欄にまたがる誤りは, 押せないボタンの説明として読ませる
+    expect(submit).toHaveAccessibleDescription(
+      expect.stringContaining('前に反応した品物の表を選んでください'),
     )
     expect(submit).toBeDisabled()
     fireEvent.change(screen.getByLabelText(/^前に反応した品物の表/), {

@@ -157,9 +157,7 @@ export function ReadyBundleDialog({
               <dt className="text-ink-3">ライセンス</dt>
               <dd>
                 {alert ? (
-                  <p role="alert" className="text-xs text-warning-text">
-                    {alert}
-                  </p>
+                  <ErrorBox error={alert} />
                 ) : (
                   <span className="text-xs">{shown.license.license ?? '–'}</span>
                 )}

@@ -7,7 +7,9 @@ import { useNavigate, useParams } from 'react-router'
 import { useApi } from '../../api/client'
 import type { Counts, Result } from '../../api/types'
 import { Button, Card, ErrorBox, PageHeader, Spinner, StatTile } from '../../components/common'
+import { describedBy } from '../../components/common-utils'
 import { Crumbs, FieldProblems, PageStatus } from '../../components/ui'
+import { problemIds } from '../../lib/problems'
 import { formatNumber, formatPercent, formatValue } from '../../lib/format'
 import {
   FORM_LABELS,
@@ -829,6 +831,7 @@ function ConcludeCard({ result }: { result: Result }) {
           variant="primary"
           icon={RefreshCw}
           disabled={problems.length > 0 || conclude.isPending}
+          aria-describedby={describedBy(...problemIds('conclude', problems))}
           onClick={() => conclude.mutate()}
         >
           {conclude.isPending ? '出し直しています…' : '出し直す'}

@@ -6,6 +6,7 @@
 import { Fragment } from 'react'
 import { Link } from 'react-router'
 
+import { problemIds } from '../lib/problems'
 import { ErrorBox, FieldError, PageHeader, Spinner } from './common'
 
 /** パンくずの 1 つの項目 (段階の頭の画面より下の画面へのリンク) */
@@ -63,9 +64,10 @@ export function PageStatus({
 }
 
 /**
- * 欄の確かめの誤りの並び (要求を送る前に画面で分かる, いくつもの欄にまたがる誤り).
- * 打つたびに読み上げないように polite で知らせる. 1 つの欄の誤りは欄の下に
- * FieldError で出す
+ * 欄にまたがる確かめの誤りの並び (要求を送る前に画面で分かる, いくつもの欄の組み合わせの
+ * 誤り). FieldError と同じく読み上げの役割を持たず (打つたびに読み上げないため), 送る
+ * ボタンの aria-describedby から lib/problems の problemIds で結ぶ. 1 つの欄の誤りは
+ * 欄の下に FieldError で出す
  */
 export function FieldProblems({
   idBase,
@@ -76,10 +78,12 @@ export function FieldProblems({
   problems: string[]
   className?: string
 }) {
+  const ids = problemIds(idBase, problems)
   return (
-    <div aria-live="polite" className={className}>
+    <div className={className}>
       {problems.map((problem, index) => (
-        <FieldError key={problem} id={`${idBase}-problem-${index}`}>
+        // 同じ文の誤りが 2 つあっても重ならないように, 順番と組にする
+        <FieldError key={`${index}:${problem}`} id={ids[index] ?? ''}>
           {problem}
         </FieldError>
       ))}

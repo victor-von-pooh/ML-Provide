@@ -164,13 +164,15 @@ describe('需要の一式の画面', () => {
     const holding = screen.getByLabelText(/^売れ残りの損/)
     const limit = screen.getByLabelText(/^発注の数の上限/)
     fireEvent.change(holding, { target: { value: '0' } })
-    expect(document.getElementById('predict-problem-0')).toHaveTextContent(
-      '売れ残りの損は 0 より大きい数',
+    expect(holding).toHaveAccessibleDescription(
+      expect.stringContaining('売れ残りの損は 0 より大きい数'),
     )
+    expect(holding).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByRole('button', { name: '推論する' })).toBeDisabled()
     fireEvent.change(holding, { target: { value: '1' } })
     fireEvent.change(limit, { target: { value: '2.5' } })
-    expect(document.getElementById('predict-problem-0')).toHaveTextContent('0 以上の整数')
+    expect(limit).toHaveAccessibleDescription(expect.stringContaining('0 以上の整数'))
+    expect(limit).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByRole('button', { name: '推論する' })).toBeDisabled()
     // 学んだ水準の外の τ (19 / 20 = 0.95) は端の水準を使うと知らせる
     fireEvent.change(shortage, { target: { value: '19' } })

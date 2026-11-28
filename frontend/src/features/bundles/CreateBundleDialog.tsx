@@ -5,6 +5,7 @@ import { useApi } from '../../api/client'
 import type { Bundle, DatasetDescription } from '../../api/types'
 import { PathField } from '../../components/PathPicker'
 import { Button, Dialog, ErrorBox } from '../../components/common'
+import { describedBy } from '../../components/common-utils'
 import { FieldProblems } from '../../components/ui'
 import {
   ARRAY_FORMS,
@@ -26,6 +27,7 @@ import {
   ROLE_LABELS,
   stepsText,
 } from '../../lib/outputs'
+import { problemIds } from '../../lib/problems'
 import { readDraft, useDraftWriter } from '../../lib/draft'
 import { useStage } from '../../lib/stage'
 import { useDebounced } from '../../lib/useDebounced'
@@ -789,11 +791,16 @@ function CreateBundleForm({
             選んだ問題 {project} はつながずに作ります: {projectProblem.data?.reason}
           </p>
         )}
-        {/* 誤りは打つたびに変わるので, alert でなく polite で読み上げる */}
+        {/* 誤りは打つたびに変わるので読み上げず, 押せない「作る」の説明として結ぶ */}
         <FieldProblems idBase="bundle" problems={problems} />
         {create.error && create.variables === formKey && <ErrorBox error={create.error} />}
         <div className="flex justify-end">
-          <Button type="submit" variant="primary" disabled={!ready || create.isPending}>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={!ready || create.isPending}
+            aria-describedby={describedBy(...problemIds('bundle', problems))}
+          >
             {create.isPending ? '確かめています…' : '作る'}
           </Button>
         </div>

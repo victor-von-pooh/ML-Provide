@@ -5,7 +5,9 @@ import { useState } from 'react'
 import { useApi } from '../../api/client'
 import type { BacktestGuard, Result } from '../../api/types'
 import { Button, Card, ErrorBox } from '../../components/common'
+import { describedBy } from '../../components/common-utils'
 import { FieldProblems } from '../../components/ui'
+import { problemIds } from '../../lib/problems'
 import { fromDecisionForm, toDecisionForm, type DecisionForm } from '../../lib/decision'
 import { formatValue } from '../../lib/format'
 import { guardAmount, guardLine, guardVerdict } from '../../lib/guard'
@@ -47,6 +49,7 @@ export function DecisionCard({ result, bundleAlive }: { result: Result; bundleAl
             variant="primary"
             icon={RefreshCw}
             disabled={problems.length > 0 || decide.isPending || replay.isPending || !bundleAlive}
+            aria-describedby={describedBy(...problemIds('decide', problems))}
             onClick={() => decide.mutate()}
           >
             {decide.isPending ? '決めています…' : '決め直す'}
