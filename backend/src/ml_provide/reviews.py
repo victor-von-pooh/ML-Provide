@@ -138,7 +138,7 @@ def duplicate_problem(
 
 def latest_reviews(place: Path) -> dict[str, dict[str, str]]:
     """
-    行の id ごとの最後の確認の記録を返す関数
+    行の id ごとの最後の確かめの記録を返す関数
 
     Parameters
     ----------
