@@ -85,6 +85,8 @@ make check          # lint, 型検査, テスト
 cd frontend && pnpm e2e   # 画面の通しのテスト
 ```
 
+`make dev-frontend` の画面のサーバーは `/api` を Host を変えずに転送する (`frontend/vite.config.ts` の `changeOrigin: false`). バックエンドは Origin と Host が違う書き込みを断るので, Host を転送先に変えると画面からの書き込みが全て 403 になる.
+
 README と操作ガイドの画面の例 (`docs/images/`) は, 画面の通しのテストと同じ見本で撮る. `cd frontend && pnpm build` の後, `bash e2e/screens.sh` で起動し, 別の端末の `frontend` で `node e2e/screens.ts` を実行する.
 
 | ディレクトリ | 内容 |
