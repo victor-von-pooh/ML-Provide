@@ -642,9 +642,11 @@ def create_bundle(request: Request, body: BundleCreate) -> dict[str, Any]:
         if note is not None and body.problem not in origin_ids(
             entry, projects
         ):
+            # 理由の末尾の句点は 1 つにする
             note = (
-                f"{note}. 出どころもこの問題の実験でないので, この問題で"
-                "絞った一式の一覧には出ません (「全ての一式を出す」で出ます)"
+                f"{note.rstrip('.。 ')}. 出どころもこの問題の実験でないので, "
+                "この問題で絞った一式の一覧には出ません (「全ての一式を"
+                "出す」で出ます)"
             )
         view["problem_note"] = note
 

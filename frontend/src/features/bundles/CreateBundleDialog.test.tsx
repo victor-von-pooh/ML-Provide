@@ -116,17 +116,17 @@ describe('学習の結果から作る対話', () => {
     expect(createBundle.mock.calls[0]?.[0].problem).toBeNull()
   })
 
-  it('つなげるかを読み終えるまでは, つなぐ欄も理由も出さず, 問題を渡さない', async () => {
+  it('つなげるかを読み終えるまでは, つなぐ欄も理由も出さず, 問題は渡して API に任せる', async () => {
     renderDialog('slow')
     await waitFor(() => expect(projectProblem).toHaveBeenCalledWith('slow'))
     expect(screen.queryByRole('checkbox', { name: /をつなぐ/ })).toBeNull()
     expect(screen.queryByText(/つながずに作ります/)).toBeNull()
     fireEvent.click(await fillColumns())
     await waitFor(() => expect(createBundle).toHaveBeenCalledTimes(1))
-    expect(createBundle.mock.calls[0]?.[0].problem).toBeNull()
+    expect(createBundle.mock.calls[0]?.[0].problem).toBe('slow')
   })
 
-  it('推論に渡せない問題は, つなぐ欄を出さずに理由を添え, 問題を渡さない', async () => {
+  it('推論に渡せない問題は, つなぐ欄を出さずに理由を添え, 問題は渡して API に任せる', async () => {
     renderDialog('bad')
     expect(
       await screen.findByText(/選んだ問題 bad はつながずに作ります: 問題 bad は推論に渡せません/),
@@ -134,7 +134,7 @@ describe('学習の結果から作る対話', () => {
     expect(screen.queryByRole('checkbox', { name: /をつなぐ/ })).toBeNull()
     fireEvent.click(await fillColumns())
     await waitFor(() => expect(createBundle).toHaveBeenCalledTimes(1))
-    expect(createBundle.mock.calls[0]?.[0].problem).toBeNull()
+    expect(createBundle.mock.calls[0]?.[0].problem).toBe('bad')
   })
 
   it('殻で問題を選んでいなければ, つなぐ欄を出さず問題を渡さない', async () => {

@@ -331,8 +331,10 @@ function CreateBundleForm({
     enabled: project !== null,
   })
   // 読み終えるまでは欄も理由も出さない (読む間だけ出て消える見た目にしないため)
+  // 欄を外したとき以外は, 読み込み中, 誤り, つなげない問題でも渡し, つなげるかは
+  // API に任せる (つなげない理由を作った一式の画面に出すため)
   const usable = projectProblem.data?.usable === true
-  const linking = project !== null && usable && !unlinked
+  const linking = project !== null && !unlinked
   const problem = linking ? project : null
   const create = useMutation({
     // 送ったときの欄の印 (欄を変えたら前の誤りを出さないため)

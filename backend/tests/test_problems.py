@@ -907,6 +907,11 @@ def test_create_links_project(client: TestClient, tmp_path: Path) -> None:
         assert note is None or "絞った一式の一覧には出ません" in (
             made["problem_note"]
         ), name
+        # 句点は 2 つ並べない
+        assert note is None or not any(
+            mark in made["problem_note"]
+            for mark in (".. 出どころ", "。. 出どころ")
+        ), name
         assert made["made_from"] == str(paths["run"].resolve())
 
     # 推論に渡せない問題でも, その問題が記録したプロジェクトの実験から
