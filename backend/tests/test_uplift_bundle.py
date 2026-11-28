@@ -1,10 +1,13 @@
 import importlib.util
+import shutil
 from pathlib import Path
 from types import ModuleType
 
 import ml_inference
+import ml_quest
 import pytest
 from fastapi.testclient import TestClient
+from ml_quest import example_problem
 from test_bundle_v3 import register
 
 from ml_provide.app import create_app
@@ -331,3 +334,145 @@ def test_treated_only_uplift(client: TestClient) -> None:
     response = client.get(f"/api/results/{other['id']}/treated")
     assert response.status_code == 400
     assert "効果の一式" in response.json()["detail"]
+
+
+@pytest.fixture(scope="module")
+def single_files(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """
+    処置の列を入力に入れる 1 つの予測 (s_learner) の効果の一式と, 効果を
+    見積もる新しい顧客の表を作る関数
+
+    Parameters
+    ----------
+    tmp_path_factory: pytest.TempPathFactory
+        pytest が用意する一時ディレクトリの作り手
+
+    Returns
+    ----------
+    work: Path
+        experiment (実験), bundle (版 18 の一式), customers.csv,
+        trial.csv を持つディレクトリ
+    """
+    # 学習は数秒かかるので, このファイルのテストで 1 度だけ
+    work = tmp_path_factory.mktemp("single")
+    load_maker().main(work, "s_learner")
+
+    return work
+
+
+def test_s_learner_bundle(client: TestClient, single_files: Path) -> None:
+    """
+    S-learner の効果の一式 (版 18) を登録して推論し, 効果の上位から配る
+    結論と, 結果に写す効果の決め方を確かめる関数
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    single_files: Path
+        一式と新しい顧客の表を持つディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 版 18 の一式の登録. 入力は見積もりに使う列と処置の列, 出力は 1 つ
+    bundle = register(client, single_files / "bundle")
+    description = bundle["description"]
+    assert (description["kind"], description["format_version"]) == (
+        "uplift", 18
+    )
+    assert description["column_output"] is False
+    assert description["decision"] == {"type": "treat", "budget": 8}
+    uplift = description["uplift"]
+    assert uplift["learner"] == "s_learner"
+    assert (uplift["input"], uplift["output"]) == ("x", "outcome")
+    assert "treated" not in uplift and "control" not in uplift
+    assert uplift["features"] == ["age", "visits"]
+    assert uplift["check"]["agreement"] == 1.0
+    assert set(uplift["curves"]) == {"valid", "test"}
+
+    # 既定の配る判断での推論. 効果の上位から上限まで配る
+    url = f"/api/bundles/{bundle['id']}/predict"
+    response = client.post(
+        url, json={"source": str(single_files / "customers.csv")}
+    )
+    assert response.status_code == 201, response.text
+    result = response.json()
+    summary = result["summary"]
+    assert (summary["rows"], summary["predicted"], summary["skipped"]) == (
+        40, 39, 1
+    )
+    assert summary["outcome"] == "binary" and len(summary["top"]) == 10
+    assert result["uplift"]["learner"] == "s_learner"
+    assert result["uplift"]["k"] == 0.3
+    decided = result["decision"]
+    positive = round(summary["distribution"]["positive"] * 39)
+    assert decided["summary"]["acted"] == min(8, positive) > 0
+    treated = client.get(f"/api/results/{result['id']}/treated").json()
+    rows = treated["rows"]
+    assert len(rows) == decided["summary"]["acted"]
+    assert [row["row"] for row in rows] == [
+        item["row"] for item in summary["top"][:len(rows)]
+    ]
+    assert all(row["effect"] > 0 for row in rows)
+    assert rows[0]["effect"] == pytest.approx(
+        rows[0]["treated"] - rows[0]["control"]
+    )
+    again = client.get(f"/api/results/{result['id']}").json()
+    assert again["uplift"] == result["uplift"]
+
+    # 処置と結果のある試験の記録での数え直し
+    response = client.post(
+        url, json={"source": str(single_files / "trial.csv")}
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["summary"]["measured"]["rows"] == 120
+
+
+def test_s_learner_experiment(
+    tmp_path: Path, single_files: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    学習の実験の中に作った S-learner の効果の一式も実験の一覧に出て,
+    一覧から登録できることを確かめる関数
+
+    Parameters
+    ----------
+    tmp_path: Path
+        一時ディレクトリ
+    single_files: Path
+        一式を持つディレクトリ
+    monkeypatch: pytest.MonkeyPatch
+        ML-Pathfinder の置き場の差し替え
+
+    Returns
+    ----------
+    None
+    """
+    # 記録したプロジェクトの実験の中の, 版 18 の一式 (inference)
+    project = tmp_path / "project"
+    run = project / "outputs" / "coupons" / "2026-01-02" / "09-00-00"
+    shutil.copytree(single_files / "bundle", run / "inference")
+    ml_quest.save_problem(
+        {**example_problem("解約の引き止め"),
+         "project": {"path": str(project.resolve())}},
+        tmp_path / "pathfinder" / "problems" / "a"
+    )
+    monkeypatch.setenv("ML_PATHFINDER_HOME", str(tmp_path / "pathfinder"))
+    app = create_app(
+        data_dir=tmp_path / "home", token=TOKEN, allowed_hosts=["testserver"],
+        procedures=[]
+    )
+    client = TestClient(app, headers={"x-provide-token": TOKEN})
+
+    # 一覧に出て, 場所で登録すると S-learner の効果の一式
+    rows = client.get("/api/experiments").json()["experiments"]
+    assert [row["experiment"] for row in rows] == [
+        "coupons/2026-01-02/09-00-00"
+    ]
+    response = client.post("/api/bundles", json={"path": rows[0]["path"]})
+    assert response.status_code == 201, response.text
+    description = response.json()["description"]
+    assert description["format_version"] == 18
+    assert description["uplift"]["learner"] == "s_learner"

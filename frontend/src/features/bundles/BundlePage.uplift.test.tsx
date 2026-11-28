@@ -103,13 +103,30 @@ const coupons = {
   },
 } as unknown as Bundle
 
+// 処置の列を入力に入れる 1 つの予測 (S-learner) の効果の一式 (版 18)
+const single = {
+  ...coupons,
+  id: 'u2',
+  description: {
+    ...coupons.description,
+    format_version: 18,
+    uplift: {
+      ...coupons.description!.uplift!,
+      learner: 's_learner',
+      input: 'x',
+      output: 'outcome',
+    },
+  },
+} as Bundle
+
+let shown: Bundle = coupons
 const bundleProblem = vi.fn()
 const predict = vi.fn()
 
 vi.mock('../../api/client', async () =>
   (await import('../../test/mockClient')).mockClient({
     api: {
-      bundle: () => Promise.resolve(coupons),
+      bundle: () => Promise.resolve(shown),
       results: () => Promise.resolve([]),
       bundleProblem: () => bundleProblem(),
       info: () => new Promise(() => {}),
@@ -121,10 +138,10 @@ vi.mock('../../api/client', async () =>
 /** 一覧から開いた一式の画面を描く */
 function show() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  client.setQueryData(['bundles'], [coupons])
+  client.setQueryData(['bundles'], [shown])
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/bundles/u1']}>
+      <MemoryRouter initialEntries={[`/bundles/${shown.id}`]}>
         <Routes>
           <Route path="/bundles/:id" element={<BundlePage />} />
           <Route path="/results/:id" element={<p>結果の画面</p>} />
@@ -136,6 +153,7 @@ function show() {
 
 describe('効果の一式の画面', () => {
   beforeEach(() => {
+    shown = coupons
     bundleProblem.mockReset()
     predict.mockReset()
   })
@@ -174,6 +192,21 @@ describe('効果の一式の画面', () => {
     expect(screen.queryByRole('region', { name: '結論の決め方' })).not.toBeInTheDocument()
     expect(screen.queryByText(/結論は推論した件数だけです/)).not.toBeInTheDocument()
     expect(bundleProblem).not.toHaveBeenCalled()
+  })
+
+  it('S-learner の一式は効果の決め方, 処置の列を足した入力の幅, 結果の予測 1 つの出力を出す', async () => {
+    shown = single
+    show()
+    expect(
+      await screen.findByText(/^処置の列を入力の終わりに足した 1 つの予測の差 \(S-learner\)/),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/処置の列を 1 に, しないときの予測は 0 にして/)).toBeInTheDocument()
+    expect(screen.getByText('入力の幅と出力')).toBeInTheDocument()
+    expect(
+      screen.getByText(/^入力 x の幅 3 \(見積もりに使う列 2 と処置の列 coupon の 1/),
+    ).toHaveTextContent('出力は結果の予測 outcome の 1 つ')
+    expect(screen.queryByText(/T-learner/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/^配る数の上限/)).toHaveValue(8)
   })
 
   it('配る数の上限を確かめ, 行の表と配る判断を渡して推論する', async () => {

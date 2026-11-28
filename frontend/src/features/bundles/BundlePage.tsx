@@ -31,7 +31,8 @@ import {
   distributionText,
   effectText,
   GROUPS_TEXT,
-  LEARNER_LABELS,
+  learnerText,
+  modelText,
   OUTCOME_LABELS,
   PREMISE_TEXT,
   topText,
@@ -334,7 +335,7 @@ function AnomalyRows({
   )
 }
 
-/** 効果の一式 (版 12) の効果の決め方, 結果の種類, 列, 前処理, 配る数の上限, 学習用の行の効果の分布, 確かめ */
+/** 効果の一式 (版 12 と 18) の効果の決め方, 結果の種類, 列, 入力の幅と出力, 前処理, 配る数の上限, 学習用の行の効果の分布, 確かめ */
 function UpliftRows({
   uplift,
   steps,
@@ -348,7 +349,7 @@ function UpliftRows({
         効果の決め方と前処理のレシピ (データセットなし. 推論は表の行ごとに効果を見積もる)
       </Row>
       <Row label="効果の決め方">
-        {LEARNER_LABELS[uplift.learner] ?? uplift.learner}
+        {learnerText(uplift.learner)}
         <span className="block text-xs text-ink-2">{effectText(uplift.outcome)}</span>
         <span className="block text-xs text-ink-2">{GROUPS_TEXT}</span>
         <span className="block text-xs text-ink-2">{PREMISE_TEXT}</span>
@@ -360,6 +361,7 @@ function UpliftRows({
           推論する表に学習のときと同じ前処理をかけた後の列です
         </span>
       </Row>
+      <Row label="入力の幅と出力">{modelText(uplift)}</Row>
       <Row label="行の id の列">
         <span className="font-mono text-xs">{uplift.id}</span>
       </Row>

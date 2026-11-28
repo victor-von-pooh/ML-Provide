@@ -93,6 +93,7 @@ const result = {
   uplift: {
     outcome: 'binary',
     k: 0.3,
+    learner: 't_learner',
     curves: {
       valid: { rows: [0, 50, 100], fraction: [0, 0.5, 1], qini: [0, 20, 32], random: [0, 16, 32] },
     },
@@ -118,6 +119,10 @@ const result = {
   },
 } as unknown as Result
 
+// S-learner の一式の結果 (効果の決め方だけが違う)
+const single = { ...result, uplift: { ...result.uplift!, learner: 's_learner' } } as Result
+let shown: Result = result
+
 const rows: Rows = { total: 0, offset: 0, columns: ['index'], rows: [] }
 const treated = vi.fn((_id: string, offset: number, _limit: number): Promise<TreatedRows> =>
   Promise.resolve({
@@ -135,7 +140,7 @@ const treated = vi.fn((_id: string, offset: number, _limit: number): Promise<Tre
 vi.mock('../../api/client', async () =>
   (await import('../../test/mockClient')).mockClient({
     api: {
-      result: () => Promise.resolve(result),
+      result: () => Promise.resolve(shown),
       bundle: () => Promise.reject(new Error('無い')),
       rows: () => Promise.resolve(rows),
       treated: (id: string, offset: number, limit: number) => treated(id, offset, limit),
@@ -158,7 +163,10 @@ function renderPage() {
 }
 
 describe('効果の結果の画面', () => {
-  beforeEach(() => treated.mockClear())
+  beforeEach(() => {
+    shown = result
+    treated.mockClear()
+  })
 
   it('言葉の説明, 効果の分布, 実験の評価と曲線, 上位の行, 配る行を出し, 列の出力だけの欄を出さない', async () => {
     renderPage()
@@ -166,6 +174,7 @@ describe('効果の結果の画面', () => {
     const glossary = await screen.findByLabelText('言葉の説明')
     expect(glossary).toHaveTextContent(/効果は, 処置したとき .* \(確率の差\)/)
     expect(glossary).toHaveTextContent('処置の群は学習の記録で処置した行')
+    expect(glossary).toHaveTextContent('処置の群と対照の群の 2 つの予測の差 (T-learner)')
     expect(glossary).toHaveTextContent('Qini の曲線は')
     expect(glossary).toHaveTextContent('上位 30 % の効果の差')
     expect(glossary).toHaveTextContent('無作為に配った記録を前提にした見積もり')
@@ -199,6 +208,23 @@ describe('効果の結果の画面', () => {
     expect(screen.queryByRole('heading', { name: '結論の決め方を変える' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /意思決定/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '人の確かめ' })).not.toBeInTheDocument()
+  })
+
+  it('S-learner の一式の結果は言葉の説明に効果の決め方と予測の出し方を出す', async () => {
+    shown = single
+    renderPage()
+    const glossary = await screen.findByLabelText('言葉の説明')
+    expect(glossary).toHaveTextContent('処置の列を入力の終わりに足した 1 つの予測の差 (S-learner)')
+    expect(glossary).toHaveTextContent('処置の列を 1 に, しないときの予測は 0 にして')
+    expect(glossary).not.toHaveTextContent('T-learner')
+    expect(await screen.findByRole('table', { name: /^配る行/ })).toBeInTheDocument()
+  })
+
+  it('効果の決め方を写していない結果は言葉の説明に決め方を出さない', async () => {
+    shown = { ...result, uplift: { ...result.uplift!, learner: undefined } } as Result
+    renderPage()
+    const glossary = await screen.findByLabelText('言葉の説明')
+    expect(glossary).not.toHaveTextContent('効果の決め方')
   })
 
   it('曲線の図は矢印のキーで点を選ぶと値を出し, 表でも読める', async () => {

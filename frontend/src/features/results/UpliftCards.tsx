@@ -16,6 +16,7 @@ import { formatNumber, formatValue } from '../../lib/format'
 import {
   effectText,
   GROUPS_TEXT,
+  learnerText,
   liftText,
   PREMISE_TEXT,
   QINI_TEXT,
@@ -44,15 +45,18 @@ function NumberCell({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * 結論の文に初めて出る言葉 (効果, 処置の群と対照の群, Qini の曲線と係数, 上位 K 割) の説明と,
+ * 結論の文に初めて出る言葉 (効果, 処置の群と対照の群, Qini の曲線と係数, 上位 K 割) と効果の決め方の説明と,
  * 無作為に配った記録を前提にした見積もりという前提
  */
 export function UpliftTerms({
   outcome,
   k,
+  learner,
 }: {
   outcome: string | null | undefined
   k: number | null
+  /** 一式の効果の決め方 (結果に写していない古い結果は無し) */
+  learner?: string
 }) {
   return (
     <dl
@@ -61,6 +65,12 @@ export function UpliftTerms({
     >
       <dt className="font-medium text-ink">効果</dt>
       <dd>{effectText(outcome)}</dd>
+      {learner && (
+        <>
+          <dt className="font-medium text-ink">効果の決め方</dt>
+          <dd>{learnerText(learner)}</dd>
+        </>
+      )}
       <dt className="font-medium text-ink">処置の群と対照の群</dt>
       <dd>{GROUPS_TEXT}</dd>
       <dt className="font-medium text-ink">Qini の曲線と係数</dt>
