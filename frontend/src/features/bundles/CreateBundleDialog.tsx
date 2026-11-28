@@ -330,8 +330,11 @@ function CreateBundleForm({
     queryFn: () => api.projectProblem(project ?? ''),
     enabled: project !== null,
   })
-  const usable = projectProblem.data?.usable !== false
-  const linking = project !== null && usable && !unlinked
+  // 読み終えるまでは欄も理由も出さない (読む間だけ出て消える見た目にしないため)
+  // 欄を外したとき以外は, 読み込み中, 誤り, つなげない問題でも渡し, つなげるかは
+  // API に任せる (つなげない理由を作った一式の画面に出すため)
+  const usable = projectProblem.data?.usable === true
+  const linking = project !== null && !unlinked
   const problem = linking ? project : null
   const create = useMutation({
     // 送ったときの欄の印 (欄を変えたら前の誤りを出さないため)
@@ -768,7 +771,7 @@ function CreateBundleForm({
             選んだ問題 {project} をつなぐ (問題を使わない一式は, つながずに作る)
           </label>
         )}
-        {project !== null && !usable && (
+        {project !== null && projectProblem.data?.usable === false && (
           <p className="text-xs text-ink-2">
             選んだ問題 {project} はつながずに作ります: {projectProblem.data?.reason}
           </p>
