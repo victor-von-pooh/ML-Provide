@@ -1,6 +1,8 @@
 import clsx from 'clsx'
-import { Bot, FileBarChart, Lightbulb, Moon, Package, Sun } from 'lucide-react'
-import { NavLink, Route, Routes } from 'react-router'
+import { Bot, FileBarChart, Lightbulb, Moon, Package, SearchX, Sun } from 'lucide-react'
+import { Link, NavLink, Route, Routes } from 'react-router'
+
+import { EmptyState, PageHeader } from './components/common'
 
 import { BundlePage } from './features/bundles/BundlePage'
 import { BundlesPage } from './features/bundles/BundlesPage'
@@ -31,6 +33,20 @@ function NavItem({ to, icon: Icon, label }: { to: string; icon: typeof Package; 
       <Icon size={16} aria-hidden />
       {label}
     </NavLink>
+  )
+}
+
+/** 段階の中の知らない経路 (段階の頭の画面へのリンクを出す) */
+function NotFound() {
+  return (
+    <>
+      <PageHeader title="推論" />
+      <EmptyState icon={SearchX} title="ページが見つかりません">
+        <Link to="/" className="text-accent-text hover:underline">
+          推論の一式の一覧へ戻る
+        </Link>
+      </EmptyState>
+    </>
   )
 }
 
@@ -80,7 +96,7 @@ export function App() {
           <Route path="/policies" element={<PoliciesPage />} />
           <Route path="/policies/:id" element={<PolicyPage />} />
           <Route path="/policy-results/:id" element={<PolicyResultPage />} />
-          <Route path="*" element={<p className="text-ink-3">ページが見つかりません.</p>} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
     </div>

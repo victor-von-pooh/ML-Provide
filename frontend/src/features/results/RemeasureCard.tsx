@@ -4,7 +4,7 @@ import { useState } from 'react'
 
 import { useApi } from '../../api/client'
 import type { Remeasure, Result } from '../../api/types'
-import { Button, Card, ErrorBox } from '../../components/ui'
+import { Button, Card, ErrorBox, FieldError } from '../../components/common'
 
 /** 書き戻す前の確かめ (登録した場所のファイルを書き換えるため) */
 const SAVE_CONFIRM =
@@ -174,9 +174,9 @@ export function RemeasureCard({
         </div>
       )}
       {stepProblem && (
-        <p id={`steps-problem-${result.id}`} className="mb-2 text-xs text-critical-text">
-          {stepProblem}
-        </p>
+        <div className="mb-2">
+          <FieldError id={`steps-problem-${result.id}`}>{stepProblem}</FieldError>
+        </div>
       )}
       {error && <ErrorBox error={error} />}
       {!shown && !error && (

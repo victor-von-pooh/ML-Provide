@@ -1,11 +1,12 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useIsMutating, useMutation, useQuery } from '@tanstack/react-query'
+import { useRef, useState, type RefObject } from 'react'
 
 import { useApi } from '../../api/client'
 import type { Bundle, DatasetDescription } from '../../api/types'
-import { Dialog } from '../../components/Dialog'
 import { PathField } from '../../components/PathPicker'
-import { Button, ErrorBox } from '../../components/ui'
+import { Button, Dialog, ErrorBox } from '../../components/common'
+import { describedBy } from '../../components/common-utils'
+import { FieldProblems } from '../../components/ui'
 import {
   ARRAY_FORMS,
   buildInputs,
@@ -26,6 +27,7 @@ import {
   ROLE_LABELS,
   stepsText,
 } from '../../lib/outputs'
+import { problemIds } from '../../lib/problems'
 import { readDraft, useDraftWriter } from '../../lib/draft'
 import { useStage } from '../../lib/stage'
 import { useDebounced } from '../../lib/useDebounced'
@@ -197,6 +199,9 @@ function restoreDraft(stored: unknown): CreateDraft | null {
   return draft as unknown as CreateDraft
 }
 
+/** 一式を作る要求の印 (作っている途中かを対話の枠が知るため) */
+const CREATE_KEY = ['create-bundle']
+
 /**
  * 学習の結果 (モデルの定義, データセット, 実験) から推論の一式を作る
  *
@@ -213,10 +218,15 @@ export function CreateBundleDialog({
   // 開いたときの下書き (捨てたら空の欄で作り直す)
   const [restored, setRestored] = useState(() => readDraft(DRAFT_KIND, restoreDraft))
   const [round, setRound] = useState(0)
+  // 作っている途中は閉じない (確かめの結果を見せるため)
+  const busy = useIsMutating({ mutationKey: CREATE_KEY }) > 0
+  // 開いたら名前の欄に focus を置く (最初に打つ欄のため)
+  const nameInput = useRef<HTMLInputElement>(null)
   return (
-    <Dialog title="学習の結果から一式を作る" onClose={onClose}>
+    <Dialog title="学習の結果から一式を作る" onClose={onClose} busy={busy} initialFocus={nameInput}>
       <CreateBundleForm
         key={round}
+        nameInput={nameInput}
         initial={restored?.value ?? EMPTY_DRAFT}
         restoredAt={restored?.time ?? null}
         onDiscard={() => {
@@ -232,11 +242,14 @@ export function CreateBundleDialog({
 /** 一式を作る欄 (initial は戻した下書きか空の欄) */
 function CreateBundleForm({
   initial,
+  nameInput,
   restoredAt,
   onDiscard,
   onCreated,
 }: {
   initial: CreateDraft
+  /** 名前の欄 (対話の枠の最初の focus) */
+  nameInput: RefObject<HTMLInputElement | null>
   restoredAt: string | null
   onDiscard: () => void
   onCreated: (bundle: Bundle) => void
@@ -337,6 +350,7 @@ function CreateBundleForm({
   const linking = project !== null && !unlinked
   const problem = linking ? project : null
   const create = useMutation({
+    mutationKey: CREATE_KEY,
     // 送ったときの欄の印 (欄を変えたら前の誤りを出さないため)
     mutationFn: (_key: string) => {
       if (itemsData) {
@@ -517,6 +531,7 @@ function CreateBundleForm({
             名前
           </label>
           <input
+            ref={nameInput}
             id="bundle-name"
             value={name}
             onChange={(event) => setName(event.target.value)}
@@ -659,7 +674,7 @@ function CreateBundleForm({
               problems={builtProcedure.problems.length}
             >
               {info.error ? (
-                <ErrorBox error={info.error} />
+                <ErrorBox error={info.error} live={false} />
               ) : (
                 <ProcedureFields
                   form={procedureForm}
@@ -776,17 +791,16 @@ function CreateBundleForm({
             選んだ問題 {project} はつながずに作ります: {projectProblem.data?.reason}
           </p>
         )}
-        {/* 誤りは打つたびに変わるので, alert でなく polite で読み上げる */}
-        <div aria-live="polite" className="flex flex-col gap-1">
-          {problems.map((problem) => (
-            <p key={problem} className="text-xs text-critical-text">
-              {problem}
-            </p>
-          ))}
-        </div>
+        {/* 誤りは打つたびに変わるので読み上げず, 押せない「作る」の説明として結ぶ */}
+        <FieldProblems idBase="bundle" problems={problems} />
         {create.error && create.variables === formKey && <ErrorBox error={create.error} />}
         <div className="flex justify-end">
-          <Button type="submit" variant="primary" disabled={!ready || create.isPending}>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={!ready || create.isPending}
+            aria-describedby={describedBy(...problemIds('bundle', problems))}
+          >
             {create.isPending ? '確かめています…' : '作る'}
           </Button>
         </div>

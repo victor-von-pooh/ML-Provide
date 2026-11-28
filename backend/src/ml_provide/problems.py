@@ -1035,7 +1035,9 @@ def link_problem(
         try:
             entry = store.link_problem(bundle_id, None)
         except KeyError as error:
-            raise HTTPException(404, "一式が見つかりません") from error
+            raise HTTPException(
+                404, f"一式 {bundle_id} が見つかりません"
+            ) from error
         state = problem_state(
             entry, store.home, request.app.state.problems_dir, project
         )
@@ -1053,7 +1055,9 @@ def link_problem(
             bundle_id, str(path), str(problem["created_at"])
         )
     except KeyError as error:
-        raise HTTPException(404, "一式が見つかりません") from error
+        raise HTTPException(
+            404, f"一式 {bundle_id} が見つかりません"
+        ) from error
     state = problem_state(
         entry, store.home, request.app.state.problems_dir, project
     )

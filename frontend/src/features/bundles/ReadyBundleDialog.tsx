@@ -1,11 +1,11 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { PackagePlus } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 import { useApi } from '../../api/client'
 import type { Bundle } from '../../api/types'
-import { Dialog } from '../../components/Dialog'
-import { Button, ErrorBox, Spinner } from '../../components/ui'
+import { Button, Dialog, ErrorBox, FieldError, Spinner } from '../../components/common'
+import { describedBy } from '../../components/common-utils'
 import { classesText, licenseAlert, preprocessText, sha256Problem } from '../../lib/ready'
 import { useDebounced } from '../../lib/useDebounced'
 
@@ -72,8 +72,15 @@ export function ReadyBundleDialog({
     onSuccess: onCreated,
   })
   const ready = !!shown && !!shownName.trim() && !hashProblem && !create.isPending
+  // 開いたらモデルの名前の欄に focus を置く (最初に打つ欄のため)
+  const modelInput = useRef<HTMLInputElement>(null)
   return (
-    <Dialog title="既製のモデルから作る" onClose={onClose}>
+    <Dialog
+      title="既製のモデルから作る"
+      onClose={onClose}
+      busy={create.isPending}
+      initialFocus={modelInput}
+    >
       <p className="mb-3 text-xs text-ink-3">
         学習せずにそのまま使うモデル (ライブラリの学習済みの重み) の一式を作ります.
         種類の名前の表と前処理は重みの説明から一式に書き, 重みは写さずに名前 (版)
@@ -106,6 +113,7 @@ export function ReadyBundleDialog({
           <div>
             <Label htmlFor="ready-model">モデルの名前</Label>
             <input
+              ref={modelInput}
               id="ready-model"
               value={model}
               onChange={(event) => setModel(event.target.value)}
@@ -149,9 +157,7 @@ export function ReadyBundleDialog({
               <dt className="text-ink-3">ライセンス</dt>
               <dd>
                 {alert ? (
-                  <p role="alert" className="text-xs text-warning-text">
-                    {alert}
-                  </p>
+                  <ErrorBox error={alert} />
                 ) : (
                   <span className="text-xs">{shown.license.license ?? '–'}</span>
                 )}
@@ -177,18 +183,17 @@ export function ReadyBundleDialog({
               id="ready-sha256"
               value={sha256}
               onChange={(event) => setSha256(event.target.value)}
-              aria-describedby="ready-sha256-note"
-              aria-invalid={!!hashProblem}
+              aria-describedby={describedBy(
+                'ready-sha256-note',
+                hashProblem && 'ready-sha256-problem',
+              )}
+              aria-invalid={hashProblem ? true : undefined}
               className={`${FIELD} font-mono`}
             />
             <p id="ready-sha256-note" className="mt-1 text-xs text-ink-3">
               問題や前に作った一式で決めておいた値. 書くと, 読んだ重みと違えば作りません
             </p>
-            {hashProblem && (
-              <p role="alert" className="mt-1 text-xs text-critical-text">
-                {hashProblem}
-              </p>
-            )}
+            {hashProblem && <FieldError id="ready-sha256-problem">{hashProblem}</FieldError>}
           </div>
         </div>
         {create.isPending && (

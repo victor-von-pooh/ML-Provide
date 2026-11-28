@@ -4,7 +4,10 @@ import { useState } from 'react'
 
 import { useApi } from '../../api/client'
 import type { BacktestGuard, Result } from '../../api/types'
-import { Button, Card, ErrorBox } from '../../components/ui'
+import { Button, Card, ErrorBox } from '../../components/common'
+import { describedBy } from '../../components/common-utils'
+import { FieldProblems } from '../../components/ui'
+import { problemIds } from '../../lib/problems'
 import { fromDecisionForm, toDecisionForm, type DecisionForm } from '../../lib/decision'
 import { formatValue } from '../../lib/format'
 import { guardAmount, guardLine, guardVerdict } from '../../lib/guard'
@@ -46,6 +49,7 @@ export function DecisionCard({ result, bundleAlive }: { result: Result; bundleAl
             variant="primary"
             icon={RefreshCw}
             disabled={problems.length > 0 || decide.isPending || replay.isPending || !bundleAlive}
+            aria-describedby={describedBy(...problemIds('decide', problems))}
             onClick={() => decide.mutate()}
           >
             {decide.isPending ? '決めています…' : '決め直す'}
@@ -90,7 +94,7 @@ export function DecisionCard({ result, bundleAlive }: { result: Result; bundleAl
                   <th scope="row" className="pr-4 text-left font-normal">
                     {name}
                   </th>
-                  <td className="tabular text-right">
+                  <td className="tabular-nums text-right">
                     {value < 0 ? `損 ${formatValue(-value)}` : `得 ${formatValue(value)}`}
                   </td>
                 </tr>
@@ -113,11 +117,7 @@ export function DecisionCard({ result, bundleAlive }: { result: Result; bundleAl
         classes={result.classes ?? []}
         idBase="decide"
       />
-      {problems.map((problem) => (
-        <p key={problem} role="alert" className="mt-1 text-xs text-critical-text">
-          {problem}
-        </p>
-      ))}
+      <FieldProblems idBase="decide" problems={problems} />
       {decide.error && (
         <div className="mt-2">
           <ErrorBox error={decide.error} />
@@ -138,9 +138,9 @@ function GuardBox({ guard }: { guard: BacktestGuard }) {
       </p>
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5">
         <dt>この方針での値</dt>
-        <dd className="tabular">{guardAmount(guard, guard.value)}</dd>
+        <dd className="tabular-nums">{guardAmount(guard, guard.value)}</dd>
         <dt>守る線</dt>
-        <dd className="tabular">{guardLine(guard)}</dd>
+        <dd className="tabular-nums">{guardLine(guard)}</dd>
         <dt>守れたか</dt>
         <dd className={tone}>{guardVerdict(guard)}</dd>
       </dl>

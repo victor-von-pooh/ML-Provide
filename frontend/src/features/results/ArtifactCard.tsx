@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useApi } from '../../api/client'
 import type { ArtifactPreview, Result } from '../../api/types'
-import { Card, ErrorBox, Spinner } from '../../components/ui'
+import { Card, ErrorBox, Spinner } from '../../components/common'
 import { gridPixels, imagePixels, labelColor, projectPoints } from '../../lib/artifacts'
 import { formatNumber } from '../../lib/format'
 import { FORM_LABELS } from '../../lib/outputs'

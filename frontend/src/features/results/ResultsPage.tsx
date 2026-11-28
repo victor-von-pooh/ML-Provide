@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 
 import { useApi } from '../../api/client'
-import { Card, ErrorBox, PageHeader, Spinner } from '../../components/ui'
+import { Card, ErrorBox, PageHeader, Spinner } from '../../components/common'
+import { Crumbs } from '../../components/ui'
 import { PolicyResultList } from '../policies/PolicyResults'
 import { CompareResultsCard, MAX_COMPARE } from './CompareResultsCard'
 
@@ -15,7 +16,11 @@ export function ResultsPage() {
   })
   return (
     <>
-      <PageHeader title="結果" subtitle="推論した結果. 一式を消しても結果は残ります" />
+      <PageHeader
+        title="結果"
+        subtitle="推論した結果. 一式を消しても結果は残ります"
+        breadcrumb={<Crumbs />}
+      />
       <div className="flex flex-col gap-4">
         <CompareResultsCard
           title="推論の一式の結果"
@@ -25,7 +30,7 @@ export function ResultsPage() {
         />
         <Card title="方策の結果">
           {policies.isPending && <Spinner />}
-          {policies.error && <ErrorBox error={policies.error} />}
+          {policies.error && <ErrorBox error={policies.error} live={false} />}
           {policies.data && <PolicyResultList results={policies.data} showPolicy />}
         </Card>
       </div>

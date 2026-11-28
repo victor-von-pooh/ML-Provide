@@ -10,7 +10,7 @@ import type {
   UpliftMeasured,
   UpliftSummary,
 } from '../../api/types'
-import { Button, Card, ErrorBox, Spinner } from '../../components/ui'
+import { Button, Card, ErrorBox, Spinner } from '../../components/common'
 import { EVALUATION_SPLITS } from '../../lib/anomaly'
 import { formatNumber, formatValue } from '../../lib/format'
 import {
@@ -40,7 +40,7 @@ function Heading({ children, right = false }: { children: React.ReactNode; right
 
 /** 数の欄 */
 function NumberCell({ children }: { children: React.ReactNode }) {
-  return <td className="tabular px-3 py-1.5 text-right">{children}</td>
+  return <td className="tabular-nums px-3 py-1.5 text-right">{children}</td>
 }
 
 /**
@@ -286,10 +286,11 @@ export function QiniChart({ name, curve }: { name: string; curve: QiniCurve }) {
               上位 {(point.fraction * 100).toFixed(0)} % ({formatNumber(point.rows)} 行)
             </div>
             <div>
-              Qini の曲線 <span className="tabular font-semibold">{formatValue(point.qini)}</span>
+              Qini の曲線{' '}
+              <span className="tabular-nums font-semibold">{formatValue(point.qini)}</span>
             </div>
             <div>
-              でたらめ <span className="tabular">{formatValue(point.random)}</span>
+              でたらめ <span className="tabular-nums">{formatValue(point.random)}</span>
             </div>
           </div>
         )}
@@ -413,11 +414,11 @@ function MeasuredView({ measured }: { measured: UpliftMeasured }) {
     <div className="rounded-lg border border-line p-3 text-sm">
       <p className="font-medium">渡した表の処置と結果で数え直した評価</p>
       <p className="mt-1">
-        Qini の係数 <span className="tabular font-semibold">{measured.qini.toFixed(3)}</span>,{' '}
+        Qini の係数 <span className="tabular-nums font-semibold">{measured.qini.toFixed(3)}</span>,{' '}
         {topText(measured.k)} の効果の差{' '}
-        <span className="tabular font-semibold">{liftCell(measured.uplift_at_k)}</span>,
-        全ての行の結果の差 <span className="tabular">{formatValue(measured.effect)}</span> (処置の群{' '}
-        {formatNumber(measured.treated)} 行 / 対照の群 {formatNumber(measured.control)} 行
+        <span className="tabular-nums font-semibold">{liftCell(measured.uplift_at_k)}</span>,
+        全ての行の結果の差 <span className="tabular-nums">{formatValue(measured.effect)}</span>{' '}
+        (処置の群 {formatNumber(measured.treated)} 行 / 対照の群 {formatNumber(measured.control)} 行
         {measured.excluded > 0 &&
           `. 処置か結果を読めずに除いた行 ${formatNumber(measured.excluded)} 行`}
         )
@@ -486,8 +487,8 @@ function DistributionCard({ summary, k }: { summary: UpliftSummary; k: number | 
           <>
             {' '}
             ({formatNumber(top.rows)} 行): 効果の平均{' '}
-            <span className="tabular font-semibold">{formatValue(top.mean)}</span>, 最も低い効果{' '}
-            <span className="tabular">{formatValue(top.lowest)}</span>
+            <span className="tabular-nums font-semibold">{formatValue(top.mean)}</span>,
+            最も低い効果 <span className="tabular-nums">{formatValue(top.lowest)}</span>
           </>
         ) : (
           ': 行がありません'
@@ -503,7 +504,7 @@ function DistributionCard({ summary, k }: { summary: UpliftSummary; k: number | 
 /** 効果の上位の行 (上位 10 行) */
 function TopRowsCard({ summary }: { summary: UpliftSummary }) {
   return (
-    <Card title={`効果の上位の行 (${summary.top.length} 行)`} padded={false}>
+    <Card title={`効果の上位の行 (${summary.top.length} 行)`} name="効果の上位の行" padded={false}>
       {summary.top.length > 0 ? (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -557,7 +558,10 @@ function TreatedCard({ result }: { result: Result }) {
   const rows = treated.data?.rows ?? []
   const total = treated.data?.total ?? 0
   return (
-    <Card title={`配る行 (${treat ? `${formatNumber(treat.acted)} 行` : '配らない'})`}>
+    <Card
+      title={`配る行 (${treat ? `${formatNumber(treat.acted)} 行` : '配らない'})`}
+      name="配る行"
+    >
       <div className="flex flex-col gap-3">
         {result.decision ? (
           <div>

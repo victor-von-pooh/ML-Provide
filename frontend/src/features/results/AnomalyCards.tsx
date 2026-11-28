@@ -3,7 +3,7 @@ import { useState } from 'react'
 
 import { useApi } from '../../api/client'
 import type { AnomalyEvaluation, AnomalySummary, Judgment, Result } from '../../api/types'
-import { Button, Card, ErrorBox, Spinner } from '../../components/ui'
+import { Button, Card, ErrorBox, FieldError, Spinner } from '../../components/common'
 import {
   ANOMALY_UNSUPPORTED,
   EVALUATION_SPLITS,
@@ -71,13 +71,15 @@ export function AnomalyEvaluationsTable({
               <th scope="row" className="px-3 py-1.5 text-left font-medium">
                 {EVALUATION_SPLITS[split] ?? split}
               </th>
-              <td className="tabular px-3 py-1.5 text-right">{formatNumber(item.rows)}</td>
-              <td className="tabular px-3 py-1.5 text-right">{formatNumber(item.anomalies)}</td>
-              <td className="tabular px-3 py-1.5 text-right">{formatNumber(item.k)}</td>
-              <td className="tabular px-3 py-1.5 text-right">
+              <td className="tabular-nums px-3 py-1.5 text-right">{formatNumber(item.rows)}</td>
+              <td className="tabular-nums px-3 py-1.5 text-right">
+                {formatNumber(item.anomalies)}
+              </td>
+              <td className="tabular-nums px-3 py-1.5 text-right">{formatNumber(item.k)}</td>
+              <td className="tabular-nums px-3 py-1.5 text-right">
                 {item.precision_at_k == null ? '–' : item.precision_at_k.toFixed(3)}
               </td>
-              <td className="tabular px-3 py-1.5 text-right">
+              <td className="tabular-nums px-3 py-1.5 text-right">
                 {item.average_precision == null ? '–' : item.average_precision.toFixed(3)}
               </td>
             </tr>
@@ -125,7 +127,7 @@ function DistributionCard({ summary }: { summary: AnomalySummary }) {
                 新しい行 ({formatNumber(summary.predicted)} 行)
               </th>
               {points.map(([label, key]) => (
-                <td key={label} className="tabular px-3 py-1.5 text-right">
+                <td key={label} className="tabular-nums px-3 py-1.5 text-right">
                   {found ? formatValue(found[key]) : '–'}
                 </td>
               ))}
@@ -135,7 +137,7 @@ function DistributionCard({ summary }: { summary: AnomalySummary }) {
                 学習用の正常の行 ({formatNumber(normal.rows)} 行)
               </th>
               {points.map(([label, key]) => (
-                <td key={label} className="tabular px-3 py-1.5 text-right">
+                <td key={label} className="tabular-nums px-3 py-1.5 text-right">
                   {formatValue(normal[key])}
                 </td>
               ))}
@@ -145,7 +147,7 @@ function DistributionCard({ summary }: { summary: AnomalySummary }) {
       </div>
       <p className="mt-2 text-sm">
         学習用の正常の行の 99 % 点 ({formatValue(normal.p99)}) を超えた行:{' '}
-        <span className="tabular font-semibold">{formatNumber(summary.beyond_normal)} 行</span>
+        <span className="tabular-nums font-semibold">{formatNumber(summary.beyond_normal)} 行</span>
         {summary.predicted > 0 && ` (${formatPercent(summary.beyond_normal / summary.predicted)})`}
       </p>
       <p className="mt-1 text-xs text-ink-3">
@@ -159,7 +161,11 @@ function DistributionCard({ summary }: { summary: AnomalySummary }) {
 /** 度合いの上位の行 (一式の K 件) */
 function TopRowsCard({ summary }: { summary: AnomalySummary }) {
   return (
-    <Card title={`度合いの上位の行 (${summary.top.length} 件)`} padded={false}>
+    <Card
+      title={`度合いの上位の行 (${summary.top.length} 件)`}
+      name="度合いの上位の行"
+      padded={false}
+    >
       {summary.top.length > 0 ? (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -178,10 +184,10 @@ function TopRowsCard({ summary }: { summary: AnomalySummary }) {
             <tbody>
               {summary.top.map((row, index) => (
                 <tr key={row.row} className="border-b border-line">
-                  <td className="tabular px-3 py-1.5 text-right">{index + 1}</td>
-                  <td className="tabular px-3 py-1.5 text-right">{row.row}</td>
+                  <td className="tabular-nums px-3 py-1.5 text-right">{index + 1}</td>
+                  <td className="tabular-nums px-3 py-1.5 text-right">{row.row}</td>
                   <td className="px-3 py-1.5 font-mono text-xs">{formatNumber(row.id)}</td>
-                  <td className="tabular px-3 py-1.5 text-right">{formatValue(row.score)}</td>
+                  <td className="tabular-nums px-3 py-1.5 text-right">{formatValue(row.score)}</td>
                   <td className="px-3 py-1.5">
                     <span className="font-mono text-xs">{row.column ?? '–'}</span> (
                     {formatPercent(row.column_share)})
@@ -208,6 +214,7 @@ function ReviewCard({ result }: { result: Result }) {
   const triage = triageSummary(result)
   const [reviewer, setReviewer] = useState(loadReviewer)
   const nameProblem = reviewerProblem(reviewer)
+  const nameInvalid = !!nameProblem && reviewer.trim() !== ''
   const queue = useQuery({ queryKey: ['queue', result.id], queryFn: () => api.queue(result.id) })
   const review = useMutation({
     mutationFn: ({ row, judgment }: { row: string | number; judgment: Judgment }) =>
@@ -244,13 +251,11 @@ function ReviewCard({ result }: { result: Result }) {
         <p className="text-xs text-ink-2">{ANOMALY_UNSUPPORTED}</p>
         {/* 行の id の重なる結果は, 記録がどの行を指すか決まらないので欄を出さず理由だけ */}
         {triage && queue.data?.problem && (
-          <p
-            role="note"
-            aria-label="人の確かめを使えない理由"
-            className="rounded-lg border border-warning-text/40 bg-surface p-2 text-sm text-warning-text"
-          >
-            {queue.data.problem}
-          </p>
+          <div role="note" aria-label="人の確かめを使えない理由">
+            <Card tone="warning" landmark={false}>
+              <p className="text-sm text-warning-text">{queue.data.problem}</p>
+            </Card>
+          </div>
         )}
         {triage && !queue.data?.problem && (
           <>
@@ -264,13 +269,18 @@ function ReviewCard({ result }: { result: Result }) {
                 onChange={(event) => setReviewer(event.target.value)}
                 autoComplete="name"
                 aria-describedby={nameProblem ? 'reviewer-problem' : undefined}
+                aria-invalid={nameInvalid ? true : undefined}
                 className="h-8 w-full rounded-lg border border-line bg-surface px-2 text-sm"
               />
-              {nameProblem && (
-                <p id="reviewer-problem" className="mt-1 text-xs text-ink-3">
-                  {nameProblem}
-                </p>
-              )}
+              {/* 空のうちは次にすることの案内, 書いた名前が長すぎるときは欄の誤り */}
+              {nameProblem &&
+                (nameInvalid ? (
+                  <FieldError id="reviewer-problem">{nameProblem}</FieldError>
+                ) : (
+                  <p id="reviewer-problem" className="mt-1 text-xs text-ink-3">
+                    {nameProblem}
+                  </p>
+                ))}
             </div>
             {queue.error && <ErrorBox error={queue.error} live={false} />}
             {review.error && <ErrorBox error={review.error} />}
@@ -306,17 +316,17 @@ function ReviewCard({ result }: { result: Result }) {
                         const name = `${queue.data?.id ?? '行'} ${String(row.id ?? row.row)}`
                         return (
                           <tr key={row.row} className="border-b border-line">
-                            <td className="tabular px-3 py-1.5 text-right">
+                            <td className="tabular-nums px-3 py-1.5 text-right">
                               {formatNumber(row.rank)}
                             </td>
-                            <td className="tabular px-3 py-1.5 text-right">{row.row}</td>
+                            <td className="tabular-nums px-3 py-1.5 text-right">{row.row}</td>
                             <th
                               scope="row"
                               className="px-3 py-1.5 text-left font-mono text-xs font-normal"
                             >
                               {formatNumber(row.id ?? row.row)}
                             </th>
-                            <td className="tabular px-3 py-1.5 text-right">
+                            <td className="tabular-nums px-3 py-1.5 text-right">
                               {formatValue(row.score)}
                             </td>
                             <td className="px-3 py-1.5">
@@ -385,7 +395,7 @@ function ReviewRecordsCard({ result }: { result: Result }) {
   const records = reviews.data?.records ?? []
   const column = (result.summary as AnomalySummary | null)?.id ?? '行の id'
   return (
-    <Card title={`確かめの記録 (${records.length} 件)`} padded={false}>
+    <Card title={`確かめの記録 (${records.length} 件)`} name="確かめの記録" padded={false}>
       {reviews.error && <ErrorBox error={reviews.error} live={false} />}
       {reviews.isPending ? (
         <Spinner label="確かめの記録を読んでいます" />
@@ -407,7 +417,7 @@ function ReviewRecordsCard({ result }: { result: Result }) {
             <tbody>
               {records.map((record, index) => (
                 <tr key={`${index}:${record.id}`} className="border-b border-line">
-                  <td className="tabular px-3 py-1.5 text-right">{index + 1}</td>
+                  <td className="tabular-nums px-3 py-1.5 text-right">{index + 1}</td>
                   <td className="px-3 py-1.5 font-mono text-xs">{record.id}</td>
                   <td className="px-3 py-1.5">
                     <JudgmentText judgment={record.judgment} />

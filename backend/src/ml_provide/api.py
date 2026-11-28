@@ -339,7 +339,7 @@ def find_bundle(request: Request, bundle_id: str) -> dict[str, Any]:
     """
     entry = get_store(request).find(bundle_id)
     if entry is None:
-        raise HTTPException(404, "一式が見つかりません")
+        raise HTTPException(404, f"一式 {bundle_id} が見つかりません")
 
     return entry
 
@@ -440,10 +440,12 @@ def browse(path: str = "~") -> dict[str, Any]:
     Raises
     ----------
     HTTPException
-        ディレクトリでない場合は 404
+        無い場合とディレクトリでない場合は 404
     """
     # 隠しファイルを除いて, ディレクトリを先に名前の順で並べる
     target = Path(path).expanduser().resolve()
+    if not target.exists():
+        raise HTTPException(404, f"ディレクトリ {target} が見つかりません")
     if not target.is_dir():
         raise HTTPException(404, f"{target} はディレクトリではありません")
     try:
@@ -905,7 +907,7 @@ def delete_bundle(request: Request, bundle_id: str) -> Response:
     """
     entry = get_store(request).find(bundle_id)
     if not get_store(request).remove(bundle_id):
-        raise HTTPException(404, "一式が見つかりません")
+        raise HTTPException(404, f"一式 {bundle_id} が見つかりません")
     # 覚えた一式 (組み立てたモデル, 説明, 警告) の手放し
     forget(str((entry or {}).get("path")))
     response = Response(status_code=204)
@@ -2447,7 +2449,7 @@ def find_result_meta(
     """
     place = get_store(request).result_dir(result_id)
     if place is None:
-        raise HTTPException(404, "結果が見つかりません")
+        raise HTTPException(404, f"結果 {result_id} が見つかりません")
     try:
         meta = read_meta(place)
     except NewerResult as error:
@@ -2939,7 +2941,7 @@ def artifact_file(place: Path, row: int) -> Path:
     if "artifact" not in frame.columns:
         raise HTTPException(404, "この結果は配列の出力を持ちません")
     if row >= len(frame):
-        raise HTTPException(404, "その行はありません")
+        raise HTTPException(404, f"行 {row} が見つかりません")
     relative = str(frame["artifact"].iloc[row] or "")
     if not relative:
         raise HTTPException(404, "この行は推論していないので配列がありません")
@@ -2948,7 +2950,7 @@ def artifact_file(place: Path, row: int) -> Path:
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
     if not path.is_file():
-        raise HTTPException(404, f"{relative} がありません")
+        raise HTTPException(404, f"ファイル {relative} が見つかりません")
 
     return path
 
@@ -3187,7 +3189,7 @@ def explain_row(
         )
     frame = read_frame(place, meta)
     if row >= len(frame):
-        raise HTTPException(404, f"{row} 行目はありません")
+        raise HTTPException(404, f"行 {row} が見つかりません")
     if frame["status"].iloc[row] != ml_inference.OK:
         raise HTTPException(400, "予測しなかった行の理由は求めません")
     bundle = result_bundle(request, meta)

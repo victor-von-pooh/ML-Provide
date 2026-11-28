@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Play, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { useNavigate, useParams } from 'react-router'
 
 import { useApi } from '../../api/client'
 import type { PolicyGuards, PolicySpec } from '../../api/types'
-import { Button, Card, ErrorBox, PageHeader, Spinner } from '../../components/ui'
+import { Button, Card, ErrorBox, FieldError, PageHeader } from '../../components/common'
+import { Crumbs, PageStatus } from '../../components/ui'
 import {
   actionLabel,
   FALLBACK_LABELS,
@@ -92,11 +93,7 @@ function ActCard({ id, spec }: { id: string; spec: PolicySpec }) {
           aria-describedby={problem ? 'observation-problem' : undefined}
           className="rounded-lg border border-line bg-surface px-2 py-1 font-mono text-sm"
         />
-        {problem && (
-          <p id="observation-problem" role="alert" className="text-xs text-critical-text">
-            {problem}
-          </p>
-        )}
+        {problem && <FieldError id="observation-problem">{problem}</FieldError>}
         <div>
           <Button type="submit" variant="primary" icon={Play} disabled={act.isPending}>
             {act.isPending ? '決めています…' : '行動を決める'}
@@ -148,8 +145,16 @@ export function PolicyPage() {
       navigate('/policies')
     },
   })
-  if (policy.isPending) return <Spinner />
-  if (policy.error) return <ErrorBox error={policy.error} />
+  if (policy.isPending || policy.error) {
+    return (
+      <PageStatus
+        id={id}
+        thing="方策の一式"
+        error={policy.error}
+        crumbs={[{ to: '/policies', label: '方策の一式' }]}
+      />
+    )
+  }
   const data = policy.data
   const spec = data.spec
   return (
@@ -157,7 +162,7 @@ export function PolicyPage() {
       <PageHeader
         title={data.name}
         subtitle={<span className="font-mono">{data.path}</span>}
-        breadcrumb={<Link to="/policies">方策の一式</Link>}
+        breadcrumb={<Crumbs items={[{ to: '/policies', label: '方策の一式' }]} />}
         actions={
           <Button
             variant="danger"

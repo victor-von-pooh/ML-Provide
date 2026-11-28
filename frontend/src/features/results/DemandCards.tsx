@@ -9,7 +9,7 @@ import type {
   OrderDecisionSummary,
   Result,
 } from '../../api/types'
-import { Button, Card, ErrorBox, Spinner } from '../../components/ui'
+import { Button, Card, ErrorBox, Spinner } from '../../components/common'
 import { EVALUATION_SPLITS } from '../../lib/anomaly'
 import {
   baselineText,
@@ -44,7 +44,7 @@ function Heading({ children, right = false }: { children: React.ReactNode; right
 
 /** 数の欄 */
 function NumberCell({ children }: { children: React.ReactNode }) {
-  return <td className="tabular px-3 py-1.5 text-right whitespace-nowrap">{children}</td>
+  return <td className="tabular-nums px-3 py-1.5 text-right whitespace-nowrap">{children}</td>
 }
 
 /** 損の比 (無ければ理由) */
@@ -163,13 +163,13 @@ function CostCard({ result, decided }: { result: Result; decided: OrderDecisionS
         <div className="flex flex-col gap-3">
           <dl className="grid gap-x-4 gap-y-1 text-sm md:grid-cols-[16rem_1fr]">
             <dt className="text-ink-2">品切れの損と売れ残りの損</dt>
-            <dd className="tabular">
+            <dd className="tabular-nums">
               {formatNumber(decided.shortage_cost)} と {formatNumber(decided.holding_cost)} (商品 1
               つあたり)
             </dd>
             <dt className="text-ink-2">水準 τ</dt>
             <dd>
-              <span className="tabular font-semibold">{levelText(decided.level)}</span>
+              <span className="tabular-nums font-semibold">{levelText(decided.level)}</span>
               {decided.outside && (
                 <span className="block text-xs text-warning-text">
                   学んだ水準の範囲の外なので, 端の水準 {levelText(decided.used_level)}{' '}
@@ -178,23 +178,23 @@ function CostCard({ result, decided }: { result: Result; decided: OrderDecisionS
               )}
             </dd>
             <dt className="text-ink-2">発注の数の上限</dt>
-            <dd className="tabular">{formatNumber(decided.max_order)}</dd>
+            <dd className="tabular-nums">{formatNumber(decided.max_order)}</dd>
             <dt className="text-ink-2">発注する商品</dt>
             <dd>
               {formatNumber(decided.ordered)} / {formatNumber(decided.rows)} 商品 (発注の数の和{' '}
-              <span className="tabular">{formatNumber(decided.total)}</span>)
+              <span className="tabular-nums">{formatNumber(decided.total)}</span>)
             </dd>
             <dt className="text-ink-2">見込みの損の和</dt>
-            <dd className="tabular font-semibold">{formatValue(decided.expected_cost)}</dd>
+            <dd className="tabular-nums font-semibold">{formatValue(decided.expected_cost)}</dd>
             <dt className="text-ink-2">前の期間と同じ数の発注の見込みの損</dt>
             <dd>
               {decided.compared > 0 ? (
                 <>
-                  <span className="tabular">{formatValue(decided.baseline_cost)}</span>{' '}
+                  <span className="tabular-nums">{formatValue(decided.baseline_cost)}</span>{' '}
                   (この決め方なら{' '}
-                  <span className="tabular">{formatValue(decided.compared_cost)}</span>.{' '}
+                  <span className="tabular-nums">{formatValue(decided.compared_cost)}</span>.{' '}
                   {formatNumber(decided.compared)} 商品. 差{' '}
-                  <span className="tabular">{formatValue(decided.saving)}</span>, 比{' '}
+                  <span className="tabular-nums">{formatValue(decided.saving)}</span>, 比{' '}
                   {ratioText(decided.ratio)})
                 </>
               ) : (
@@ -203,7 +203,9 @@ function CostCard({ result, decided }: { result: Result; decided: OrderDecisionS
             </dd>
             <dt className="text-ink-2">上限に当たった商品</dt>
             <dd>
-              <span className="tabular font-semibold">{formatNumber(decided.capped)} 商品</span>
+              <span className="tabular-nums font-semibold">
+                {formatNumber(decided.capped)} 商品
+              </span>
               <span className="block text-xs text-ink-3">
                 水準 τ の分位点から在庫を引いた数が上限を超え, 上限で切った商品です.
                 上限は置き場所などの決まりなので超えません. 多ければ品切れの損が増えます
@@ -322,7 +324,7 @@ function QuantileCard({
       )}
       <p className="mt-2 text-sm">
         学習用の分割の先の期間の需要の平均 (実験):{' '}
-        <span className="tabular">{formatValue(summary.train?.demand_mean ?? null)}</span>
+        <span className="tabular-nums">{formatValue(summary.train?.demand_mean ?? null)}</span>
         {summary.train && (
           <span className="text-ink-2">
             {' '}
@@ -333,7 +335,7 @@ function QuantileCard({
       {summary.previous && summary.previous.mean !== null && (
         <p className="mt-1 text-sm">
           前の {summary.horizon} 日の売れた数の合計の平均:{' '}
-          <span className="tabular">{formatValue(summary.previous.mean)}</span>{' '}
+          <span className="tabular-nums">{formatValue(summary.previous.mean)}</span>{' '}
           <span className="text-ink-2">({formatNumber(summary.previous.counted)} 商品)</span>
         </p>
       )}
@@ -360,6 +362,7 @@ function OrdersCard({ result, decided }: { result: Result; decided: OrderDecisio
   return (
     <Card
       title={`発注の数 (${decided ? `${formatNumber(decided.rows)} 商品` : '決めない'})`}
+      name="発注の数"
       padded={false}
     >
       {!decided ? (
@@ -407,7 +410,7 @@ function OrdersCard({ result, decided }: { result: Result; decided: OrderDecisio
                             {row.product_id === null ? '–' : String(row.product_id)}
                           </td>
                         )}
-                        <td className="tabular px-3 py-1.5 whitespace-nowrap">
+                        <td className="tabular-nums px-3 py-1.5 whitespace-nowrap">
                           {row.order_date ?? '–'}
                         </td>
                         <NumberCell>{formatValue(row.on_hand)}</NumberCell>

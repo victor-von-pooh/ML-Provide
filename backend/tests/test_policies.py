@@ -193,7 +193,9 @@ def test_list_detail_and_delete(client: TestClient, tmp_path: Path) -> None:
     assert client.delete(f"/api/policies/{view['id']}").status_code == 204
     assert client.get("/api/policies").json() == []
     assert (directory / "policy.json").is_file()
-    assert client.get(f"/api/policies/{view['id']}").status_code == 404
+    gone = client.get(f"/api/policies/{view['id']}")
+    assert gone.status_code == 404
+    assert gone.json()["detail"] == f"方策の一式 {view['id']} が見つかりません"
 
 
 def test_rejects_unreadable_policy(

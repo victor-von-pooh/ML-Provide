@@ -1,12 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Play, Trash2, Undo2 } from 'lucide-react'
 import { useState } from 'react'
-import { Link, useLocation, useNavigate, useParams } from 'react-router'
+import { useLocation, useNavigate, useParams } from 'react-router'
 
 import { useApi } from '../../api/client'
 import type { Bundle, Description, LinkedProblem, UncertaintySummary } from '../../api/types'
 import { PathField } from '../../components/PathPicker'
-import { Button, Card, ErrorBox, PageHeader, Spinner } from '../../components/ui'
+import { Button, Card, ErrorBox, FieldError, PageHeader } from '../../components/common'
+import { describedBy } from '../../components/common-utils'
+import { Crumbs, FieldProblems, PageStatus } from '../../components/ui'
 import { SEED_RANGE_PROBLEM, SHORT_SOURCE_LABELS } from '../../lib/bundleForm'
 import {
   ANOMALY_NO_PROBLEM,
@@ -95,6 +97,7 @@ import {
 import { SEARCH_NO_PROBLEM } from '../../lib/search'
 import { classesText, licenseAlert, preprocessText, READY_UNSUPPORTED } from '../../lib/ready'
 import { fromForm, toForm, withCleared, type RulesForm } from '../../lib/rules'
+import { problemIds } from '../../lib/problems'
 import { AnomalyEvaluationsTable } from '../results/AnomalyCards'
 import { UpliftEvaluationsView } from '../results/UpliftCards'
 import { PriceEvaluationsView, PriceTerms } from '../results/PriceCards'
@@ -433,11 +436,11 @@ function PriceRows({
         <span className="font-mono text-xs">{steps.join(' → ') || 'なし'}</span>
       </Row>
       <Row label="値段の候補 (変える割合)">
-        <span className="tabular">{candidatesText(price.candidates)}</span>
+        <span className="tabular-nums">{candidatesText(price.candidates)}</span>
         <span className="block text-xs text-ink-2">{CHANGE_TEXT}</span>
       </Row>
       <Row label="変える幅の上限">
-        <span className="tabular">{limitText(price.max_change)}</span>
+        <span className="tabular-nums">{limitText(price.max_change)}</span>
         <span className="block text-xs text-ink-2">{MAX_CHANGE_TEXT}</span>
       </Row>
       <Row label="実験の今の値段">
@@ -514,15 +517,15 @@ function DemandRows({
         <span className="font-mono text-xs">{steps.join(' → ') || 'なし'}</span>
       </Row>
       <Row label="先の期間">
-        <span className="tabular">{demand.horizon} 日</span>
+        <span className="tabular-nums">{demand.horizon} 日</span>
         <span className="block text-xs text-ink-2">{demandText(demand.horizon)}</span>
       </Row>
       <Row label={`学んだ水準 (${demand.levels.length})`}>
-        <span className="tabular">{levelsText(demand.levels)}</span>
+        <span className="tabular-nums">{levelsText(demand.levels)}</span>
         <span className="block text-xs text-ink-2">{QUANTILE_TEXT}</span>
       </Row>
       <Row label="品切れの損と売れ残りの損">
-        <span className="tabular">
+        <span className="tabular-nums">
           {formatNumber(demand.shortage_cost)} と {formatNumber(demand.holding_cost)} (水準 τ{' '}
           {levelText(tauOf(demand.shortage_cost, demand.holding_cost))})
         </span>
@@ -531,7 +534,7 @@ function DemandRows({
         </span>
       </Row>
       <Row label="発注の数の上限">
-        <span className="tabular">{formatNumber(demand.max_order)}</span>
+        <span className="tabular-nums">{formatNumber(demand.max_order)}</span>
         <span className="block text-xs text-ink-2">{MAX_ORDER_TEXT}</span>
       </Row>
       {demand.train && (
@@ -584,13 +587,11 @@ function ReadyNotices({ ready }: { ready: NonNullable<Description['ready']> }) {
   const alert = licenseAlert(ready.license)
   if (!alert) return null
   return (
-    <p
-      role="note"
-      aria-label="ライセンスの警告"
-      className="rounded-lg border border-warning-text/40 bg-surface p-2 text-sm text-warning-text"
-    >
-      ライセンスの警告: {alert}
-    </p>
+    <div role="note" aria-label="ライセンスの警告">
+      <Card tone="warning" landmark={false}>
+        <p className="text-sm text-warning-text">ライセンスの警告: {alert}</p>
+      </Card>
+    </div>
   )
 }
 
@@ -744,6 +745,26 @@ function DescriptionView({ description }: { description: Description }) {
  * 推論するデータと結論の決め方を選んで推論する.
  * 問題の設定をつないだ一式は, 意思決定と結論の決め方の既定を問題の設定の値にする
  */
+/** 1 つの欄だけの誤り (欄の下に置き, 欄の aria-describedby から `${id}-problem` で結ぶ) */
+function ProblemBelow({ id, problem }: { id: string; problem: string | null | undefined }) {
+  return problem ? <FieldError id={`${id}-problem`}>{problem}</FieldError> : null
+}
+
+/** 雑音だけの一式の作る件数の誤り */
+function countProblem(count: string, maxSamples: number): string | null {
+  const number = Number(count)
+  return !/^\d+$/.test(count.trim()) || number < 1 || number > maxSamples
+    ? `件数は 1 から ${maxSamples} の整数で書いてください`
+    : null
+}
+
+/** 雑音だけの一式の乱数の種の誤り (空なら一式の種) */
+function seedProblem(seed: string): string | null {
+  if (!seed.trim()) return null
+  if (!/^-?\d+$/.test(seed.trim())) return '種は整数で書いてください'
+  return Number.isSafeInteger(Number(seed)) ? null : SEED_RANGE_PROBLEM
+}
+
 function PredictCard({
   bundle,
   description,
@@ -861,28 +882,29 @@ function PredictCard({
     decisionForm,
     description.classes,
   )
-  const problems = column ? [...ruleProblems, ...(readyModel ? [] : decisionProblems)] : []
-  const capacityError = anomaly ? capacityProblem(capacity) : null
-  if (capacityError) problems.push(capacityError)
-  const budgetError = uplift ? budgetProblem(budget) : null
-  if (budgetError) problems.push(budgetError)
-  if (price) {
-    if (parsedCandidates.problem) problems.push(parsedCandidates.problem)
-    if (parsedMaxChange.problem) problems.push(parsedMaxChange.problem)
+  // 欄にまたがる誤り (結論の決め方と意思決定の組み合わせなど) は欄の並びの下にまとめ,
+  // 1 つの欄だけの誤りは欄ごとに (欄の id で引く) 欄の下に出す
+  const formProblems = column ? [...ruleProblems, ...(readyModel ? [] : decisionProblems)] : []
+  const fieldErrors: Record<string, string | null> = {
+    'predict-capacity': anomaly ? capacityProblem(capacity) : null,
+    'predict-budget': uplift ? budgetProblem(budget) : null,
+    'predict-candidates': price ? parsedCandidates.problem : null,
+    'predict-max-change': price ? parsedMaxChange.problem : null,
+    'predict-shortage': demand ? parsedShortage.problem : null,
+    'predict-holding': demand ? parsedHolding.problem : null,
+    'predict-max-order': demand ? parsedMaxOrder.problem : null,
+    'predict-count': noise ? countProblem(count, maxSamples) : null,
+    'predict-seed': noise ? seedProblem(noiseSeed) : null,
   }
-  if (demand) {
-    for (const parsed of [parsedShortage, parsedHolding, parsedMaxOrder])
-      if (parsed.problem) problems.push(parsed.problem)
-  }
-  if (noise) {
-    const number = Number(count)
-    if (!/^\d+$/.test(count.trim()) || number < 1 || number > maxSamples)
-      problems.push(`件数は 1 から ${maxSamples} の整数で書いてください`)
-    if (noiseSeed.trim() && !/^-?\d+$/.test(noiseSeed.trim()))
-      problems.push('種は整数で書いてください')
-    else if (noiseSeed.trim() && !Number.isSafeInteger(Number(noiseSeed)))
-      problems.push(SEED_RANGE_PROBLEM)
-  }
+  const problems = [
+    ...formProblems,
+    ...Object.values(fieldErrors).filter((problem): problem is string => !!problem),
+  ]
+  // 欄に誤りを結ぶ属性 (欄の説明があれば説明と合わせる)
+  const invalid = (id: string, note?: string) => ({
+    'aria-invalid': fieldErrors[id] ? true : undefined,
+    'aria-describedby': describedBy(note, fieldErrors[id] && `${id}-problem`),
+  })
   const predict = useMutation({
     // 送ったときの欄の印 (欄を変えたら前の誤りを出さないため)
     mutationFn: (_key: string) =>
@@ -1035,8 +1057,10 @@ function PredictCard({
                 max={maxSamples}
                 value={count}
                 onChange={(event) => setCount(event.target.value)}
+                {...invalid('predict-count')}
                 className="h-8 w-full rounded-lg border border-line bg-surface px-2 text-sm"
               />
+              <ProblemBelow id="predict-count" problem={fieldErrors['predict-count']} />
             </div>
             <div>
               <label htmlFor="predict-seed" className="mb-1 block text-xs font-medium text-ink-2">
@@ -1047,18 +1071,15 @@ function PredictCard({
                 type="number"
                 value={noiseSeed}
                 onChange={(event) => setNoiseSeed(event.target.value)}
+                {...invalid('predict-seed')}
                 className="h-8 w-full rounded-lg border border-line bg-surface px-2 text-sm"
               />
+              <ProblemBelow id="predict-seed" problem={fieldErrors['predict-seed']} />
             </div>
             <p className="text-xs text-ink-3 md:col-span-2">
               同じ件数と種なら同じ出力になります. 始まりの雑音を全ての件の分を一度に作るので, 1
               件の形が大きいと受け付ける件数が減ります
             </p>
-            {problems.map((problem) => (
-              <p key={problem} role="alert" className="text-xs text-critical-text md:col-span-2">
-                {problem}
-              </p>
-            ))}
           </fieldset>
         ) : useSplit && split ? (
           <section aria-label="テスト用の分割" className="text-sm">
@@ -1217,17 +1238,14 @@ function PredictCard({
                 max={MAX_CAPACITY}
                 value={capacity}
                 onChange={(event) => setCapacity(event.target.value)}
+                {...invalid('predict-capacity')}
                 className="h-8 w-full rounded-lg border border-line bg-surface px-2 text-sm"
               />
+              <ProblemBelow id="predict-capacity" problem={fieldErrors['predict-capacity']} />
             </div>
             <p className="mt-2 text-xs text-ink-2">
               {ANOMALY_UNSUPPORTED}. {ANOMALY_NO_PROBLEM}
             </p>
-            {problems.map((problem) => (
-              <p key={problem} role="alert" className="mt-1 text-xs text-critical-text">
-                {problem}
-              </p>
-            ))}
           </section>
         )}
         {uplift && (
@@ -1245,18 +1263,15 @@ function PredictCard({
                 max={MAX_BUDGET}
                 value={budget}
                 onChange={(event) => setBudget(event.target.value)}
+                {...invalid('predict-budget')}
                 className="h-8 w-full rounded-lg border border-line bg-surface px-2 text-sm"
               />
+              <ProblemBelow id="predict-budget" problem={fieldErrors['predict-budget']} />
             </div>
             <p className="mt-2 text-xs text-ink-2">
               {UPLIFT_UNSUPPORTED}. {UPLIFT_NO_PROBLEM}
             </p>
             <p className="mt-1 text-xs text-ink-3">{PREMISE_TEXT}</p>
-            {problems.map((problem) => (
-              <p key={problem} role="alert" className="mt-1 text-xs text-critical-text">
-                {problem}
-              </p>
-            ))}
           </section>
         )}
         {price && (
@@ -1274,7 +1289,7 @@ function PredictCard({
                   id="predict-candidates"
                   value={candidates}
                   onChange={(event) => setCandidates(event.target.value)}
-                  aria-describedby="predict-candidates-note"
+                  {...invalid('predict-candidates', 'predict-candidates-note')}
                   className="h-8 w-full rounded-lg border border-line bg-surface px-2 font-mono text-sm"
                 />
                 <p id="predict-candidates-note" className="mt-1 text-xs text-ink-3">
@@ -1282,6 +1297,7 @@ function PredictCard({
                     ? `一式の既定は ${candidatesText(price.candidates)}`
                     : `% では ${candidatesText(parsedCandidates.values)} (既定は一式の ${candidatesText(price.candidates)})`}
                 </p>
+                <ProblemBelow id="predict-candidates" problem={fieldErrors['predict-candidates']} />
               </div>
               <div>
                 <label
@@ -1297,7 +1313,7 @@ function PredictCard({
                   step="any"
                   value={maxChange}
                   onChange={(event) => setMaxChange(event.target.value)}
-                  aria-describedby="predict-max-change-note"
+                  {...invalid('predict-max-change', 'predict-max-change-note')}
                   className="h-8 w-full rounded-lg border border-line bg-surface px-2 text-sm"
                 />
                 <p id="predict-max-change-note" className="mt-1 text-xs text-ink-3">
@@ -1305,6 +1321,7 @@ function PredictCard({
                     ? `一式の既定は ${limitText(price.max_change)} (省けません)`
                     : `% では ${limitText(parsedMaxChange.value)} (既定は一式の ${limitText(price.max_change)})`}
                 </p>
+                <ProblemBelow id="predict-max-change" problem={fieldErrors['predict-max-change']} />
               </div>
             </div>
             {!parsedCandidates.problem &&
@@ -1321,11 +1338,6 @@ function PredictCard({
             <p className="mt-2 text-xs text-ink-2">
               {PRICE_UNSUPPORTED}. {PRICE_NO_PROBLEM}
             </p>
-            {problems.map((problem) => (
-              <p key={problem} role="alert" className="mt-1 text-xs text-critical-text">
-                {problem}
-              </p>
-            ))}
           </section>
         )}
         {demand && (
@@ -1345,12 +1357,13 @@ function PredictCard({
                   step="any"
                   value={shortage}
                   onChange={(event) => setShortage(event.target.value)}
-                  aria-describedby="predict-shortage-note"
+                  {...invalid('predict-shortage', 'predict-shortage-note')}
                   className="h-8 w-full rounded-lg border border-line bg-surface px-2 text-sm"
                 />
                 <p id="predict-shortage-note" className="mt-1 text-xs text-ink-3">
                   一式の既定は {formatNumber(demand.shortage_cost)}
                 </p>
+                <ProblemBelow id="predict-shortage" problem={fieldErrors['predict-shortage']} />
               </div>
               <div>
                 <label
@@ -1366,12 +1379,13 @@ function PredictCard({
                   step="any"
                   value={holding}
                   onChange={(event) => setHolding(event.target.value)}
-                  aria-describedby="predict-holding-note"
+                  {...invalid('predict-holding', 'predict-holding-note')}
                   className="h-8 w-full rounded-lg border border-line bg-surface px-2 text-sm"
                 />
                 <p id="predict-holding-note" className="mt-1 text-xs text-ink-3">
                   一式の既定は {formatNumber(demand.holding_cost)}
                 </p>
+                <ProblemBelow id="predict-holding" problem={fieldErrors['predict-holding']} />
               </div>
               <div>
                 <label
@@ -1387,12 +1401,13 @@ function PredictCard({
                   step={1}
                   value={maxOrder}
                   onChange={(event) => setMaxOrder(event.target.value)}
-                  aria-describedby="predict-max-order-note"
+                  {...invalid('predict-max-order', 'predict-max-order-note')}
                   className="h-8 w-full rounded-lg border border-line bg-surface px-2 text-sm"
                 />
                 <p id="predict-max-order-note" className="mt-1 text-xs text-ink-3">
                   一式の既定は {formatNumber(demand.max_order)}
                 </p>
+                <ProblemBelow id="predict-max-order" problem={fieldErrors['predict-max-order']} />
               </div>
             </div>
             <p className="mt-2 text-xs text-ink-2" role="status">
@@ -1414,11 +1429,6 @@ function PredictCard({
             <p className="mt-2 text-xs text-ink-2">
               {baselineText(demand.horizon)}. {DEMAND_UNSUPPORTED}. {DEMAND_NO_PROBLEM}
             </p>
-            {problems.map((problem) => (
-              <p key={problem} role="alert" className="mt-1 text-xs text-critical-text">
-                {problem}
-              </p>
-            ))}
           </section>
         )}
         {!column && !group && !anomaly && !uplift && !price && !demand && (
@@ -1468,11 +1478,7 @@ function PredictCard({
               ]}
               idBase="predict"
             />
-            {problems.map((problem) => (
-              <p key={problem} role="alert" className="mt-1 text-xs text-critical-text">
-                {problem}
-              </p>
-            ))}
+            <FieldProblems idBase="predict" problems={formProblems} />
           </section>
         )}
         {predict.error && predict.variables === formKey && <ErrorBox error={predict.error} />}
@@ -1482,6 +1488,7 @@ function PredictCard({
             variant="primary"
             icon={Play}
             disabled={!ready || predict.isPending}
+            aria-describedby={describedBy(...problemIds('predict', formProblems))}
           >
             {predict.isPending ? '推論しています…' : '推論する'}
           </Button>
@@ -1513,11 +1520,13 @@ function RankPredictCard({
   const [seen, setSeen] = useState('')
   const [truth, setTruth] = useState('')
   const written = rankUsers(users)
-  const problems: string[] = []
+  // 件数の誤りは欄の下に, 除くかと表の組み合わせの誤りは欄の並びの下に出す
   const kProblem = rankKProblem(k)
-  if (kProblem) problems.push(kProblem)
-  if (exclude && !seen.trim())
-    problems.push('前に反応した品物を除くときは, 前に反応した品物の表を選んでください')
+  const formProblems =
+    exclude && !seen.trim()
+      ? ['前に反応した品物を除くときは, 前に反応した品物の表を選んでください']
+      : []
+  const problems = [...(kProblem ? [kProblem] : []), ...formProblems]
   const columns = rankColumnsText(rank.columns)
   const predict = useMutation({
     // 送ったときの欄の印 (欄を変えたら前の誤りを出さないため)
@@ -1589,8 +1598,11 @@ function RankPredictCard({
             max={MAX_RANK_K}
             value={k}
             onChange={(event) => setK(event.target.value)}
+            aria-invalid={kProblem ? true : undefined}
+            aria-describedby={kProblem ? 'rank-k-problem' : undefined}
             className="h-8 w-full rounded-lg border border-line bg-surface px-2 text-sm"
           />
+          <ProblemBelow id="rank-k" problem={kProblem} />
         </div>
         <div className="flex flex-col gap-2">
           <div className="flex items-start gap-2 text-sm">
@@ -1632,11 +1644,7 @@ function RankPredictCard({
         <p className="text-xs text-ink-2">
           {RANK_UNSUPPORTED}. {RANK_NO_PROBLEM}
         </p>
-        {problems.map((problem) => (
-          <p key={problem} role="alert" className="text-xs text-critical-text">
-            {problem}
-          </p>
-        ))}
+        <FieldProblems idBase="rank" problems={formProblems} />
         {predict.error && predict.variables === formKey && <ErrorBox error={predict.error} />}
         <div className="flex justify-end">
           <Button
@@ -1644,6 +1652,7 @@ function RankPredictCard({
             variant="primary"
             icon={Play}
             disabled={!ready || predict.isPending}
+            aria-describedby={describedBy(...problemIds('rank', formProblems))}
           >
             {predict.isPending ? '並べています…' : '並べる'}
           </Button>
@@ -1709,8 +1718,15 @@ function SearchPredictCard({
             max={MAX_RANK_K}
             value={k}
             onChange={(event) => setK(event.target.value)}
+            aria-invalid={kProblem ? true : undefined}
+            aria-describedby={kProblem ? 'search-k-problem' : undefined}
             className="h-8 w-full rounded-lg border border-line bg-surface px-2 text-sm"
           />
+          {kProblem && (
+            <FieldError id="search-k-problem">
+              {kProblem.replace('並べる件数', '返す件数')}
+            </FieldError>
+          )}
         </div>
         <p className="text-xs text-ink-2">
           結論の決め方と意思決定の代わりに, 問いの写真ごとの近い写真の一覧と 1
@@ -1719,11 +1735,6 @@ function SearchPredictCard({
             ` (待ち時間の上限 ${search.max_latency_ms.toLocaleString()} ms を超えた問いを数えます)`}
           . {SEARCH_NO_PROBLEM}
         </p>
-        {kProblem && (
-          <p role="alert" className="text-xs text-critical-text">
-            {kProblem.replace('並べる件数', '返す件数')}
-          </p>
-        )}
         {predict.error && predict.variables === formKey && <ErrorBox error={predict.error} />}
         <div className="flex justify-end">
           <Button
@@ -1777,8 +1788,9 @@ export function BundlePage() {
       navigate('/')
     },
   })
-  if (bundle.isPending) return <Spinner />
-  if (bundle.error) return <ErrorBox error={bundle.error} />
+  if (bundle.isPending || bundle.error) {
+    return <PageStatus id={id} thing="一式" error={bundle.error} />
+  }
   const data = bundle.data
   return (
     <>
@@ -1792,7 +1804,7 @@ export function BundlePage() {
             )}
           </span>
         }
-        breadcrumb={<Link to="/">推論の一式</Link>}
+        breadcrumb={<Crumbs />}
         actions={
           <Button
             variant="danger"
@@ -1817,13 +1829,16 @@ export function BundlePage() {
         </p>
       )}
       {!data.ok || !data.description ? (
-        <ErrorBox error={`一式を読めません: ${data.error ?? ''}`} />
+        <ErrorBox error={`一式を読めません: ${data.error ?? ''}`} live={false} />
       ) : (
         <div className="grid gap-4 xl:grid-cols-[1fr_22rem]">
           {/* 実験の記録と合わない一式は, 推論の前に気付けるように上に出す */}
           {data.description.check?.matches === false && (
             <div className="xl:col-span-2">
-              <ErrorBox error="この一式で推論した検証用の評価が, 実験の記録と合いません. 予測が誤っている可能性があります (下の「一式の説明」を参照)" />
+              <ErrorBox
+                error="この一式で推論した検証用の評価が, 実験の記録と合いません. 予測が誤っている可能性があります (下の「一式の説明」を参照)"
+                live={false}
+              />
             </div>
           )}
           <div className="flex min-w-0 flex-col gap-4">

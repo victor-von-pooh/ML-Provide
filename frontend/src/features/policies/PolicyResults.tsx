@@ -7,7 +7,8 @@ import { Link, useNavigate, useParams } from 'react-router'
 import { useApi } from '../../api/client'
 import type { PolicyAct, PolicyResult } from '../../api/types'
 import { PathField } from '../../components/PathPicker'
-import { Button, Card, ErrorBox, PageHeader, Spinner } from '../../components/ui'
+import { Button, Card, ErrorBox, PageHeader, Spinner } from '../../components/common'
+import { Crumbs, PageStatus } from '../../components/ui'
 import { STATUS_LABELS } from '../../lib/policy'
 
 // 表の 1 ページの行の数
@@ -32,7 +33,7 @@ export function StatusBars({ result }: { result: PolicyResult }) {
                 style={{ width: `${(count / most) * 100}%` }}
               />
             </span>
-            <span className="tabular text-right text-sm text-ink-2">
+            <span className="tabular-nums text-right text-sm text-ink-2">
               {count.toLocaleString()} 件
             </span>
           </li>
@@ -182,7 +183,7 @@ function ActionsTable({ id }: { id: string }) {
         </>
       }
     >
-      {rows.error && <ErrorBox error={rows.error} />}
+      {rows.error && <ErrorBox error={rows.error} live={false} />}
       {rows.isPending && <Spinner />}
       {rows.data && (
         <>
@@ -201,7 +202,7 @@ function ActionsTable({ id }: { id: string }) {
               <tbody>
                 {rows.data.rows.map((row) => (
                   <tr key={row.index} className="border-b border-line last:border-0">
-                    <td className="tabular px-3 py-1.5">{row.index}</td>
+                    <td className="tabular-nums px-3 py-1.5">{row.index}</td>
                     <td className="max-w-72 truncate px-3 py-1.5 font-mono" title={row.observation}>
                       {row.observation}
                     </td>
@@ -268,8 +269,16 @@ export function PolicyResultPage() {
       navigate(policy.isSuccess ? `/policies/${policyId}` : '/results')
     },
   })
-  if (result.isPending) return <Spinner />
-  if (result.error) return <ErrorBox error={result.error} />
+  if (result.isPending || result.error) {
+    return (
+      <PageStatus
+        id={id}
+        thing="方策の結果"
+        error={result.error}
+        crumbs={[{ to: '/results', label: '結果' }]}
+      />
+    )
+  }
   const data = result.data
   return (
     <>
@@ -282,11 +291,13 @@ export function PolicyResultPage() {
           </span>
         }
         breadcrumb={
-          policy.isSuccess ? (
-            <Link to={`/policies/${policyId}`}>{data.policy?.name ?? '方策の一式'}</Link>
-          ) : (
-            <Link to="/results">結果</Link>
-          )
+          <Crumbs
+            items={[
+              policy.isSuccess
+                ? { to: `/policies/${policyId}`, label: data.policy?.name ?? '方策の一式' }
+                : { to: '/results', label: '結果' },
+            ]}
+          />
         }
         actions={
           <>
@@ -309,7 +320,7 @@ export function PolicyResultPage() {
       />
       {remove.error && <ErrorBox error={remove.error} />}
       <div className="flex flex-col gap-4">
-        <Card title={`守りの結果 (${data.rows.toLocaleString()} 件)`}>
+        <Card title={`守りの結果 (${data.rows.toLocaleString()} 件)`} name="守りの結果">
           <StatusBars result={data} />
         </Card>
         <ActionsTable id={id} />

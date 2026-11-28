@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router'
 
 import type { Result } from '../../api/types'
-import { Button, Card, ErrorBox, Spinner } from '../../components/ui'
+import { Button, Card, ErrorBox, Spinner } from '../../components/common'
 import { ResultList } from './ResultList'
 
 /** 一度に比べられる結果の数の上限 (API の MAX_COMPARE と同じ) */
@@ -50,7 +50,7 @@ export function CompareResultsCard({
     >
       <p className="mb-2 text-xs text-ink-3">{hint}</p>
       {results.isPending && <Spinner />}
-      {results.error && <ErrorBox error={results.error} />}
+      {results.error && <ErrorBox error={results.error} live={false} />}
       {results.data && (
         <ResultList
           results={results.data}

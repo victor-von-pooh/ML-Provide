@@ -5,8 +5,7 @@ import { Link } from 'react-router'
 
 import { useApi, type Api } from '../../api/client'
 import type { ExperimentList, ExperimentRow, PolicyExperimentRow } from '../../api/types'
-import { Dialog } from '../../components/Dialog'
-import { Button, ErrorBox, Spinner } from '../../components/ui'
+import { Button, Dialog, ErrorBox, Spinner } from '../../components/common'
 import { useStage } from '../../lib/stage'
 
 /** 一覧から登録する一式の名前 (問題の名前と実験の場所) */
@@ -98,7 +97,7 @@ export function ExperimentsDialog({
   })
   const data = listing.data
   return (
-    <Dialog title="実験の一覧から登録" onClose={onClose}>
+    <Dialog title="実験の一覧から登録" onClose={onClose} busy={pending}>
       <p className="mb-3 text-xs text-ink-3">
         問題の設定の段階で学習のプロジェクトを書き出した問題から, {config.intro}
         を新しい順に並べます. 一式は写さずに, 場所だけを覚えます.
@@ -121,7 +120,7 @@ export function ExperimentsDialog({
           <ErrorBox error={error} />
         </div>
       )}
-      {listing.error && <ErrorBox error={listing.error} />}
+      {listing.error && <ErrorBox error={listing.error} live={false} />}
       {data && data.experiments.length === 0 && filtering && (
         <p role="status" className="text-sm text-ink-2">
           選んだ問題が記録した学習のプロジェクトに, 一式を持つ実験がありません.
