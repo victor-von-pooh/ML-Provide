@@ -154,7 +154,7 @@ await page
   .getByRole('button', { name: /cartpole.* を登録/ })
   .click()
 await page
-  .getByLabel(/^観測/)
+  .getByLabel(/^観測 \(/)
   .fill('0.5478467492858172, -0.9208531449445188, -0.18361059042552214, -1.9338894578858836')
 await page.getByRole('button', { name: '行動を決める' }).click()
 await expect(page.getByRole('status').filter({ hasText: '行動' })).toContainText('そのまま')

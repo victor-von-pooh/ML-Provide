@@ -8,7 +8,7 @@
 
 <table>
   <tr>
-    <td><img src="docs/images/bundle.png" alt="一式の画面: 問題, 推論するデータ, 意思決定と結論の決め方の欄, この一式の過去の結果"></td>
+    <td><img src="docs/images/bundle.png" alt="一式の画面: 問題, 推論するデータ, 意思決定と結論の決め方の欄. 右はこの一式の結果の欄 (まだ結果が無い)"></td>
     <td><img src="docs/images/predictions.png" alt="予測の表: 予測, 確信, クラスごとの確率, 行ごとの行動と判断を元の列に足した表"></td>
   </tr>
   <tr>
