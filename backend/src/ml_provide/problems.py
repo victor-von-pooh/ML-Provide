@@ -21,9 +21,12 @@ from ml_provide.cache import describe, read_bundle
 from ml_provide.problem_files import (
     SHAPE_ERRORS,
     problem_file,
+    project_file,
     read_problem,
+    stored_id,
     uses_problem,
 )
+from ml_provide.store import Store
 from ml_provide.units import unit_hint
 
 router = APIRouter()
@@ -199,79 +202,6 @@ def find_hint(
         return found
 
     return found
-
-
-def stored_id(text: Optional[str], problems_dir: Path) -> Optional[str]:
-    """
-    問題の設定の場所が置き場の <識別子>/problem.yaml なら, 識別子を返す関数
-
-    殻 (ML-Studio) のプロジェクトは置き場の問題の設定の識別子なので, 置き場
-    の外のファイルは同じ名前のディレクトリでも識別子にしない. <識別子> が
-    リンクなら, リンクの先のファイルも識別子にする
-
-    Parameters
-    ----------
-    text: Optional[str]
-        problem.yaml の場所 (無ければ None)
-    problems_dir: Path
-        ML-Pathfinder の問題の設定の置き場
-
-    Returns
-    ----------
-    found: Optional[str]
-        識別子 (置き場の外か読めない場所なら None)
-    """
-    # 置き場の <識別子>/problem.yaml を実際のパスにしたものとの比べ
-    # (つないだ場所は実際のパスで残るので, <識別子> がリンクでも識別子
-    # にするため)
-    found: Optional[str] = None
-    if not text:
-        return found
-    try:
-        place = Path(text).expanduser().resolve()
-        root = problems_dir.expanduser()
-        if place.name == "problem.yaml" and (
-            place.parent.parent == root.resolve()
-        ):
-            found = place.parent.name
-            return found
-        for child in sorted(root.iterdir()):
-            if (child / "problem.yaml").resolve() == place:
-                found = child.name
-                return found
-    except (OSError, RuntimeError, ValueError):
-        return found
-
-    return found
-
-
-def project_file(
-    project: Optional[str], problems_dir: Path
-) -> Optional[Path]:
-    """
-    殻で選んだプロジェクト (問題の設定の識別子) の problem.yaml を返す関数
-
-    Parameters
-    ----------
-    project: Optional[str]
-        問題の設定の識別子 (選んでいなければ None)
-    problems_dir: Path
-        ML-Pathfinder の問題の設定の置き場
-
-    Returns
-    ----------
-    path: Optional[Path]
-        置き場の <識別子>/problem.yaml (識別子の形でなければ None)
-    """
-    # 区切りを含む名前と . で始まる名前の除外 (置き場の外を指さないため)
-    path: Optional[Path] = None
-    if not project or project != Path(project).name or (
-        project.startswith(".") or "\\" in project
-    ):
-        return path
-    path = problems_dir / project / "problem.yaml"
-
-    return path
 
 
 def named_columns(value: Any) -> list[str]:
@@ -926,6 +856,51 @@ def problem_state(
         state["error"] = str(error.detail)
 
     return state
+
+
+def link_project(
+    store: Store, entry: dict[str, Any], project: str, problems_dir: Path
+) -> dict[str, Any]:
+    """
+    作った一式に, 殻で選んだ問題 (置き場の <識別子>/problem.yaml) を
+    つなぐ関数
+
+    Parameters
+    ----------
+    store: Store
+        一式の登録
+    entry: dict[str, Any]
+        作った一式の登録
+    project: str
+        問題の設定の識別子
+    problems_dir: Path
+        ML-Pathfinder の問題の設定の置き場
+
+    Returns
+    ----------
+    linked: dict[str, Any]
+        つないだ後の登録 (問題を使わない種類の一式, 推論に渡せない問題,
+        置き場に無い問題は, つながずに元の登録)
+    """
+    # つなぐ欄と同じ確かめ (読めて, 受け渡しが通り, 一式に合う問題だけ)
+    linked = entry
+    path = project_file(project, problems_dir)
+    kind = bundle_kind(str(entry["path"]))
+    if path is None or not uses_problem(kind) or not is_usable(
+        path, kind == "ready"
+    ):
+        return linked
+    try:
+        place = problem_file(str(path))
+        problem = read_problem(place)
+        linked_view(entry, place, problem)
+        linked = store.link_problem(
+            str(entry["id"]), str(place), str(problem["created_at"])
+        )
+    except (HTTPException, KeyError):
+        return entry
+
+    return linked
 
 
 @router.get("/bundles/{bundle_id}/problem")

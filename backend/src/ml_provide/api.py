@@ -26,7 +26,7 @@ from ml_provide.cache import (
     remember_warnings,
 )
 from ml_provide.previews import PREVIEW_LIMIT, array_preview, dtype_problem
-from ml_provide.problem_files import linked_guard, uses_problem
+from ml_provide.problem_files import linked_guard, stored_id, uses_problem
 from ml_provide.procedures import missing_procedure, registered
 from ml_provide.ready import FetchError, make_ready, preview_ready
 from ml_provide.reasons import read_input, row_reason
@@ -178,6 +178,7 @@ class BundleCreate(BaseModel):
     output_options: Optional[dict[str, Any]] = None
     procedure: Optional[dict[str, Any]] = None
     items: Optional[dict[str, Any]] = None
+    problem: Optional[str] = Field(default=None, max_length=MAX_NAME)
 
 
 class ReadyCreate(BaseModel):
@@ -487,10 +488,17 @@ def list_bundles(request: Request) -> list[dict[str, Any]]:
     Returns
     ----------
     bundles: list[dict[str, Any]]
-        登録と説明 (新しい順)
+        登録と説明 (新しい順). problem_id はつないだ問題が置き場の
+        <識別子>/problem.yaml なら識別子 (殻で選んだ問題で絞るため)
     """
     entries = get_store(request).read()
-    bundles = [bundle_view(entry) for entry in reversed(entries)]
+    problems_dir = request.app.state.problems_dir
+    bundles = [
+        {**bundle_view(entry), "problem_id": stored_id(
+            entry.get("problem"), problems_dir
+        )}
+        for entry in reversed(entries)
+    ]
 
     return bundles
 
@@ -546,7 +554,8 @@ def create_bundle(request: Request, body: BundleCreate) -> dict[str, Any]:
         リクエスト
     body: BundleCreate
         名前, 定義, データセット (省くか空なら雑音だけの一式), 重みか実験,
-        つなぎ方, 結論の既定値, 版 2 のデータセットの 1 件の扱い (items)
+        つなぎ方, 結論の既定値, 版 2 のデータセットの 1 件の扱い (items),
+        つなぐ問題の識別子 (problem. 殻で選んだ問題)
 
     Returns
     ----------
@@ -607,6 +616,13 @@ def create_bundle(request: Request, body: BundleCreate) -> dict[str, Any]:
             exception.detail = f"{exception.detail} ({NOISE_SHAPE_HINT})"
         raise exception from error
     entry = store.add(place, body.name, managed=True, bundle_id=bundle_id)
+    # 殻で選んだ問題のつなぎ (つなげなければつながずに作る. problems は
+    # この api を読むので, 関数の中で読む)
+    if body.problem:
+        from ml_provide.problems import link_project
+        entry = link_project(
+            store, entry, body.problem, request.app.state.problems_dir
+        )
     view = bundle_view(entry)
 
     return view

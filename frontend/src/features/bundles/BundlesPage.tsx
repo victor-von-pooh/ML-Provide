@@ -10,6 +10,7 @@ import { Button, Card, EmptyState, ErrorBox, PageHeader, Spinner } from '../../c
 import { formatNumber, KIND_LABELS, TASK_LABELS } from '../../lib/format'
 import { FORM_LABELS, isColumnOutput, ROLE_LABELS } from '../../lib/outputs'
 import { classesText } from '../../lib/ready'
+import { useStage } from '../../lib/stage'
 import { CreateBundleDialog } from './CreateBundleDialog'
 import { ExperimentsDialog } from './ExperimentsDialog'
 import { ReadyBundleDialog } from './ReadyBundleDialog'
@@ -49,6 +50,14 @@ export function BundlesPage() {
   const client = useQueryClient()
   const bundles = useQuery({ queryKey: ['bundles'], queryFn: api.bundles })
   const [dialog, setDialog] = useState<'register' | 'experiments' | 'create' | 'ready' | null>(null)
+  // 殻で問題を選んでいれば, その問題をつないだ一式に絞る (つないでいない一式と,
+  // 置き場の外の問題につないだ一式は「全ての一式を出す」で出す). 外したのは
+  // そのときの問題だけで, 殻で選び直すとまた絞る (実験の一覧と同じ)
+  const { project } = useStage()
+  const [allFor, setAllFor] = useState<string | null>(null)
+  const filtering = project !== null && allFor !== project
+  const shown = bundles.data?.filter((bundle) => !filtering || bundle.problem_id === project)
+  const hidden = (bundles.data?.length ?? 0) - (shown?.length ?? 0)
   const register = useMutation({
     mutationFn: ({ path, name }: { path: string; name?: string }) => api.registerBundle(path, name),
     onSuccess: (bundle) => {
@@ -123,6 +132,16 @@ export function BundlesPage() {
           <ErrorBox error={register.error} />
         </div>
       )}
+      {project !== null && bundles.data && bundles.data.length > 0 && (
+        <label className="mb-3 flex items-center gap-2 text-xs text-ink-2">
+          <input
+            type="checkbox"
+            checked={!filtering}
+            onChange={(event) => setAllFor(event.target.checked ? project : null)}
+          />
+          全ての一式を出す (出さなければ, 選んだ問題 {project} をつないだ一式だけ)
+        </label>
+      )}
       {bundles.isPending && <Spinner />}
       {bundles.error && <ErrorBox error={bundles.error} />}
       {bundles.data?.length === 0 && (
@@ -135,7 +154,13 @@ export function BundlesPage() {
           を入れられます.
         </EmptyState>
       )}
-      {bundles.data && bundles.data.length > 0 && (
+      {shown && shown.length === 0 && hidden > 0 && (
+        <p role="status" className="text-sm text-ink-2">
+          選んだ問題をつないだ一式がありません. 全ての一式を出すか, 一式の画面で問題をつなぐか,
+          「学習の結果から作る」で作ります.
+        </p>
+      )}
+      {shown && shown.length > 0 && (
         <Card padded={false}>
           <table className="w-full text-sm">
             <caption className="sr-only">登録した推論の一式</caption>
@@ -153,7 +178,7 @@ export function BundlesPage() {
               </tr>
             </thead>
             <tbody>
-              {bundles.data.map((bundle) => {
+              {shown.map((bundle) => {
                 const run = bundle.description?.run
                 return (
                   <tr key={bundle.id} className="border-b border-line last:border-0">
@@ -183,6 +208,12 @@ export function BundlesPage() {
             </tbody>
           </table>
         </Card>
+      )}
+      {shown && shown.length > 0 && hidden > 0 && (
+        <p className="mt-2 text-xs text-ink-3">
+          選んだ問題をつないでいない一式 ({hidden.toLocaleString()} 件) は,
+          全ての一式を出すと出ます.
+        </p>
       )}
       {dialog === 'register' && (
         <PathPicker

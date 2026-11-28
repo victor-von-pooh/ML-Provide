@@ -90,8 +90,9 @@ const EXPERIMENTS: ExperimentList = {
  * API の頭 `/api/infer` の下だけに答える fetch (他の場所を呼べば 404)
  *
  * @param linkedId - つないだ後に返す問題の設定の識別子 (置き場の外なら null)
+ * @param bundles - 一式の一覧
  */
-function stubApi(linkedId: string | null = null) {
+function stubApi(linkedId: string | null = null, bundles: Bundle[] = [BUNDLE]) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     const method = init?.method ?? 'GET'
@@ -99,7 +100,7 @@ function stubApi(linkedId: string | null = null) {
     const [path, query = ''] = url.slice('/api/infer'.length).split('?')
     const params = new URLSearchParams(query)
     if (path === '/info') return new Promise<Response>(() => {})
-    if (path === '/bundles' && method === 'GET') return Response.json([BUNDLE])
+    if (path === '/bundles' && method === 'GET') return Response.json(bundles)
     if (path === '/bundles/b1') return Response.json(BUNDLE)
     if (path === '/results') return Response.json([])
     if (path === '/experiments') {
@@ -244,6 +245,45 @@ describe('StageApp', () => {
     expect(await within(dialog).findByText('run/1')).toBeInTheDocument()
     expect(within(dialog).getByText('run/2')).toBeInTheDocument()
     expect(within(dialog).queryByRole('checkbox')).not.toBeInTheDocument()
+  })
+
+  it('project を渡すと, 一式の一覧をその問題をつないだ一式に絞り, 外せる', async () => {
+    // 選んだ問題, 他の問題, 置き場の外の問題かつないでいない一式
+    stubApi(null, [
+      { ...BUNDLE, id: 'b1', name: '一式 A', problem_id: 'aaaa' },
+      { ...BUNDLE, id: 'b2', name: '一式 B', problem_id: 'bbbb' },
+      { ...BUNDLE, id: 'b3', name: '一式 C', problem_id: null },
+    ])
+    const view = renderStage({ project: 'aaaa' })
+    expect(await screen.findByRole('link', { name: '一式 A' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '一式 B' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '一式 C' })).not.toBeInTheDocument()
+    expect(screen.getByText(/選んだ問題をつないでいない一式 \(2 件\)/)).toBeInTheDocument()
+    const all = screen.getByRole('checkbox', { name: /全ての一式を出す/ })
+    expect(all).not.toBeChecked()
+    fireEvent.click(all)
+    expect(screen.getByRole('link', { name: '一式 B' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '一式 C' })).toBeInTheDocument()
+    // 殻で選び直すとまた絞る (画面は移さない)
+    view.rerenderWith({ project: 'bbbb' })
+    expect(screen.getByRole('link', { name: '一式 B' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '一式 A' })).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: /全ての一式を出す/ })).not.toBeChecked()
+    // 選んだ問題の一式が無ければ, 無いことと出し方を知らせる
+    view.rerenderWith({ project: 'cccc' })
+    expect(screen.getByRole('status')).toHaveTextContent('選んだ問題をつないだ一式がありません')
+    expect(window.location.pathname).toBe('/infer')
+  })
+
+  it('project が null なら一式の一覧を絞らず, 絞りの欄も出さない', async () => {
+    stubApi(null, [
+      { ...BUNDLE, id: 'b1', name: '一式 A', problem_id: 'aaaa' },
+      { ...BUNDLE, id: 'b3', name: '一式 C', problem_id: null },
+    ])
+    renderStage()
+    expect(await screen.findByRole('link', { name: '一式 A' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '一式 C' })).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /全ての一式を出す/ })).not.toBeInTheDocument()
   })
 
   it('project を問題の設定の候補に渡し, 置き場の別の問題の設定をつなぐと知らせる', async () => {
