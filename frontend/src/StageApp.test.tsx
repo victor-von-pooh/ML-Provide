@@ -103,6 +103,7 @@ function stubApi(linkedId: string | null = null, bundles: Bundle[] = [BUNDLE]) {
     if (path === '/bundles' && method === 'GET') return Response.json(bundles)
     if (path === '/bundles/b1') return Response.json(BUNDLE)
     if (path === '/results') return Response.json([])
+    if (path === '/project-problem') return Response.json({ usable: true, reason: null })
     if (path === '/experiments') {
       const project = params.get('project')
       return Response.json({
@@ -253,12 +254,15 @@ describe('StageApp', () => {
       { ...BUNDLE, id: 'b1', name: '一式 A', problem_id: 'aaaa' },
       { ...BUNDLE, id: 'b2', name: '一式 B', problem_id: 'bbbb' },
       { ...BUNDLE, id: 'b3', name: '一式 C', problem_id: null },
+      // 問題の実験から登録した一式 (問題はつないでいない)
+      { ...BUNDLE, id: 'b4', name: '一式 D', problem_id: null, problem_ids: ['aaaa'] },
     ])
     const view = renderStage({ project: 'aaaa' })
     expect(await screen.findByRole('link', { name: '一式 A' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '一式 D' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: '一式 B' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: '一式 C' })).not.toBeInTheDocument()
-    expect(screen.getByText(/選んだ問題をつないでいない一式 \(2 件\)/)).toBeInTheDocument()
+    expect(screen.getByText(/選んだ問題の一式でないもの \(2 件\)/)).toBeInTheDocument()
     const all = screen.getByRole('checkbox', { name: /全ての一式を出す/ })
     expect(all).not.toBeChecked()
     fireEvent.click(all)
@@ -269,9 +273,18 @@ describe('StageApp', () => {
     expect(screen.getByRole('link', { name: '一式 B' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: '一式 A' })).not.toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: /全ての一式を出す/ })).not.toBeChecked()
+    // 外してから A → B → A と替えても, 外した状態は残らない
+    fireEvent.click(screen.getByRole('checkbox', { name: /全ての一式を出す/ }))
+    expect(screen.getByRole('link', { name: '一式 A' })).toBeInTheDocument()
+    view.rerenderWith({ project: 'aaaa' })
+    expect(screen.getByRole('checkbox', { name: /全ての一式を出す/ })).not.toBeChecked()
+    expect(screen.queryByRole('link', { name: '一式 B' })).not.toBeInTheDocument()
+    view.rerenderWith({ project: 'bbbb' })
+    view.rerenderWith({ project: 'aaaa' })
+    expect(screen.getByRole('checkbox', { name: /全ての一式を出す/ })).not.toBeChecked()
     // 選んだ問題の一式が無ければ, 無いことと出し方を知らせる
     view.rerenderWith({ project: 'cccc' })
-    expect(screen.getByRole('status')).toHaveTextContent('選んだ問題をつないだ一式がありません')
+    expect(screen.getByRole('status')).toHaveTextContent('選んだ問題の一式がありません')
     expect(window.location.pathname).toBe('/infer')
   })
 

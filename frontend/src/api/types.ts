@@ -1041,6 +1041,16 @@ export interface Bundle {
   uses_problem?: boolean
   /** つないだ問題が置き場の <識別子>/problem.yaml なら識別子 (一覧だけ. 殻で選んだ問題で絞る) */
   problem_id?: string | null
+  /** 出どころ (登録の場所か写した元) を出力先に持つプロジェクトを記録した問題の識別子 (一覧だけ) */
+  problem_ids?: string[]
+  /** 作るときに渡した問題をつなげなかった理由 (つないだか, 渡していなければ null か無し) */
+  problem_note?: string | null
+}
+
+/** 殻で選んだ問題を, 学習の結果から作る一式につなげるか */
+export interface ProjectProblem {
+  usable: boolean
+  reason: string | null
 }
 
 export interface DecisionCount {

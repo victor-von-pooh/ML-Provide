@@ -489,14 +489,19 @@ def list_bundles(request: Request) -> list[dict[str, Any]]:
     ----------
     bundles: list[dict[str, Any]]
         登録と説明 (新しい順). problem_id はつないだ問題が置き場の
-        <識別子>/problem.yaml なら識別子 (殻で選んだ問題で絞るため)
+        <識別子>/problem.yaml なら識別子, problem_ids は出どころ (登録の
+        場所か写した元) を出力先に持つプロジェクトを記録した問題の設定の
+        識別子 (殻で選んだ問題で絞るため)
     """
+    # experiments はこの api を読むので, 関数の中で読む
+    from ml_provide.experiments import known_projects, origin_ids
     entries = get_store(request).read()
     problems_dir = request.app.state.problems_dir
+    projects = known_projects(problems_dir)
     bundles = [
-        {**bundle_view(entry), "problem_id": stored_id(
-            entry.get("problem"), problems_dir
-        )}
+        {**bundle_view(entry),
+         "problem_id": stored_id(entry.get("problem"), problems_dir),
+         "problem_ids": origin_ids(entry, projects)}
         for entry in reversed(entries)
     ]
 
@@ -618,12 +623,15 @@ def create_bundle(request: Request, body: BundleCreate) -> dict[str, Any]:
     entry = store.add(place, body.name, managed=True, bundle_id=bundle_id)
     # 殻で選んだ問題のつなぎ (つなげなければつながずに作る. problems は
     # この api を読むので, 関数の中で読む)
+    note: Optional[str] = None
     if body.problem:
         from ml_provide.problems import link_project
-        entry = link_project(
+        entry, note = link_project(
             store, entry, body.problem, request.app.state.problems_dir
         )
     view = bundle_view(entry)
+    if body.problem:
+        view["problem_note"] = note
 
     return view
 

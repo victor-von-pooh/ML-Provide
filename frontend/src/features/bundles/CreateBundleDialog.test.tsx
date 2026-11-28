@@ -28,12 +28,22 @@ const describeDataset = vi.fn(
 // 作る要求 (送った中身を確かめる. 作り終えない)
 const createBundle = vi.fn((_body: BundleCreateBody) => new Promise<never>(() => {}))
 
+// 殻で選んだ問題をつなげるか (bad は推論に渡せない問題)
+const projectProblem = vi.fn((project: string) =>
+  Promise.resolve(
+    project === 'bad'
+      ? { usable: false, reason: '問題 bad は推論に渡せません' }
+      : { usable: true, reason: null },
+  ),
+)
+
 vi.mock('../../api/client', async () =>
   (await import('../../test/mockClient')).mockClient({
     api: {
       info: () => Promise.resolve({ procedures: [ddim], max_procedure_steps: 1000 }),
       describeDataset: (path: string) => describeDataset(path),
       createBundle: (body: BundleCreateBody) => createBundle(body),
+      projectProblem: (project: string) => projectProblem(project),
     },
   }),
 )
@@ -99,6 +109,17 @@ describe('学習の結果から作る対話', () => {
   it('問題のつなぎを外すと, 問題を渡さずに作る', async () => {
     renderDialog('aaaa')
     fireEvent.click(screen.getByRole('checkbox', { name: /選んだ問題 aaaa をつなぐ/ }))
+    fireEvent.click(await fillColumns())
+    await waitFor(() => expect(createBundle).toHaveBeenCalledTimes(1))
+    expect(createBundle.mock.calls[0]?.[0].problem).toBeNull()
+  })
+
+  it('推論に渡せない問題は, つなぐ欄を出さずに理由を添え, 問題を渡さない', async () => {
+    renderDialog('bad')
+    expect(
+      await screen.findByText(/選んだ問題 bad はつながずに作ります: 問題 bad は推論に渡せません/),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /をつなぐ/ })).toBeNull()
     fireEvent.click(await fillColumns())
     await waitFor(() => expect(createBundle).toHaveBeenCalledTimes(1))
     expect(createBundle.mock.calls[0]?.[0].problem).toBeNull()

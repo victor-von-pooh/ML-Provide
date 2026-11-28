@@ -9,6 +9,7 @@ from ml_quest import example_problem
 
 from ml_provide import experiments
 from ml_provide.app import create_app
+from ml_provide.store import Store
 
 # テストで使うトークン
 TOKEN = "test-token"
@@ -125,6 +126,23 @@ def test_list_experiments(client: TestClient, tmp_path: Path) -> None:
     rows = client.get("/api/experiments").json()["experiments"]
     assert rows[0]["bundle_id"] == bundle.json()["id"]
     assert rows[1]["bundle_id"] is None
+
+    # 一式の一覧の出どころの識別子 (実験の一覧の絞りと同じ規則. 出力先の
+    # 外の一式は無し, つないだ問題の識別子は別の項目)
+    listed = {b["id"]: b for b in client.get("/api/bundles").json()}
+    assert listed[bundle.json()["id"]]["problem_ids"] == ["b", "e"]
+    assert listed[bundle.json()["id"]]["problem_id"] is None
+    assert listed[added[0]["id"]]["problem_ids"] == []
+
+    # 写した元 (copied_from) が出力先の下なら, 置き場に写した一式も同じ
+    store = Store(tmp_path / "home")
+    entries = store.read()
+    for entry in entries:
+        if entry["id"] == added[0]["id"]:
+            entry["copied_from"] = str(old.resolve())
+    store.write(entries)
+    listed = {b["id"]: b for b in client.get("/api/bundles").json()}
+    assert listed[added[0]["id"]]["problem_ids"] == ["b", "e"]
 
 
 def test_project_bundles_newest_first(tmp_path: Path) -> None:

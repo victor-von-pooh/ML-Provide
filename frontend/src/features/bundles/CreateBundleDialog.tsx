@@ -316,9 +316,22 @@ function CreateBundleForm({
   }
   // 殻で選んだ問題を, 作る一式につなぐ既定にする. 外したのはそのときの問題だけで,
   // 殻で選び直すとまたつなぐ (一覧の絞りと同じ)
+  // 推論に渡せない問題と置き場に無い問題は, 欄を出さずに理由を添える
   const { project } = useStage()
-  const [unlinkedFor, setUnlinkedFor] = useState<string | null>(null)
-  const linking = project !== null && unlinkedFor !== project
+  const [unlinked, setUnlinked] = useState(false)
+  const [unlinkedFor, setUnlinkedFor] = useState(project)
+  if (unlinkedFor !== project) {
+    // 殻で問題を替えたら外した状態を消す (A → B → A で外したままにしない)
+    setUnlinkedFor(project)
+    setUnlinked(false)
+  }
+  const projectProblem = useQuery({
+    queryKey: ['project-problem', project],
+    queryFn: () => api.projectProblem(project ?? ''),
+    enabled: project !== null,
+  })
+  const usable = projectProblem.data?.usable !== false
+  const linking = project !== null && usable && !unlinked
   const problem = linking ? project : null
   const create = useMutation({
     // 送ったときの欄の印 (欄を変えたら前の誤りを出さないため)
@@ -745,16 +758,20 @@ function CreateBundleForm({
           />
           重みを一式に写す (外すと実験の重みを指す. 実験を消すと推論できなくなる)
         </label>
-        {project !== null && (
+        {project !== null && usable && (
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
               checked={linking}
-              onChange={(event) => setUnlinkedFor(event.target.checked ? null : project)}
+              onChange={(event) => setUnlinked(!event.target.checked)}
             />
-            選んだ問題 {project} をつなぐ (問題を使わない一式と, 推論に渡せない問題は,
-            つながずに作る)
+            選んだ問題 {project} をつなぐ (問題を使わない一式は, つながずに作る)
           </label>
+        )}
+        {project !== null && !usable && (
+          <p className="text-xs text-ink-2">
+            選んだ問題 {project} はつながずに作ります: {projectProblem.data?.reason}
+          </p>
         )}
         {/* 誤りは打つたびに変わるので, alert でなく polite で読み上げる */}
         <div aria-live="polite" className="flex flex-col gap-1">

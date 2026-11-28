@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Play, Trash2, Undo2 } from 'lucide-react'
 import { useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { Link, useLocation, useNavigate, useParams } from 'react-router'
 
 import { useApi } from '../../api/client'
 import type { Bundle, Description, LinkedProblem, UncertaintySummary } from '../../api/types'
@@ -1756,6 +1756,9 @@ export function BundlePage() {
   const noProblem = (bundle.data?.uses_problem ?? listed?.uses_problem) === false
   // 殻で選んだ問題は, 一式の上に候補が無い場合の候補にする
   const { project } = useStage()
+  // 作るときに殻で選んだ問題をつなげなかった理由 (作った直後だけ)
+  const location = useLocation()
+  const problemNote = (location.state as { problemNote?: string } | null)?.problemNote
   const problem = useQuery({
     queryKey: ['bundle-problem', id, project],
     queryFn: () => api.bundleProblem(id, project),
@@ -1808,6 +1811,11 @@ export function BundlePage() {
         }
       />
       {remove.error && <ErrorBox error={remove.error} />}
+      {problemNote && (
+        <p role="status" className="mb-4 text-sm text-ink-2">
+          選んだ問題をつながずに作りました: {problemNote}
+        </p>
+      )}
       {!data.ok || !data.description ? (
         <ErrorBox error={`一式を読めません: ${data.error ?? ''}`} />
       ) : (

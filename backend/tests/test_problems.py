@@ -886,14 +886,29 @@ def test_create_links_project(client: TestClient, tmp_path: Path) -> None:
     linked = create("linked", "one")
     assert linked["problem"] == str((problems / "one" / "problem.yaml")
                                     .resolve())
+    assert linked["problem_note"] is None
     state = client.get(f"/api/bundles/{linked['id']}/problem").json()
     assert state["problem_id"] == "one" and state["linked"] is not None
 
     # 渡さない, 置き場に無い, 置き場の外を指す, 推論に渡せない識別子は
     # つながずに作る
-    for name, problem in [("plain", None), ("missing", "missing"),
-                          ("outside", "../one"), ("gen", "gen")]:
-        assert "problem" not in create(name, problem), name
+    # (つなげなかった識別子には理由を添える)
+    for name, problem, note in [
+        ("plain", None, None), ("missing", "missing", "ありません"),
+        ("outside", "../one", "ありません"), ("gen", "gen", "推論に渡せません"),
+    ]:
+        made = create(name, problem)
+        assert "problem" not in made, name
+        assert note is None or note in made["problem_note"], name
+
+    # 作る前の確かめ (作る一式は列の予測として, 候補と同じ確かめ)
+    for problem, usable in [("one", True), ("gen", False),
+                            ("missing", False), ("..", False)]:
+        state = client.get(
+            "/api/project-problem", params={"project": problem}
+        ).json()
+        assert state["usable"] is usable, problem
+        assert (state["reason"] is None) is usable, problem
 
     # 一覧の識別子 (つないでいない一式と置き場の外の問題は無し)
     outside = tmp_path / "elsewhere" / "one"

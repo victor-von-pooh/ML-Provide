@@ -50,13 +50,23 @@ export function BundlesPage() {
   const client = useQueryClient()
   const bundles = useQuery({ queryKey: ['bundles'], queryFn: api.bundles })
   const [dialog, setDialog] = useState<'register' | 'experiments' | 'create' | 'ready' | null>(null)
-  // 殻で問題を選んでいれば, その問題をつないだ一式に絞る (つないでいない一式と,
-  // 置き場の外の問題につないだ一式は「全ての一式を出す」で出す). 外したのは
-  // そのときの問題だけで, 殻で選び直すとまた絞る (実験の一覧と同じ)
+  // 殻で問題を選んでいれば, その問題の一式に絞る (他の一式は「全ての一式を出す」で出す)
+  // 問題は, つないだ問題か出どころ (問題が記録したプロジェクトの実験の中) で合わせる
   const { project } = useStage()
-  const [allFor, setAllFor] = useState<string | null>(null)
-  const filtering = project !== null && allFor !== project
-  const shown = bundles.data?.filter((bundle) => !filtering || bundle.problem_id === project)
+  const [showAll, setShowAll] = useState(false)
+  const [allFor, setAllFor] = useState(project)
+  if (allFor !== project) {
+    // 殻で問題を替えたら外した状態を消す (A → B → A で外したままにしない)
+    setAllFor(project)
+    setShowAll(false)
+  }
+  const filtering = project !== null && !showAll
+  const shown = bundles.data?.filter(
+    (bundle) =>
+      !filtering ||
+      bundle.problem_id === project ||
+      (project !== null && (bundle.problem_ids ?? []).includes(project)),
+  )
   const hidden = (bundles.data?.length ?? 0) - (shown?.length ?? 0)
   const register = useMutation({
     mutationFn: ({ path, name }: { path: string; name?: string }) => api.registerBundle(path, name),
@@ -76,7 +86,10 @@ export function BundlesPage() {
   const opened = (bundle: Bundle) => {
     setDialog(null)
     client.invalidateQueries({ queryKey: ['bundles'] })
-    navigate(`/bundles/${bundle.id}`)
+    // 作るときに問題をつなげなかった理由は, 一式の画面で知らせる
+    navigate(`/bundles/${bundle.id}`, {
+      state: bundle.problem_note ? { problemNote: bundle.problem_note } : null,
+    })
   }
   const actions = (
     <>
@@ -137,9 +150,9 @@ export function BundlesPage() {
           <input
             type="checkbox"
             checked={!filtering}
-            onChange={(event) => setAllFor(event.target.checked ? project : null)}
+            onChange={(event) => setShowAll(event.target.checked)}
           />
-          全ての一式を出す (出さなければ, 選んだ問題 {project} をつないだ一式だけ)
+          全ての一式を出す (出さなければ, 選んだ問題 {project} の一式だけ)
         </label>
       )}
       {bundles.isPending && <Spinner />}
@@ -156,8 +169,8 @@ export function BundlesPage() {
       )}
       {shown && shown.length === 0 && hidden > 0 && (
         <p role="status" className="text-sm text-ink-2">
-          選んだ問題をつないだ一式がありません. 全ての一式を出すか, 一式の画面で問題をつなぐか,
-          「学習の結果から作る」で作ります.
+          選んだ問題の一式がありません. 「全ての一式を出す」に印を付けると他の一式が出ます.
+          この問題の一式は「学習の結果から作る」か「実験の一覧から登録」で足せます.
         </p>
       )}
       {shown && shown.length > 0 && (
@@ -211,8 +224,7 @@ export function BundlesPage() {
       )}
       {shown && shown.length > 0 && hidden > 0 && (
         <p className="mt-2 text-xs text-ink-3">
-          選んだ問題をつないでいない一式 ({hidden.toLocaleString()} 件) は,
-          全ての一式を出すと出ます.
+          選んだ問題の一式でないもの ({hidden.toLocaleString()} 件) は, 全ての一式を出すと出ます.
         </p>
       )}
       {dialog === 'register' && (

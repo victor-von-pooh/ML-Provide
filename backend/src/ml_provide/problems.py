@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 import ml_inference
 import ml_quest
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from ml_quest import (
     PART,
     ROLES,
@@ -858,9 +858,44 @@ def problem_state(
     return state
 
 
+def project_reason(
+    project: str, problems_dir: Path, ready: bool = False
+) -> Optional[str]:
+    """
+    殻で選んだ問題を一式につなげない理由を返す関数 (問題の候補と同じ
+    確かめ. つなげれば None)
+
+    Parameters
+    ----------
+    project: str
+        問題の設定の識別子
+    problems_dir: Path
+        ML-Pathfinder の問題の設定の置き場
+    ready: bool = False
+        既製のモデルの一式につなぐか
+
+    Returns
+    ----------
+    reason: Optional[str]
+        つなげない理由 (置き場に無い, 推論に渡せない)
+    """
+    # 置き場の外を指す識別子と, 無いファイルと, 推論に渡せない問題
+    reason: Optional[str] = None
+    path = project_file(project, problems_dir)
+    if path is None or not path.is_file():
+        reason = f"問題 {project} が問題の設定の段階の置き場にありません"
+    elif not is_usable(path, ready):
+        reason = (
+            f"問題 {project} は推論に渡せません (受け持ちが列の予測でないか, "
+            "問題の設定の段階で直すところがあります)"
+        )
+
+    return reason
+
+
 def link_project(
     store: Store, entry: dict[str, Any], project: str, problems_dir: Path
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], Optional[str]]:
     """
     作った一式に, 殻で選んだ問題 (置き場の <識別子>/problem.yaml) を
     つなぐ関数
@@ -878,18 +913,18 @@ def link_project(
 
     Returns
     ----------
-    linked: dict[str, Any]
-        つないだ後の登録 (問題を使わない種類の一式, 推論に渡せない問題,
-        置き場に無い問題は, つながずに元の登録)
+    linked: tuple[dict[str, Any], Optional[str]]
+        つないだ後の登録と, つなげなかった理由 (問題を使わない種類の一式,
+        推論に渡せない問題, 置き場に無い問題は, つながずに元の登録と理由)
     """
-    # つなぐ欄と同じ確かめ (読めて, 受け渡しが通り, 一式に合う問題だけ)
-    linked = entry
-    path = project_file(project, problems_dir)
+    # 問題の候補と同じ確かめ (読めて, 受け渡しが通り, 一式に合う問題だけ)
     kind = bundle_kind(str(entry["path"]))
-    if path is None or not uses_problem(kind) or not is_usable(
-        path, kind == "ready"
-    ):
-        return linked
+    if not uses_problem(kind):
+        return entry, "この一式は問題を使わないので, つないでいません"
+    reason = project_reason(project, problems_dir, kind == "ready")
+    path = project_file(project, problems_dir)
+    if reason is not None or path is None:
+        return entry, reason
     try:
         place = problem_file(str(path))
         problem = read_problem(place)
@@ -897,10 +932,38 @@ def link_project(
         linked = store.link_problem(
             str(entry["id"]), str(place), str(problem["created_at"])
         )
-    except (HTTPException, KeyError):
-        return entry
+    except HTTPException as error:
+        return entry, str(error.detail)
+    except KeyError:
+        return entry, "一式が見つかりません"
 
-    return linked
+    return linked, None
+
+
+@router.get("/project-problem")
+def get_project_problem(
+    request: Request, project: str = Query(max_length=200)
+) -> dict[str, Any]:
+    """
+    殻で選んだ問題を, 学習の結果から作る一式につなげるかを返す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    project: str
+        問題の設定の識別子
+
+    Returns
+    ----------
+    state: dict[str, Any]
+        usable (つなげるか), reason (つなげない理由)
+    """
+    # 作る一式の種類はまだ分からないので, 列の予測の一式としての確かめ
+    reason = project_reason(project, request.app.state.problems_dir)
+    state = {"usable": reason is None, "reason": reason}
+
+    return state
 
 
 @router.get("/bundles/{bundle_id}/problem")
