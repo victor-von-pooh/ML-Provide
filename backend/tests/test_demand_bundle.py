@@ -301,7 +301,7 @@ def test_demand_refusals(client: TestClient, demand_files: Path) -> None:
     response = client.post(url, json={"source": table, "forecast": True})
     assert "発注する判断" in response.json()["detail"]
 
-    # 使えない欄 (結論の出し直し, 決め直し, たどり直し, 人の確認, 配る行,
+    # 使えない欄 (結論の出し直し, 決め直し, たどり直し, 人の確かめ, 配る行,
     # 選んだ値段)
     result = client.post(url, json={"source": table}).json()
     for name, body in (("conclude", {"rules": {}}),

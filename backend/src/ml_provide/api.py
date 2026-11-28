@@ -115,7 +115,7 @@ KEPT_CONCLUSIONS = frozenset({"table", "ranking", "cluster", "effect"})
 # 同じ value と distribution なので, 種類で見分ける)
 KEPT_KINDS = frozenset({"anomaly", "demand"})
 
-# 異常の度合いの一式で, 人の確認に回す件数の上限 (確認の待ち行列を 1 度に
+# 異常の度合いの一式で, 人の確かめに回す件数の上限 (確かめの待ち行列を 1 度に
 # 返す件数の上限)
 MAX_CAPACITY = 1000
 

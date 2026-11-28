@@ -79,7 +79,7 @@ def plain_value(value: Any) -> Any:
 
 def acted_rows(frame: pd.DataFrame) -> pd.Series:
     """
-    予測の表の, 行動する行 (人の確認に回すか配る行) の印を返す関数
+    予測の表の, 行動する行 (人の確かめに回すか配る行) の印を返す関数
 
     Parameters
     ----------
@@ -105,7 +105,7 @@ def duplicate_problem(
     frame: pd.DataFrame, column: Optional[str]
 ) -> Optional[str]:
     """
-    行の id の列に同じ値の行があれば, 人の確認を使えない理由を返す関数
+    行の id の列に同じ値の行があれば, 人の確かめを使えない理由を返す関数
 
     Parameters
     ----------
@@ -138,7 +138,7 @@ def duplicate_problem(
 
 def latest_reviews(place: Path) -> dict[str, dict[str, str]]:
     """
-    行の id ごとの最後の確認の記録を返す関数
+    行の id ごとの最後の確かめの記録を返す関数
 
     Parameters
     ----------
@@ -161,7 +161,7 @@ def latest_reviews(place: Path) -> dict[str, dict[str, str]]:
 @router.get("/results/{result_id}/queue")
 def get_queue(request: Request, result_id: str) -> dict[str, Any]:
     """
-    異常の度合いの結果の, 人の確認に回した行を度合いの高い順に返す関数
+    異常の度合いの結果の, 人の確かめに回した行を度合いの高い順に返す関数
 
     Parameters
     ----------
@@ -173,8 +173,8 @@ def get_queue(request: Request, result_id: str) -> dict[str, Any]:
     Returns
     ----------
     queue: dict[str, Any]
-        id (行の id の列. 無ければ None), capacity (人の確認に回す件数の
-        上限. 振り分けていなければ None), problem (人の確認を使えない理由.
+        id (行の id の列. 無ければ None), capacity (人の確かめに回す件数の
+        上限. 振り分けていなければ None), problem (人の確かめを使えない理由.
         行の id の重なり. 使えれば None. 理由があれば rows は空), rows
         (行の位置 row, 記録に使う行の id の key (id の値の欠けた行は None),
         行の id の値 id, score, rank, column, column_share, 今の判断
@@ -238,7 +238,7 @@ def get_queue(request: Request, result_id: str) -> dict[str, Any]:
 @router.get("/results/{result_id}/reviews")
 def get_reviews(request: Request, result_id: str) -> dict[str, Any]:
     """
-    異常の度合いの結果の人の確認の記録を書いた順に返す関数
+    異常の度合いの結果の人の確かめの記録を書いた順に返す関数
 
     Parameters
     ----------
@@ -276,7 +276,7 @@ def add_review(
     request: Request, result_id: str, body: ReviewRequest
 ) -> dict[str, Any]:
     """
-    異常の度合いの結果に, 人の確認の記録を 1 件足す関数
+    異常の度合いの結果に, 人の確かめの記録を 1 件足す関数
 
     Parameters
     ----------

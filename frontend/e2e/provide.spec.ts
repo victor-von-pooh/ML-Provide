@@ -1257,14 +1257,14 @@ test('異常の度合いの一式を場所で登録して推論し, 人の確か
     await expect(page.getByRole('region', { name: '意思決定' })).toHaveCount(0)
     await expect(page.getByRole('heading', { name: '問題', exact: true })).toHaveCount(0)
 
-    // 新しい行の度合いを出し, 上位 2 件を人の確認に回す
+    // 新しい行の度合いを出し, 上位 2 件を人の確かめに回す
     await page.getByLabel(/^度合いを出す行の表/).fill(path.join(root, 'readings.csv'))
     await page.getByLabel(/^人の確かめに回す件数の上限/).fill('2')
     await page.getByRole('button', { name: '推論する' }).click()
     await expect(page.getByText(/^14 行のうち 13 行の異常の度合い/)).toBeVisible({
       timeout: 30_000,
     })
-    await expect(page.getByText(/^度合いの高い順に 2 件を人の確認に回す/)).toBeVisible()
+    await expect(page.getByText(/^度合いの高い順に 2 件を人の確かめに回す/)).toBeVisible()
     await expect(
       page
         .getByRole('table', { name: /^度合いの分布/ })

@@ -45,7 +45,7 @@ const result = {
     decision: { type: 'triage', capacity: 2 },
     summary: { rows: 3, acted: 2, capacity: 2, lowest: 904.9, normal_p99: 3.39, left_beyond: 0 },
     sentences: [
-      '度合いの高い順に 2 件を人の確認に回す (人が 1 回に確かめる件数の上限 2 件). 回す行の度合いは 905 以上',
+      '度合いの高い順に 2 件を人の確かめに回す (人が 1 回に確かめる件数の上限 2 件). 回す行の度合いは 905 以上',
     ],
     notes: ['度合いは確率ではないので, 回す件数は損得のしきい値でなく人手の上限で決めた'],
   },
@@ -151,7 +151,7 @@ describe('異常の度合いの結果の画面', () => {
     })
     expect(within(top).getAllByRole('row')[1]).toHaveTextContent('r013')
     expect(within(top).getAllByRole('row')[1]).toHaveTextContent('90.0%')
-    expect(screen.getByText(/度合いの高い順に 2 件を人の確認に回す/)).toBeInTheDocument()
+    expect(screen.getByText(/度合いの高い順に 2 件を人の確かめに回す/)).toBeInTheDocument()
     expect(screen.getByText('人の確かめに回す')).toBeInTheDocument()
     expect(screen.getByText('度合いを出した')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '結論の決め方を変える' })).not.toBeInTheDocument()

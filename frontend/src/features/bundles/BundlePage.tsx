@@ -764,7 +764,7 @@ function PredictCard({
   // 群分けの一式は群を作る列を持つ表のファイル (既製の埋め込みの群分けの一式 (版 10.
   // 列を符号化しない) は写真) だけで, 結論は群の要約
   const group = description.group
-  // 異常の度合いの一式は行の表のファイルと, 人の確認に回す件数の上限 (振り分けだけ)
+  // 異常の度合いの一式は行の表のファイルと, 人の確かめに回す件数の上限 (振り分けだけ)
   const anomaly = description.anomaly
   const [capacity, setCapacity] = useState(() =>
     String(description.decision?.capacity ?? anomaly?.capacity ?? ''),

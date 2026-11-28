@@ -93,7 +93,7 @@ def test_anomaly_bundle(
 ) -> None:
     """
     異常の度合いの一式を登録して推論し, 度合いの結論と振り分けを残し,
-    人の確認に回した行を度合いの高い順に読めることを確かめる関数
+    人の確かめに回した行を度合いの高い順に読めることを確かめる関数
 
     Parameters
     ----------
@@ -138,7 +138,7 @@ def test_anomaly_bundle(
     assert decided["decision"] == {"type": "triage", "capacity": 3}
     assert decided["summary"]["acted"] == 3
 
-    # 待ち行列は人の確認に回した行を順位の順に (度合いの上位と同じ行)
+    # 待ち行列は人の確かめに回した行を順位の順に (度合いの上位と同じ行)
     queue = client.get(f"/api/results/{result['id']}/queue").json()
     assert (queue["id"], queue["capacity"]) == ("reading_id", 3)
     rows = queue["rows"]
@@ -229,7 +229,7 @@ def test_anomaly_reviews(
     tmp_path: Path, client: TestClient, anomaly_files: tuple[Path, Path]
 ) -> None:
     """
-    人の確認の記録を 1 件ずつ足し, 書いた順に読めて, 待ち行列の今の判断が
+    人の確かめの記録を 1 件ずつ足し, 書いた順に読めて, 待ち行列の今の判断が
     最後の記録になることを確かめる関数
 
     Parameters
@@ -365,7 +365,7 @@ def test_anomaly_duplicate_ids(
     tmp_path: Path, client: TestClient, anomaly_files: tuple[Path, Path]
 ) -> None:
     """
-    行の id に同じ値の行がある結果では人の確認を断り, id の値の欠けた行は
+    行の id に同じ値の行がある結果では人の確かめを断り, id の値の欠けた行は
     記録の無い行として出すことを確かめる関数
 
     Parameters

@@ -287,7 +287,7 @@ def test_uplift_refusals(client: TestClient, uplift_files: Path) -> None:
     assert response.status_code == 201, response.text
     assert response.json()["decision"]["summary"]["budget"] == 100_000
 
-    # 結論の出し直し, 決め直し, たどり直しと人の確認は使えない
+    # 結論の出し直し, 決め直し, たどり直しと人の確かめは使えない
     result = client.post(url, json={"source": table}).json()
     for name, body in (("conclude", {"rules": {}}),
                        ("decide", {"decision": None}), ("backtest", None)):
