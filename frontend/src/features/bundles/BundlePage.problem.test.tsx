@@ -78,12 +78,12 @@ vi.mock('../../api/client', async () =>
 )
 
 /** 一式の画面を描く (一覧の読んだ値があれば先に置く) */
-function renderPage(id: string, listed?: Bundle[]) {
+function renderPage(id: string, listed?: Bundle[], state: unknown = null) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   if (listed) client.setQueryData(['bundles'], listed)
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[`/bundles/${id}`]}>
+      <MemoryRouter initialEntries={[{ pathname: `/bundles/${id}`, state }]}>
         <Routes>
           <Route path="/bundles/:id" element={<BundlePage />} />
         </Routes>
@@ -113,5 +113,16 @@ describe('一式の画面の問題の設定の読み込み', () => {
     expect(await screen.findByRole('heading', { name: 'n1' })).toBeInTheDocument()
     expect(bundleProblem).not.toHaveBeenCalled()
     expect(screen.queryByText('問題を読んでいます…')).toBeNull()
+  })
+
+  it('作るときに選んだ問題をつなげなかった理由を, 作った直後の一式の画面で知らせる', async () => {
+    renderPage('n1', [bundles.n1 as Bundle], {
+      problemNote: 'この一式は問題を使わないので, つないでいません',
+    })
+    await waitFor(() => expect(pending).toHaveLength(1))
+    pending[0]?.()
+    expect(
+      await screen.findByText(/選んだ問題をつながずに作りました: この一式は問題を使わない/),
+    ).toBeInTheDocument()
   })
 })

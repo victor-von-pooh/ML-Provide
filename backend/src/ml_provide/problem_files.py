@@ -194,3 +194,76 @@ def linked_guard(
     guard = found if isinstance(found, dict) else None
 
     return guard, None
+
+
+def stored_id(text: Optional[str], problems_dir: Path) -> Optional[str]:
+    """
+    問題の設定の場所が置き場の <識別子>/problem.yaml なら, 識別子を返す関数
+
+    殻 (ML-Studio) のプロジェクトは置き場の問題の設定の識別子なので, 置き場
+    の外のファイルは同じ名前のディレクトリでも識別子にしない. <識別子> が
+    リンクなら, リンクの先のファイルも識別子にする
+
+    Parameters
+    ----------
+    text: Optional[str]
+        problem.yaml の場所 (無ければ None)
+    problems_dir: Path
+        ML-Pathfinder の問題の設定の置き場
+
+    Returns
+    ----------
+    found: Optional[str]
+        識別子 (置き場の外か読めない場所なら None)
+    """
+    # 置き場の <識別子>/problem.yaml を実際のパスにしたものとの比べ
+    # (つないだ場所は実際のパスで残るので, <識別子> がリンクでも識別子
+    # にするため)
+    found: Optional[str] = None
+    if not text:
+        return found
+    try:
+        place = Path(text).expanduser().resolve()
+        root = problems_dir.expanduser()
+        if place.name == "problem.yaml" and (
+            place.parent.parent == root.resolve()
+        ):
+            found = place.parent.name
+            return found
+        for child in sorted(root.iterdir()):
+            if (child / "problem.yaml").resolve() == place:
+                found = child.name
+                return found
+    except (OSError, RuntimeError, ValueError):
+        return found
+
+    return found
+
+
+def project_file(
+    project: Optional[str], problems_dir: Path
+) -> Optional[Path]:
+    """
+    殻で選んだプロジェクト (問題の設定の識別子) の problem.yaml を返す関数
+
+    Parameters
+    ----------
+    project: Optional[str]
+        問題の設定の識別子 (選んでいなければ None)
+    problems_dir: Path
+        ML-Pathfinder の問題の設定の置き場
+
+    Returns
+    ----------
+    path: Optional[Path]
+        置き場の <識別子>/problem.yaml (識別子の形でなければ None)
+    """
+    # 区切りを含む名前と . で始まる名前の除外 (置き場の外を指さないため)
+    path: Optional[Path] = None
+    if not project or project != Path(project).name or (
+        project.startswith(".") or "\\" in project
+    ):
+        return path
+    path = problems_dir / project / "problem.yaml"
+
+    return path

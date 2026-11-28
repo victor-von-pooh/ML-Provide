@@ -86,6 +86,51 @@ def known_projects(problems_dir: Path) -> list[dict[str, Any]]:
     return projects
 
 
+def origin_ids(
+    entry: dict[str, Any], projects: list[dict[str, Any]]
+) -> list[str]:
+    """
+    一式の出どころ (登録の場所か写した元) が, 問題の設定に記録した
+    プロジェクトの出力先の下なら, そのプロジェクトを記録した問題の設定の
+    識別子を返す関数
+
+    実験の一覧の絞りと同じ規則 (行の problem_ids) で, 一式の一覧を殻で
+    選んだ問題で絞るため
+
+    Parameters
+    ----------
+    entry: dict[str, Any]
+        一式の登録
+    projects: list[dict[str, Any]]
+        known_projects の並び
+
+    Returns
+    ----------
+    ids: list[str]
+        問題の設定の識別子 (無ければ空)
+    """
+    # 実際のパスどうしの比べ (読めない場所は飛ばす)
+    ids: list[str] = []
+    places: list[Path] = []
+    for key in ("path", "copied_from"):
+        text = entry.get(key)
+        if not isinstance(text, str):
+            continue
+        try:
+            places.append(Path(text).expanduser().resolve())
+        except (OSError, RuntimeError):
+            continue
+    for project in projects:
+        try:
+            root = (Path(project["path"]) / OUTPUTS).resolve()
+        except (OSError, RuntimeError):
+            continue
+        if any(place.is_relative_to(root) for place in places):
+            ids.extend(i for i in project["problem_ids"] if i not in ids)
+
+    return ids
+
+
 def project_bundles(
     project: Path, limit: int, folder: str = BUNDLE_DIR,
     marker: str = BUNDLE_FILE

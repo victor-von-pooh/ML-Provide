@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 import ml_inference
 import ml_quest
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from ml_quest import (
     PART,
     ROLES,
@@ -21,9 +21,12 @@ from ml_provide.cache import describe, read_bundle
 from ml_provide.problem_files import (
     SHAPE_ERRORS,
     problem_file,
+    project_file,
     read_problem,
+    stored_id,
     uses_problem,
 )
+from ml_provide.store import Store
 from ml_provide.units import unit_hint
 
 router = APIRouter()
@@ -199,79 +202,6 @@ def find_hint(
         return found
 
     return found
-
-
-def stored_id(text: Optional[str], problems_dir: Path) -> Optional[str]:
-    """
-    問題の設定の場所が置き場の <識別子>/problem.yaml なら, 識別子を返す関数
-
-    殻 (ML-Studio) のプロジェクトは置き場の問題の設定の識別子なので, 置き場
-    の外のファイルは同じ名前のディレクトリでも識別子にしない. <識別子> が
-    リンクなら, リンクの先のファイルも識別子にする
-
-    Parameters
-    ----------
-    text: Optional[str]
-        problem.yaml の場所 (無ければ None)
-    problems_dir: Path
-        ML-Pathfinder の問題の設定の置き場
-
-    Returns
-    ----------
-    found: Optional[str]
-        識別子 (置き場の外か読めない場所なら None)
-    """
-    # 置き場の <識別子>/problem.yaml を実際のパスにしたものとの比べ
-    # (つないだ場所は実際のパスで残るので, <識別子> がリンクでも識別子
-    # にするため)
-    found: Optional[str] = None
-    if not text:
-        return found
-    try:
-        place = Path(text).expanduser().resolve()
-        root = problems_dir.expanduser()
-        if place.name == "problem.yaml" and (
-            place.parent.parent == root.resolve()
-        ):
-            found = place.parent.name
-            return found
-        for child in sorted(root.iterdir()):
-            if (child / "problem.yaml").resolve() == place:
-                found = child.name
-                return found
-    except (OSError, RuntimeError, ValueError):
-        return found
-
-    return found
-
-
-def project_file(
-    project: Optional[str], problems_dir: Path
-) -> Optional[Path]:
-    """
-    殻で選んだプロジェクト (問題の設定の識別子) の problem.yaml を返す関数
-
-    Parameters
-    ----------
-    project: Optional[str]
-        問題の設定の識別子 (選んでいなければ None)
-    problems_dir: Path
-        ML-Pathfinder の問題の設定の置き場
-
-    Returns
-    ----------
-    path: Optional[Path]
-        置き場の <識別子>/problem.yaml (識別子の形でなければ None)
-    """
-    # 区切りを含む名前と . で始まる名前の除外 (置き場の外を指さないため)
-    path: Optional[Path] = None
-    if not project or project != Path(project).name or (
-        project.startswith(".") or "\\" in project
-    ):
-        return path
-    path = problems_dir / project / "problem.yaml"
-
-    return path
 
 
 def named_columns(value: Any) -> list[str]:
@@ -924,6 +854,114 @@ def problem_state(
         state["linked"] = linked_view(entry, path, problem)
     except HTTPException as error:
         state["error"] = str(error.detail)
+
+    return state
+
+
+def project_reason(
+    project: str, problems_dir: Path, ready: bool = False
+) -> Optional[str]:
+    """
+    殻で選んだ問題を一式につなげない理由を返す関数 (問題の候補と同じ
+    確かめ. つなげれば None)
+
+    Parameters
+    ----------
+    project: str
+        問題の設定の識別子
+    problems_dir: Path
+        ML-Pathfinder の問題の設定の置き場
+    ready: bool = False
+        既製のモデルの一式につなぐか
+
+    Returns
+    ----------
+    reason: Optional[str]
+        つなげない理由 (置き場に無い, 推論に渡せない)
+    """
+    # 置き場の外を指す識別子と, 無いファイルと, 推論に渡せない問題
+    reason: Optional[str] = None
+    path = project_file(project, problems_dir)
+    if path is None or not path.is_file():
+        reason = f"問題 {project} が問題の設定の段階の置き場にありません"
+    elif not is_usable(path, ready):
+        reason = (
+            f"問題 {project} は推論に渡せません (受け持ちが列の予測でないか, "
+            "問題の設定の段階で直すところがあります)"
+        )
+
+    return reason
+
+
+def link_project(
+    store: Store, entry: dict[str, Any], project: str, problems_dir: Path
+) -> tuple[dict[str, Any], Optional[str]]:
+    """
+    作った一式に, 殻で選んだ問題 (置き場の <識別子>/problem.yaml) を
+    つなぐ関数
+
+    Parameters
+    ----------
+    store: Store
+        一式の登録
+    entry: dict[str, Any]
+        作った一式の登録
+    project: str
+        問題の設定の識別子
+    problems_dir: Path
+        ML-Pathfinder の問題の設定の置き場
+
+    Returns
+    ----------
+    linked: tuple[dict[str, Any], Optional[str]]
+        つないだ後の登録と, つなげなかった理由 (問題を使わない種類の一式,
+        推論に渡せない問題, 置き場に無い問題は, つながずに元の登録と理由)
+    """
+    # 問題の候補と同じ確かめ (読めて, 受け渡しが通り, 一式に合う問題だけ)
+    kind = bundle_kind(str(entry["path"]))
+    if not uses_problem(kind):
+        return entry, "この一式は問題を使わないので, つないでいません"
+    reason = project_reason(project, problems_dir, kind == "ready")
+    path = project_file(project, problems_dir)
+    if reason is not None or path is None:
+        return entry, reason
+    try:
+        place = problem_file(str(path))
+        problem = read_problem(place)
+        linked_view(entry, place, problem)
+        linked = store.link_problem(
+            str(entry["id"]), str(place), str(problem["created_at"])
+        )
+    except HTTPException as error:
+        return entry, str(error.detail)
+    except KeyError:
+        return entry, "一式が見つかりません"
+
+    return linked, None
+
+
+@router.get("/project-problem")
+def get_project_problem(
+    request: Request, project: str = Query(max_length=200)
+) -> dict[str, Any]:
+    """
+    殻で選んだ問題を, 学習の結果から作る一式につなげるかを返す関数
+
+    Parameters
+    ----------
+    request: Request
+        リクエスト
+    project: str
+        問題の設定の識別子
+
+    Returns
+    ----------
+    state: dict[str, Any]
+        usable (つなげるか), reason (つなげない理由)
+    """
+    # 作る一式の種類はまだ分からないので, 列の予測の一式としての確かめ
+    reason = project_reason(project, request.app.state.problems_dir)
+    state = {"usable": reason is None, "reason": reason}
 
     return state
 

@@ -1039,6 +1039,18 @@ export interface Bundle {
   model_loaded?: boolean
   /** 問題の設定の欄を出すか (一式の種類から API が決める) */
   uses_problem?: boolean
+  /** つないだ問題が置き場の <識別子>/problem.yaml なら識別子 (一覧だけ. 殻で選んだ問題で絞る) */
+  problem_id?: string | null
+  /** 出どころ (登録の場所か写した元) を出力先に持つプロジェクトを記録した問題の識別子 (一覧だけ) */
+  problem_ids?: string[]
+  /** 作るときに渡した問題をつなげなかった理由 (つないだか, 渡していなければ null か無し) */
+  problem_note?: string | null
+}
+
+/** 殻で選んだ問題を, 学習の結果から作る一式につなげるか */
+export interface ProjectProblem {
+  usable: boolean
+  reason: string | null
 }
 
 export interface DecisionCount {
@@ -1306,6 +1318,8 @@ export interface BundleCreateBody {
   procedure?: Procedure | null
   /** 版 2 のデータセットの 1 件の扱い (省いた欄はデータセットから) */
   items?: { input?: string; options?: Record<string, number> } | null
+  /** 作った一式につなぐ問題の識別子 (殻で選んだ問題. つなげなければつながずに作る) */
+  problem?: string | null
 }
 
 /** 外れ方の測り直し (確かめるだけか, 一式に書き戻したか) */

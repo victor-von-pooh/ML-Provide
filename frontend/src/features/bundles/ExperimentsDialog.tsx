@@ -78,11 +78,16 @@ export function ExperimentsDialog({
 }) {
   const api = useApi()
   // 殻で問題を選んでいれば, その問題が記録した学習のプロジェクトの実験に絞る
-  // (上限で打ち切る前に絞るように API に渡す). 外したのはそのときの問題だけで,
-  // 殻で選び直すとまた絞る
+  // (上限で打ち切る前に絞るように API に渡す). 殻で問題を替えるとまた絞る
   const { project } = useStage()
-  const [allFor, setAllFor] = useState<string | null>(null)
-  const filtering = project !== null && allFor !== project
+  const [showAll, setShowAll] = useState(false)
+  const [allFor, setAllFor] = useState(project)
+  if (allFor !== project) {
+    // 殻で問題を替えたら外した状態を消す (A → B → A で外したままにしない)
+    setAllFor(project)
+    setShowAll(false)
+  }
+  const filtering = project !== null && !showAll
   const asked = filtering ? project : null
   // 開くたびに読み直す (学習が終わった実験を拾うため)
   const config = KINDS[kind]
@@ -103,7 +108,7 @@ export function ExperimentsDialog({
           <input
             type="checkbox"
             checked={!filtering}
-            onChange={(event) => setAllFor(event.target.checked ? project : null)}
+            onChange={(event) => setShowAll(event.target.checked)}
           />
           全ての問題の実験を出す (出さなければ, 選んだ問題 {project}
           の実験だけ)

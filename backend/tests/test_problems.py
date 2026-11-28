@@ -8,6 +8,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 from ml_quest import example_problem
+from test_api import write_project
 
 from ml_provide.app import create_app
 from ml_provide.problems import issues_of, training_columns, with_baseline
@@ -844,6 +845,82 @@ def test_shell_project_hint(client: TestClient, tmp_path: Path) -> None:
     ).json()
     assert state["hint"] == str((project / "problem.yaml").resolve())
     assert state["hint_project"] is False
+
+
+def test_create_links_project(client: TestClient, tmp_path: Path) -> None:
+    """
+    学習の結果から作るときに渡した問題の識別子 (殻で選んだ問題) を作った
+    一式につなぎ, 一式の一覧が置き場の問題の識別子を返すことを確かめる
+    関数 (つなげない問題はつながずに作る)
+
+    Parameters
+    ----------
+    client: TestClient
+        クライアント
+    tmp_path: Path
+        一時ディレクトリ
+
+    Returns
+    ----------
+    None
+    """
+    # 置き場の推論に渡せる問題と, 渡せない問題
+    problems = tmp_path / "pathfinder" / "problems"
+    ml_quest.save_problem(shop_problem(), problems / "one")
+    ml_quest.save_problem(generate_problem(), problems / "gen")
+    paths = write_project(tmp_path / "project")
+
+    def create(name: str, problem: Optional[str]) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "name": name, "spec": str(paths["spec"]),
+            "dataset": str(paths["dataset"]), "weights": str(paths["run"]),
+        }
+        if problem is not None:
+            body["problem"] = problem
+        response = client.post("/api/bundles/create", json=body)
+        assert response.status_code == 201, response.text
+        bundle: dict[str, Any] = response.json()
+        return bundle
+
+    # 識別子の問題のつなぎ (つないだ問題の画面の値も読める)
+    linked = create("linked", "one")
+    assert linked["problem"] == str((problems / "one" / "problem.yaml")
+                                    .resolve())
+    assert linked["problem_note"] is None
+    state = client.get(f"/api/bundles/{linked['id']}/problem").json()
+    assert state["problem_id"] == "one" and state["linked"] is not None
+
+    # 渡さない, 置き場に無い, 置き場の外を指す, 推論に渡せない識別子は
+    # つながずに作る
+    # (つなげなかった識別子には理由を添える)
+    for name, problem, note in [
+        ("plain", None, None), ("missing", "missing", "ありません"),
+        ("outside", "../one", "ありません"), ("gen", "gen", "推論に渡せません"),
+    ]:
+        made = create(name, problem)
+        assert "problem" not in made, name
+        assert note is None or note in made["problem_note"], name
+
+    # 作る前の確かめ (作る一式は列の予測として, 候補と同じ確かめ)
+    for problem, usable in [("one", True), ("gen", False),
+                            ("missing", False), ("..", False)]:
+        state = client.get(
+            "/api/project-problem", params={"project": problem}
+        ).json()
+        assert state["usable"] is usable, problem
+        assert (state["reason"] is None) is usable, problem
+
+    # 一覧の識別子 (つないでいない一式と置き場の外の問題は無し)
+    outside = tmp_path / "elsewhere" / "one"
+    ml_quest.save_problem(shop_problem(), outside)
+    plain = next(b for b in client.get("/api/bundles").json()
+                 if b["name"] == "plain")
+    client.put(f"/api/bundles/{plain['id']}/problem",
+               json={"path": str(outside)})
+    ids = {b["name"]: b["problem_id"]
+           for b in client.get("/api/bundles").json()}
+    assert ids == {"linked": "one", "plain": None, "missing": None,
+                   "outside": None, "gen": None}
 
 
 def set_source(

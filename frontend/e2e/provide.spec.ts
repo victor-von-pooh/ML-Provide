@@ -511,6 +511,13 @@ test('実験の一覧から一式を登録し, 写しが指す元の問題の設
   await expect(
     page.getByRole('heading', { name: '総菜の作る量 (sales/2026-01-02/09-00-00)' }),
   ).toBeVisible({ timeout: 30_000 })
+  // 一覧の出どころの識別子 (つなぐ前から, 実験を記録した問題 p1 の一式として絞りに合う)
+  const registered = new URL(page.url()).pathname.split('/').pop()
+  const listed = (await (await page.request.get('/api/bundles')).json()) as Array<{
+    id: string
+    problem_ids: string[]
+  }>
+  expect(listed.find((row) => row.id === registered)?.problem_ids).toContain('p1')
   await expect(page.locator('#problem-hint')).toHaveText(original)
   await expect(page.getByText(/が指す元の問題です/)).toBeVisible()
   await page.getByRole('button', { name: 'これをつなぐ' }).click()
@@ -611,6 +618,60 @@ test('版 2 の画像と領域のデータセットと実験から一式を作�
     )
   } finally {
     await page.request.delete(`/api/bundles/${id}`)
+  }
+})
+
+test('作るときに渡した問題の識別子を作った一式につなぎ, 単独の起動では一覧を絞らず, つなぐ欄も出さない', async ({
+  page,
+}) => {
+  // 殻で選んだ問題の代わりに, 画面と同じ要求で識別子を渡す (単独の起動は問題を選ばない)
+  const root = path.resolve(import.meta.dirname, '.work', 'items')
+  const original = path.join(import.meta.dirname, '.work', 'pathfinder', 'problems', 'p1')
+  const body = {
+    spec: path.join(root, 'mask_spec.yaml'),
+    dataset: path.join(root, 'masks'),
+    weights: path.join(root, 'runs', 'mask'),
+    copy_weights: true,
+  }
+  const ids: string[] = []
+  try {
+    // 置き場の問題 (p1) はつなぎ, 置き場に無い識別子はつながずに作る
+    for (const [name, problem] of [
+      ['問題をつないだ領域', 'p1'],
+      ['問題をつながない領域', 'missing'],
+    ]) {
+      const response = await page.request.post('/api/bundles/create', {
+        data: { ...body, name, problem },
+      })
+      expect(response.status(), await response.text()).toBe(201)
+      const made = (await response.json()) as { id: string; problem_note: string | null }
+      ids.push(made.id)
+      // つなげなかった識別子には理由が付く
+      if (problem === 'p1') expect(made.problem_note).toBeNull()
+      else expect(made.problem_note).toContain('ありません')
+    }
+    const rows = (await (await page.request.get('/api/bundles')).json()) as Array<{
+      id: string
+      problem?: string
+      problem_id: string | null
+    }>
+    const [linked, plain] = ids.map((id) => rows.find((row) => row.id === id))
+    expect(linked?.problem).toBe(fs.realpathSync(path.join(original, 'problem.yaml')))
+    expect(linked?.problem_id).toBe('p1')
+    expect(plain?.problem).toBeUndefined()
+    expect(plain?.problem_id).toBeNull()
+
+    // 単独の起動: 一覧は全ての一式を出し, 絞りの欄も作るときのつなぐ欄も出さない
+    await page.goto('/')
+    await expect(page.getByRole('link', { name: '問題をつないだ領域' })).toBeVisible()
+    await expect(page.getByRole('link', { name: '問題をつながない領域' })).toBeVisible()
+    await expect(page.getByRole('checkbox', { name: /全ての一式を出す/ })).toHaveCount(0)
+    await page.getByRole('button', { name: '学習の結果から作る' }).click()
+    const dialog = page.getByRole('dialog', { name: '学習の結果から一式を作る' })
+    await expect(dialog.getByLabel('名前', { exact: true })).toBeVisible()
+    await expect(dialog.getByRole('checkbox', { name: /をつなぐ/ })).toHaveCount(0)
+  } finally {
+    for (const id of ids) await page.request.delete(`/api/bundles/${id}`)
   }
 })
 

@@ -19,6 +19,7 @@ import type {
   PolicyResultRows,
   PriceRows,
   ProblemState,
+  ProjectProblem,
   ReadyCreateBody,
   ReadyPreview,
   Remeasure,
@@ -96,6 +97,9 @@ export function createApi(base: string) {
       request<Bundle>(`${base}/bundles`, json('POST', { path, name })),
     createBundle: (body: BundleCreateBody) =>
       request<Bundle>(`${base}/bundles/create`, json('POST', body)),
+    /** 殻で選んだ問題を, 学習の結果から作る一式につなげるか */
+    projectProblem: (project: string) =>
+      request<ProjectProblem>(`${base}/project-problem${projectQuery(project)}`),
     readyPreview: (library: string, model: string, weights: string) =>
       request<ReadyPreview>(
         `${base}/ready/preview?${new URLSearchParams({ library, model, weights }).toString()}`,

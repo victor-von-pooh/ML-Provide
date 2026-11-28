@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 
-import type { DatasetDescription } from '../../api/types'
+import type { BundleCreateBody, DatasetDescription } from '../../api/types'
+import { StageContext } from '../../lib/stage'
 import { CreateBundleDialog } from './CreateBundleDialog'
 
 // 雑音から始まる組み込みの手順 (登録簿の値)
@@ -24,18 +25,31 @@ const describeDataset = vi.fn(
     }),
 )
 
+// 作る要求 (送った中身を確かめる. 作り終えない)
+const createBundle = vi.fn((_body: BundleCreateBody) => new Promise<never>(() => {}))
+
+// 殻で選んだ問題をつなげるか (bad は推論に渡せない問題)
+const projectProblem = vi.fn((project: string) =>
+  Promise.resolve(
+    project === 'bad'
+      ? { usable: false, reason: '問題 bad は推論に渡せません' }
+      : { usable: true, reason: null },
+  ),
+)
+
 vi.mock('../../api/client', async () =>
   (await import('../../test/mockClient')).mockClient({
     api: {
       info: () => Promise.resolve({ procedures: [ddim], max_procedure_steps: 1000 }),
       describeDataset: (path: string) => describeDataset(path),
-      createBundle: vi.fn(),
+      createBundle: (body: BundleCreateBody) => createBundle(body),
+      projectProblem: (project: string) => projectProblem(project),
     },
   }),
 )
 
-/** 対話を描く */
-function renderDialog() {
+/** 対話を描く (project は殻で選んだ問題) */
+function renderDialog(project: string | null = null) {
   // jsdom は dialog の showModal を持たないので, 開いた印だけ付ける
   HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
     this.setAttribute('open', '')
@@ -43,7 +57,11 @@ function renderDialog() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
-      <CreateBundleDialog onClose={vi.fn()} onCreated={vi.fn()} />
+      <StageContext.Provider
+        value={{ project, onProjectChange: vi.fn(), embedded: project !== null }}
+      >
+        <CreateBundleDialog onClose={vi.fn()} onCreated={vi.fn()} />
+      </StageContext.Provider>
     </QueryClientProvider>,
   )
 }
@@ -55,6 +73,64 @@ describe('学習の結果から作る対話', () => {
   beforeEach(() => {
     pending.length = 0
     describeDataset.mockClear()
+    createBundle.mockClear()
+    window.localStorage.clear()
+  })
+
+  /** 列のデータセットの欄を埋めて「作る」を押せるまで待つ */
+  async function fillColumns() {
+    fireEvent.change(screen.getByLabelText('名前'), { target: { value: 'm' } })
+    fireEvent.change(screen.getByLabelText('モデルの定義 (YAML か JSON)'), {
+      target: { value: '/s.yaml' },
+    })
+    fireEvent.change(screen.getByLabelText('実験のディレクトリか重みのファイル'), {
+      target: { value: '/run' },
+    })
+    fireEvent.change(screen.getByLabelText('データセット (dataset.yaml を持つディレクトリ)'), {
+      target: { value: '/a' },
+    })
+    await waitFor(() => expect(describeDataset).toHaveBeenCalledWith('/a'))
+    pending.shift()?.(columns)
+    const submit = screen.getByRole('button', { name: '作る' })
+    await waitFor(() => expect(submit).toBeEnabled())
+    return submit
+  }
+
+  it('殻で選んだ問題を, 作る一式につなぐ既定にし, 外せる', async () => {
+    renderDialog('aaaa')
+    const link = screen.getByRole('checkbox', { name: /選んだ問題 aaaa をつなぐ/ })
+    expect(link).toBeChecked()
+    const submit = await fillColumns()
+    fireEvent.click(submit)
+    await waitFor(() => expect(createBundle).toHaveBeenCalledTimes(1))
+    expect(createBundle.mock.calls[0]?.[0]).toMatchObject({ name: 'm', problem: 'aaaa' })
+  })
+
+  it('問題のつなぎを外すと, 問題を渡さずに作る', async () => {
+    renderDialog('aaaa')
+    fireEvent.click(screen.getByRole('checkbox', { name: /選んだ問題 aaaa をつなぐ/ }))
+    fireEvent.click(await fillColumns())
+    await waitFor(() => expect(createBundle).toHaveBeenCalledTimes(1))
+    expect(createBundle.mock.calls[0]?.[0].problem).toBeNull()
+  })
+
+  it('推論に渡せない問題は, つなぐ欄を出さずに理由を添え, 問題を渡さない', async () => {
+    renderDialog('bad')
+    expect(
+      await screen.findByText(/選んだ問題 bad はつながずに作ります: 問題 bad は推論に渡せません/),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /をつなぐ/ })).toBeNull()
+    fireEvent.click(await fillColumns())
+    await waitFor(() => expect(createBundle).toHaveBeenCalledTimes(1))
+    expect(createBundle.mock.calls[0]?.[0].problem).toBeNull()
+  })
+
+  it('殻で問題を選んでいなければ, つなぐ欄を出さず問題を渡さない', async () => {
+    renderDialog()
+    expect(screen.queryByRole('checkbox', { name: /をつなぐ/ })).toBeNull()
+    fireEvent.click(await fillColumns())
+    await waitFor(() => expect(createBundle).toHaveBeenCalledTimes(1))
+    expect(createBundle.mock.calls[0]?.[0].problem).toBeNull()
   })
 
   it('データセットの説明を読む間と, 欄が読んだ場所と違う間は「作る」を押せない', async () => {

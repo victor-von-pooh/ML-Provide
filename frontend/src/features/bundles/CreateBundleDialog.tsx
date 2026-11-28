@@ -314,6 +314,25 @@ function CreateBundleForm({
       setOutputFields(EMPTY_OUTPUT)
     }
   }
+  // 殻で選んだ問題を, 作る一式につなぐ既定にする. 外したのはそのときの問題だけで,
+  // 殻で選び直すとまたつなぐ (一覧の絞りと同じ)
+  // 推論に渡せない問題と置き場に無い問題は, 欄を出さずに理由を添える
+  const { project } = useStage()
+  const [unlinked, setUnlinked] = useState(false)
+  const [unlinkedFor, setUnlinkedFor] = useState(project)
+  if (unlinkedFor !== project) {
+    // 殻で問題を替えたら外した状態を消す (A → B → A で外したままにしない)
+    setUnlinkedFor(project)
+    setUnlinked(false)
+  }
+  const projectProblem = useQuery({
+    queryKey: ['project-problem', project],
+    queryFn: () => api.projectProblem(project ?? ''),
+    enabled: project !== null,
+  })
+  const usable = projectProblem.data?.usable !== false
+  const linking = project !== null && usable && !unlinked
+  const problem = linking ? project : null
   const create = useMutation({
     // 送ったときの欄の印 (欄を変えたら前の誤りを出さないため)
     mutationFn: (_key: string) => {
@@ -337,6 +356,7 @@ function CreateBundleForm({
           output: output.trim() || null,
           copy_weights: copyWeights,
           items: Object.keys(items).length > 0 ? items : null,
+          problem,
         })
       }
       const targetScale = noData
@@ -359,6 +379,7 @@ function CreateBundleForm({
         form: form || null,
         output_options: builtOutput.options,
         procedure: builtProcedure.procedure,
+        problem,
       })
     },
     onSuccess: (bundle) => {
@@ -389,7 +410,6 @@ function CreateBundleForm({
     targetPoints,
     seed,
   }
-  const { project } = useStage()
   const discardDraft = useDraftWriter(
     DRAFT_KIND,
     JSON.stringify(drafted) !== JSON.stringify(EMPTY_DRAFT),
@@ -442,6 +462,7 @@ function CreateBundleForm({
     points,
     targetPoints,
     seed,
+    problem,
   ])
   const ready =
     name.trim() &&
@@ -737,6 +758,21 @@ function CreateBundleForm({
           />
           重みを一式に写す (外すと実験の重みを指す. 実験を消すと推論できなくなる)
         </label>
+        {project !== null && usable && (
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={linking}
+              onChange={(event) => setUnlinked(!event.target.checked)}
+            />
+            選んだ問題 {project} をつなぐ (問題を使わない一式は, つながずに作る)
+          </label>
+        )}
+        {project !== null && !usable && (
+          <p className="text-xs text-ink-2">
+            選んだ問題 {project} はつながずに作ります: {projectProblem.data?.reason}
+          </p>
+        )}
         {/* 誤りは打つたびに変わるので, alert でなく polite で読み上げる */}
         <div aria-live="polite" className="flex flex-col gap-1">
           {problems.map((problem) => (
