@@ -102,7 +102,7 @@ export interface Description {
   group?: GroupInfo | null
   /** 異常の度合いの一式 (版 11) の度合いの決め方, 列, 件数の上限, 正常の行の分布, 実験の評価 */
   anomaly?: AnomalyInfo | null
-  /** 効果の一式 (版 12) の効果の決め方, 列, 配る数の上限, 学習用の行の効果の分布, 実験の評価と Qini の曲線 */
+  /** 効果の一式 (版 12 と 18) の効果の決め方, 列, 配る数の上限, 学習用の行の効果の分布, 実験の評価と Qini の曲線 */
   uplift?: UpliftInfo | null
   /** 値段の一式 (版 13) の列, 値段の候補と変える幅の上限, 学習用の分割の要約, 実験の評価 */
   price?: PriceInfo | null

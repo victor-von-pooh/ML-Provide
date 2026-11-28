@@ -339,8 +339,8 @@ def test_treated_only_uplift(client: TestClient) -> None:
 @pytest.fixture(scope="module")
 def single_files(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """
-    処置の列を入力に入れる 1 つの予測 (s_learner) の効果の一式と, 効果を
-    見積もる新しい顧客の表を作る関数
+    処置の列を入力の終わりに足した 1 つの予測 (s_learner) の効果の一式と,
+    効果を見積もる新しい顧客の表を作る関数
 
     Parameters
     ----------

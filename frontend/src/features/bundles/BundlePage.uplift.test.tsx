@@ -103,7 +103,7 @@ const coupons = {
   },
 } as unknown as Bundle
 
-// 処置の列を入力に入れる 1 つの予測 (S-learner) の効果の一式 (版 18)
+// 処置の列を入力の終わりに足した 1 つの予測 (S-learner) の効果の一式 (版 18)
 const single = {
   ...coupons,
   id: 'u2',
