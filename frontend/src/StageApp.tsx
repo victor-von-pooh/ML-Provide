@@ -13,7 +13,7 @@ export interface StageAppProps {
   basename: string
   /** API の頭 (例 `/api/infer`). 単独では `/api` */
   apiBase: string
-  /** 殻で選んだ問題の設定の識別子. null は選んでいない (実験の一覧を絞らない) */
+  /** 殻で選んだ問題の識別子. null は選んでいない (実験の一覧を絞らない) */
   project: string | null
   /** 一式に置き場の別の問題の設定をつないだときに, その識別子で呼ぶ */
   onProjectChange: (project: string | null) => void

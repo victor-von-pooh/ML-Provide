@@ -360,7 +360,7 @@ def test_backtest_without_guard_of_broken_problem(
     ml_quest.save_problem(other, project)
     replay = client.post(replay_url)
     assert replay.status_code == 200, replay.text
-    assert any("置き換わっているので, 守る指標は数えていません" in s
+    assert any("上書きされているので, 守る指標は数えていません" in s
                for s in replay.json()["backtest"]["sentences"])
 
     # 読めない, 消えた場合も, 数えずに知らせる
@@ -539,7 +539,7 @@ def test_link_problems(client: TestClient, tmp_path: Path) -> None:
     replaced = dict(shop_problem(), created_at="2020-01-01T00:00:00+09:00")
     ml_quest.save_problem(replaced, path)
     state = client.get(url).json()
-    assert state["linked"] is None and "置き換わって" in state["error"]
+    assert state["linked"] is None and "上書きされて" in state["error"]
     assert state["path"] == str((path / "problem.yaml").resolve())
 
 
@@ -631,7 +631,7 @@ def test_version1_and_version2(client: TestClient, tmp_path: Path) -> None:
                       encoding="utf-8")
     refused = client.put(url, json={"path": str(future)})
     assert refused.status_code == 422
-    assert "問題の設定を読めません" in refused.json()["detail"]
+    assert "問題を読めません" in refused.json()["detail"]
 
 
 def generate_problem() -> dict[str, Any]:
@@ -740,7 +740,7 @@ def test_origin_hint(client: TestClient, tmp_path: Path) -> None:
     url = f"/api/bundles/{bundle['id']}/problem"
     state = client.get(url).json()
     assert state["hint"] == str((original / "problem.yaml").resolve())
-    assert "元の問題の設定です" in state["hint_note"]
+    assert "元の問題です" in state["hint_note"]
 
     # つないだ元を直すと, 次に読むときから使う
     client.put(url, json={"path": state["hint"]})

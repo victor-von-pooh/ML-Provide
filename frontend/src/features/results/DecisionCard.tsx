@@ -71,7 +71,7 @@ export function DecisionCard({ result, bundleAlive }: { result: Result; bundleAl
         </>
       ) : (
         <p className="mb-4 text-sm text-ink-3">
-          予測から「だから何をするか」を決めます. 損得と制約 (課題の値) を書くと, 行ごとの行動と,
+          予測から「だから何をするか」を決めます. 損得と制約 (問題の値) を書くと, 行ごとの行動と,
           その前提での見込みの得と損を出します.
         </p>
       )}

@@ -7,7 +7,7 @@ export const SCORE_LABELS: Record<string, string> = {
   distance: '学習用の正常の行の中心からの距離',
 }
 
-/** 人の確認の判断の日本語の名前 */
+/** 人の確かめの判断の日本語の名前 */
 export const JUDGMENT_LABELS: Record<string, string> = {
   anomaly: '異常',
   normal: '正常',
@@ -20,16 +20,16 @@ export const EVALUATION_SPLITS: Record<string, string> = {
   unlabeled: '正解の欠けた',
 }
 
-/** 人の確認に回す件数の上限の上限 (API の MAX_CAPACITY と同じ. 待ち行列を 1 度に返すため) */
+/** 人の確かめに回す件数の上限の上限 (API の MAX_CAPACITY と同じ. 待ち行列を 1 度に返すため) */
 export const MAX_CAPACITY = 1000
 
 /** 異常の度合いの一式で使えないものの文 */
 export const ANOMALY_UNSUPPORTED =
-  '度合いは確率ではないので, 損得から回すしきい値は決めず, 度合いの高い順に, 人が確かめる件数の上限まで人の確認に回します. 判断の決め方を変えての出し直し, 過去のデータで得と損を確かめること, 予測の外れ方の測り直し, どの列が度合いを動かしたかの確かめは使えません'
+  '度合いは確率ではないので, 損得から回すしきい値は決めず, 度合いの高い順に, 人が確かめる件数の上限まで人の確かめに回します. 判断の決め方を変えての出し直し, 過去のデータで得と損を確かめること, 予測の外れ方の測り直し, どの列が度合いを動かしたかの確かめは使えません'
 
-/** 問題の設定の欄が無い理由 */
+/** 問題の欄が無い理由 */
 export const ANOMALY_NO_PROBLEM =
-  '件数の上限の既定と度合いの決め方は一式が実験から写して持つので, 問題の設定はつなぎません'
+  '件数の上限の既定と度合いの決め方は一式が実験から写して持つので, 問題はつなぎません'
 
 /** 確かめた人の名前を覚えるブラウザの鍵 */
 const REVIEWER_KEY = 'ml-provide:reviewer'
@@ -38,7 +38,7 @@ const REVIEWER_KEY = 'ml-provide:reviewer'
 export function capacityProblem(text: string): string | null {
   const value = text.trim()
   if (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > MAX_CAPACITY)
-    return `人の確認に回す件数の上限は 1 から ${MAX_CAPACITY} の整数で書いてください`
+    return `人の確かめに回す件数の上限は 1 から ${MAX_CAPACITY} の整数で書いてください`
   return null
 }
 

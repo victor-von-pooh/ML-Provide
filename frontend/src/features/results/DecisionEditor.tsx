@@ -141,13 +141,13 @@ export function DecisionEditor({
               {item.key === 'current' && form.type === 'quantity' && form.baseline && (
                 <p id={`${idBase}-baseline`} className="mt-1 max-w-56 text-xs text-ink-3">
                   {activeBaseline(form)
-                    ? `空なので, 問題の設定の今のやり方 (${baselineText(form.baseline)}) で比べます. `
-                    : `列を書いたので, 問題の設定の今のやり方 (${baselineText(form.baseline)}) は使いません. `}
+                    ? `空なので, 問題の今のやり方 (${baselineText(form.baseline)}) で比べます. `
+                    : `列を書いたので, 問題の今のやり方 (${baselineText(form.baseline)}) は使いません. `}
                   {activeBaseline(form) && (
                     <button
                       type="button"
                       className="underline"
-                      aria-label="問題の設定の今のやり方を使わない"
+                      aria-label="問題の今のやり方を使わない"
                       onClick={() => onChange({ ...form, baseline: null })}
                     >
                       使わない

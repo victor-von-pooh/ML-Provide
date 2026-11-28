@@ -30,7 +30,7 @@ function Heading({ children, right = false }: { children: React.ReactNode; right
 
 /** 判断の印 (異常は注意の色) */
 function JudgmentText({ judgment }: { judgment: string | null | undefined }) {
-  if (!judgment) return <span className="text-ink-3">未確認</span>
+  if (!judgment) return <span className="text-ink-3">確かめていない</span>
   return (
     <span className={judgment === 'anomaly' ? 'text-critical-text' : 'text-good-text'}>
       {JUDGMENT_LABELS[judgment] ?? judgment}
@@ -150,7 +150,7 @@ function DistributionCard({ summary }: { summary: AnomalySummary }) {
       </p>
       <p className="mt-1 text-xs text-ink-3">
         度合いは大きいほど異常で, 確率ではありません.
-        学習用の正常の行の分布から外れた度合いは異常の目安で, 異常かは人の確認で決めます
+        学習用の正常の行の分布から外れた度合いは異常の目安で, 異常かは人の確かめで決めます
       </p>
     </Card>
   )
@@ -199,7 +199,7 @@ function TopRowsCard({ summary }: { summary: AnomalySummary }) {
 }
 
 /**
- * 人の確認. 振り分けの文, 確かめた人の名前の欄, 人の確認に回した行の待ち行列と,
+ * 人の確かめ. 振り分けの文, 確かめた人の名前の欄, 人の確かめに回した行の待ち行列と,
  * 1 件ずつ「異常」か「正常」を付けるボタン
  */
 function ReviewCard({ result }: { result: Result }) {
@@ -221,7 +221,7 @@ function ReviewCard({ result }: { result: Result }) {
   const rows = queue.data?.rows ?? []
   const done = rows.filter((row) => row.judgment).length
   return (
-    <Card title="人の確認">
+    <Card title="人の確かめ">
       <div className="flex flex-col gap-3">
         {result.decision ? (
           <div>
@@ -238,7 +238,7 @@ function ReviewCard({ result }: { result: Result }) {
           </div>
         ) : (
           <p className="text-sm text-ink-2">
-            振り分けずに推論した結果なので, 人の確認に回した行はありません
+            振り分けずに推論した結果なので, 人の確かめに回した行はありません
           </p>
         )}
         <p className="text-xs text-ink-2">{ANOMALY_UNSUPPORTED}</p>
@@ -246,7 +246,7 @@ function ReviewCard({ result }: { result: Result }) {
         {triage && queue.data?.problem && (
           <p
             role="note"
-            aria-label="人の確認を使えない理由"
+            aria-label="人の確かめを使えない理由"
             className="rounded-lg border border-warning-text/40 bg-surface p-2 text-sm text-warning-text"
           >
             {queue.data.problem}
@@ -275,7 +275,7 @@ function ReviewCard({ result }: { result: Result }) {
             {queue.error && <ErrorBox error={queue.error} live={false} />}
             {review.error && <ErrorBox error={review.error} />}
             {queue.isPending ? (
-              <Spinner label="人の確認に回した行を読んでいます" />
+              <Spinner label="人の確かめに回した行を読んでいます" />
             ) : rows.length > 0 ? (
               <>
                 <p role="status" className="text-xs text-ink-3">
@@ -285,7 +285,7 @@ function ReviewCard({ result }: { result: Result }) {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <caption className="sr-only">
-                      人の確認に回した行 (度合いの高い順. 順位, 行の id, 度合い, 最も外れた列,
+                      人の確かめに回した行 (度合いの高い順. 順位, 行の id, 度合い, 最も外れた列,
                       今の判断)
                     </caption>
                     <thead className="text-xs text-ink-3">
@@ -366,7 +366,7 @@ function ReviewCard({ result }: { result: Result }) {
                 </div>
               </>
             ) : (
-              !queue.error && <p className="text-sm text-ink-2">人の確認に回した行はありません</p>
+              !queue.error && <p className="text-sm text-ink-2">人の確かめに回した行はありません</p>
             )}
           </>
         )}
@@ -375,7 +375,7 @@ function ReviewCard({ result }: { result: Result }) {
   )
 }
 
-/** 確認の記録 (書いた順) */
+/** 確かめの記録 (書いた順) */
 function ReviewRecordsCard({ result }: { result: Result }) {
   const api = useApi()
   const reviews = useQuery({
@@ -385,15 +385,15 @@ function ReviewRecordsCard({ result }: { result: Result }) {
   const records = reviews.data?.records ?? []
   const column = (result.summary as AnomalySummary | null)?.id ?? '行の id'
   return (
-    <Card title={`確認の記録 (${records.length} 件)`} padded={false}>
+    <Card title={`確かめの記録 (${records.length} 件)`} padded={false}>
       {reviews.error && <ErrorBox error={reviews.error} live={false} />}
       {reviews.isPending ? (
-        <Spinner label="確認の記録を読んでいます" />
+        <Spinner label="確かめの記録を読んでいます" />
       ) : records.length > 0 ? (
         <div className="max-h-[24rem] overflow-auto">
           <table className="w-full text-sm">
             <caption className="sr-only">
-              確認の記録 (書いた順. 行の id, 判断, 確かめた人, 時刻)
+              確かめの記録 (書いた順. 行の id, 判断, 確かめた人, 時刻)
             </caption>
             <thead className="sticky top-0 bg-surface text-xs text-ink-3">
               <tr className="border-b border-line">
@@ -431,7 +431,7 @@ function ReviewRecordsCard({ result }: { result: Result }) {
   )
 }
 
-/** 異常の度合いの結果の, 度合いの分布, 実験の評価, 上位の行, 人の確認と記録 */
+/** 異常の度合いの結果の, 度合いの分布, 実験の評価, 上位の行, 人の確かめと記録 */
 export function AnomalyCards({ result, summary }: { result: Result; summary: AnomalySummary }) {
   return (
     <>

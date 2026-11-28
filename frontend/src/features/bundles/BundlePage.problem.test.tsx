@@ -112,6 +112,6 @@ describe('一式の画面の問題の設定の読み込み', () => {
     pending[0]?.()
     expect(await screen.findByRole('heading', { name: 'n1' })).toBeInTheDocument()
     expect(bundleProblem).not.toHaveBeenCalled()
-    expect(screen.queryByText('問題の設定を読んでいます…')).toBeNull()
+    expect(screen.queryByText('問題を読んでいます…')).toBeNull()
   })
 })

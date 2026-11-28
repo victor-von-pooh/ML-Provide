@@ -133,7 +133,7 @@ def test_search_predict_and_photos(
     refused = client.put(f"/api/bundles/{bundle_id}/problem",
                          json={"path": str(tmp_path / "problem.yaml")})
     assert refused.status_code == 400
-    assert "問題の設定を使わない" in refused.json()["detail"]
+    assert "問題を使わない" in refused.json()["detail"]
 
     # 赤い問いの写真で, 件数を変えて推論
     queries = tmp_path / "queries"

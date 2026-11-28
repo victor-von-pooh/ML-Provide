@@ -83,7 +83,7 @@ vi.mock('../../api/client', async () =>
   }),
 )
 
-// 作り方が既製のモデルをそのままの問題の設定をつないだ状態 (重みのハッシュ値が一式と違う)
+// 作り方が既製のモデルをそのままの問題をつないだ状態 (重みのハッシュ値が一式と違う)
 const linkedState: ProblemState = {
   path: '/project/problem.yaml',
   problem_id: null,
@@ -99,9 +99,9 @@ const linkedState: ProblemState = {
     conclusion: { min_confidence: 0.8 },
     horizon: null,
     basis: null,
-    text: '既製のモデルの一式は意思決定を使えないので, 問題の設定の意思決定は使いません. 結論の決め方は問題の設定の値を既定にします',
+    text: '既製のモデルの一式は意思決定を使えないので, 問題の意思決定は使いません. 結論の決め方は問題の値を既定にします',
     issues: [
-      '既製のモデル: 問題の設定の重みのハッシュ値 8ec1484cdbb8… と, 一式が読んだ重みのハッシュ値 abababababab… が違います',
+      '既製のモデル: 問題の重みのハッシュ値 8ec1484cdbb8… と, 一式が読んだ重みのハッシュ値 abababababab… が違います',
     ],
   },
   error: null,
@@ -147,14 +147,14 @@ describe('既製のモデルの一式の画面', () => {
     expect(screen.getByRole('region', { name: '結論の決め方' })).toBeInTheDocument()
     expect(screen.queryByText('読み込み')).not.toBeInTheDocument()
     // 問題の設定の欄は, 既製のモデルの問題の設定をつなげると書く
-    expect(screen.getByText(/作り方が既製のモデルをそのままの問題の設定/)).toBeInTheDocument()
+    expect(screen.getByText(/作り方が既製のモデルをそのままの問題/)).toBeInTheDocument()
   })
 
   it('つないだ問題の設定の結論の決め方が既定になり, 重みの食い違いを出す', async () => {
     bundleProblem.mockResolvedValue(linkedState)
     show()
     expect(await screen.findByLabelText(/確信の下限/)).toHaveValue(0.8)
-    expect(screen.getByText(/問題の設定の意思決定は使いません/)).toBeInTheDocument()
+    expect(screen.getByText(/問題の意思決定は使いません/)).toBeInTheDocument()
     expect(screen.getByText(/推論の結論の決め方は/)).toBeInTheDocument()
     expect(screen.getByRole('list', { name: '一式との食い違い' })).toHaveTextContent(
       '重みのハッシュ値 8ec1484cdbb8',

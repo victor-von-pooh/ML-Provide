@@ -100,7 +100,7 @@ describe('並べるの一式の画面', () => {
   it('番号の表と件数の既定と反応の表の列を出し, 結論の決め方と意思決定の欄を出さない', async () => {
     show()
     expect(await screen.findByText(/利用者 4 人と品物 6 件/)).toBeInTheDocument()
-    expect(screen.getByText('3 件 (問題の設定の件数)')).toBeInTheDocument()
+    expect(screen.getByText('3 件 (問題の件数)')).toBeInTheDocument()
     expect(screen.getByText('利用者 member, 品物 item_id, 反応の強さ qty')).toBeInTheDocument()
     expect(screen.getByText(/qty が 0 より大きい行を反応とします/)).toBeInTheDocument()
     expect(screen.queryByText('モデルの入力')).not.toBeInTheDocument()
@@ -108,7 +108,7 @@ describe('並べるの一式の画面', () => {
     // 件数の既定は一式の rank.k
     expect(screen.getByLabelText(/^並べる件数 K/)).toHaveValue(3)
     expect(screen.getByText(/数や種類を予測する一式で使うため, ここでは使えません/)).toBeVisible()
-    expect(screen.getByText(/問題の設定の欄はありません/)).toBeVisible()
+    expect(screen.getByText(/問題の欄はありません/)).toBeVisible()
     expect(screen.queryByRole('region', { name: '意思決定' })).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: '結論の決め方' })).not.toBeInTheDocument()
     // 問題の設定は読まない

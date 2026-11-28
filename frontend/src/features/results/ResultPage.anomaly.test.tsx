@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import type { Result, ReviewQueue, ReviewQueueRow, ReviewRecord, Rows } from '../../api/types'
 import { ResultPage } from './ResultPage'
 
-// 4 行のうち 3 行の度合いを出し, 上位 2 行を人の確認に回した結果
+// 4 行のうち 3 行の度合いを出し, 上位 2 行を人の確かめに回した結果
 const normal = { rows: 36, mean: 0.9, p50: 0.82, p90: 1.8, p95: 2.1, p99: 3.39, max: 3.8 }
 const result = {
   id: 'r1',
@@ -152,7 +152,7 @@ describe('異常の度合いの結果の画面', () => {
     expect(within(top).getAllByRole('row')[1]).toHaveTextContent('r013')
     expect(within(top).getAllByRole('row')[1]).toHaveTextContent('90.0%')
     expect(screen.getByText(/度合いの高い順に 2 件を人の確認に回す/)).toBeInTheDocument()
-    expect(screen.getByText('人の確認に回す')).toBeInTheDocument()
+    expect(screen.getByText('人の確かめに回す')).toBeInTheDocument()
     expect(screen.getByText('度合いを出した')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '結論の決め方を変える' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /意思決定/ })).not.toBeInTheDocument()
@@ -160,9 +160,9 @@ describe('異常の度合いの結果の画面', () => {
 
   it('名前を書いてから 1 件ずつ判断を付け, 待ち行列と記録を読み直す', async () => {
     renderPage()
-    const queue = await screen.findByRole('table', { name: /^人の確認に回した行/ })
+    const queue = await screen.findByRole('table', { name: /^人の確かめに回した行/ })
     expect(within(queue).getAllByRole('row')).toHaveLength(3)
-    expect(within(queue).getAllByText('未確認')).toHaveLength(2)
+    expect(within(queue).getAllByText('確かめていない')).toHaveLength(2)
     expect(await screen.findByText('まだ記録はありません')).toBeInTheDocument()
 
     // 名前が空の間は押せない
@@ -176,10 +176,10 @@ describe('異常の度合いの結果の画面', () => {
     // 今の判断と記録 (名前はブラウザに覚える)
     await waitFor(() =>
       expect(
-        within(screen.getByRole('table', { name: /^人の確認に回した行/ })).getAllByRole('row')[1],
+        within(screen.getByRole('table', { name: /^人の確かめに回した行/ })).getAllByRole('row')[1],
       ).toHaveTextContent('異常佐藤'),
     )
-    const log = await screen.findByRole('table', { name: /^確認の記録/ })
+    const log = await screen.findByRole('table', { name: /^確かめの記録/ })
     expect(within(log).getAllByRole('row')).toHaveLength(2)
     expect(within(log).getAllByRole('row')[1]).toHaveTextContent('佐藤')
     expect(window.localStorage.getItem('ml-provide:reviewer')).toBe('佐藤')
@@ -189,7 +189,7 @@ describe('異常の度合いの結果の画面', () => {
     await waitFor(() => expect(addReview).toHaveBeenCalledTimes(2))
     await waitFor(() =>
       expect(
-        within(screen.getByRole('table', { name: /^確認の記録/ })).getAllByRole('row'),
+        within(screen.getByRole('table', { name: /^確かめの記録/ })).getAllByRole('row'),
       ).toHaveLength(3),
     )
     expect(screen.getByText(/2 件のうち 1 件を確かめました/)).toBeInTheDocument()
@@ -203,11 +203,11 @@ describe('異常の度合いの結果の画面', () => {
       rows: [],
     }
     renderPage()
-    expect(await screen.findByRole('note', { name: '人の確認を使えない理由' })).toHaveTextContent(
+    expect(await screen.findByRole('note', { name: '人の確かめを使えない理由' })).toHaveTextContent(
       'r013',
     )
     expect(screen.queryByLabelText(/^確かめた人の名前/)).not.toBeInTheDocument()
-    expect(screen.queryByRole('table', { name: /^人の確認に回した行/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('table', { name: /^人の確かめに回した行/ })).not.toBeInTheDocument()
   })
 
   it('行の id の欠けた行は判断を付けられない', async () => {
@@ -218,7 +218,7 @@ describe('異常の度合いの結果の画面', () => {
     fireEvent.change(await screen.findByLabelText(/^確かめた人の名前/), {
       target: { value: '佐藤' },
     })
-    const queue = await screen.findByRole('table', { name: /^人の確認に回した行/ })
+    const queue = await screen.findByRole('table', { name: /^人の確かめに回した行/ })
     const lines = within(queue).getAllByRole('row')
     const blank = lines[1]!
     const other = lines[2]!

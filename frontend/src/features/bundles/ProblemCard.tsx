@@ -9,8 +9,8 @@ import { Button, Card, ErrorBox } from '../../components/ui'
 import { useStage } from '../../lib/stage'
 
 /**
- * 一式につないだ問題の設定 (損得, 根拠, 一式との食い違い) を出し, つなぐか外す.
- * つないだ一式は, 推論の意思決定と結論の決め方の既定が問題の設定の値になる
+ * 一式につないだ問題 (損得, 根拠, 一式との食い違い) を出し, つなぐか外す.
+ * つないだ一式は, 推論の意思決定と結論の決め方の既定が問題の値になる
  * (既製のモデルの一式は結論の決め方だけ. 意思決定を使えないため)
  */
 export function ProblemCard({
@@ -38,8 +38,8 @@ export function ProblemCard({
       if (next.problem_id !== null)
         client.setQueryData(['bundle-problem', bundleId, next.problem_id], next)
       client.invalidateQueries({ queryKey: ['bundles'] })
-      // 置き場の別の問題の設定をつないだら, 殻の選びをそれにする (同じ識別子と,
-      // 置き場の外の問題の設定では知らせない)
+      // 置き場の別の問題をつないだら, 殻の選びをそれにする (同じ識別子と,
+      // 置き場の外の問題では知らせない)
       if (next.problem_id !== null && next.problem_id !== project) {
         onProjectChange(next.problem_id)
       }
@@ -52,7 +52,7 @@ export function ProblemCard({
       title={
         <span className="flex items-center gap-1.5">
           <ClipboardList className="size-4 text-accent" aria-hidden />
-          問題の設定{linked ? `: ${linked.name}` : ''}
+          問題{linked ? `: ${linked.name}` : ''}
         </span>
       }
     >
@@ -60,9 +60,8 @@ export function ProblemCard({
         <div className="space-y-2 text-sm">
           {linked.handled ? (
             <p className="text-xs text-ink-3">
-              推論の{readyModel ? '' : '意思決定と'}結論の決め方は,
-              この問題の設定の今の値が既定です. 問題の設定を ML-Pathfinder で直すと,
-              次にこの画面を開いたときから使います.
+              推論の{readyModel ? '' : '意思決定と'}結論の決め方は, この問題の今の値が既定です.
+              問題を問題の設定の段階で直すと, 次にこの画面を開いたときから使います.
             </p>
           ) : (
             <p className="text-xs text-ink-2">受け持ち: {linked.role}</p>
@@ -93,7 +92,7 @@ export function ProblemCard({
         <div className="space-y-2">
           <ErrorBox
             live={false}
-            error={`${state.error ?? '問題の設定を読めません'}. 推論の既定は一式の既定値に戻しています`}
+            error={`${state.error ?? '問題を読めません'}. 推論の既定は一式の既定値に戻しています`}
           />
           <p className="truncate font-mono text-xs text-ink-3" title={state.path}>
             {state.path}
@@ -109,15 +108,15 @@ export function ProblemCard({
         >
           <p className="text-xs text-ink-3">
             {readyModel
-              ? '問題の設定 (作り方が既製のモデルをそのままの問題の設定) をつなぐと, 結論の決め方を問題の設定の今の値で既定にし, 決めておいた出どころ, モデル, 重み, 重みのハッシュ値と一式との食い違いを出します (意思決定は使えません).'
-              : '問題の設定 (ML-Pathfinder の problem.yaml) をつなぐと, 損得と結論の決め方を問題の設定の今の値で既定にし, 損得の根拠と一式との食い違いを出します.'}
+              ? '問題 (作り方が既製のモデルをそのままの問題) をつなぐと, 結論の決め方を問題の今の値で既定にし, 決めておいた出どころ, モデル, 重み, 重みのハッシュ値と一式との食い違いを出します (意思決定は使えません).'
+              : '問題 (問題の設定の段階の problem.yaml) をつなぐと, 損得と結論の決め方を問題の今の値で既定にし, 損得の根拠と一式との食い違いを出します.'}
           </p>
           {hint && (
             <div className="rounded-lg border border-line p-3 text-xs">
               <p className="text-ink-2">
                 {state.hint_project
-                  ? '一式の上のディレクトリに問題の設定が無いので, 選んだプロジェクトの問題の設定を候補にしました.'
-                  : '一式の上のディレクトリに問題の設定がありました.'}
+                  ? '一式の上のディレクトリに問題が無いので, 選んだ問題を候補にしました.'
+                  : '一式の上のディレクトリに問題がありました.'}
               </p>
               {state.hint_note && <p className="mt-1 text-ink-2">{state.hint_note}</p>}
               <p id="problem-hint" className="mt-1 truncate font-mono text-ink-3" title={hint}>
@@ -136,7 +135,7 @@ export function ProblemCard({
           )}
           <PathField
             id="problem-path"
-            label="問題の設定 (problem.yaml か, それを持つディレクトリ)"
+            label="問題 (problem.yaml か, それを持つディレクトリ)"
             value={path}
             onChange={setPath}
             pickDirs

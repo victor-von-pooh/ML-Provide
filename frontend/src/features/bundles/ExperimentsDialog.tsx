@@ -9,7 +9,7 @@ import { Dialog } from '../../components/Dialog'
 import { Button, ErrorBox, Spinner } from '../../components/ui'
 import { useStage } from '../../lib/stage'
 
-/** 一覧から登録する一式の名前 (問題の設定の名前と実験の場所) */
+/** 一覧から登録する一式の名前 (問題の名前と実験の場所) */
 function experimentName(row: { problem: string; experiment: string }): string {
   return `${row.problem} (${row.experiment})`
 }
@@ -57,7 +57,7 @@ const KINDS = {
 } as const
 
 /**
- * 問題の設定 (ML-Pathfinder) に記録したプロジェクトの, 推論の一式か方策の一式を持つ実験の一覧.
+ * 問題に記録した学習のプロジェクトの, 推論の一式か方策の一式を持つ実験の一覧.
  * 場所を打たずに, 学習した実験の一式を登録する
  */
 export function ExperimentsDialog({
@@ -70,15 +70,15 @@ export function ExperimentsDialog({
   /** 並べる一式の種類 (推論の一式か方策の一式) */
   kind?: keyof typeof KINDS
   onClose: () => void
-  /** 一式の場所と, 登録する名前 (問題の設定の名前と実験の場所) */
+  /** 一式の場所と, 登録する名前 (問題の名前と実験の場所) */
   onRegister: (path: string, name: string) => void
   pending: boolean
   /** 登録できなかった理由 */
   error: Error | null
 }) {
   const api = useApi()
-  // 殻で問題の設定を選んでいれば, その問題の設定が記録したプロジェクトの実験に絞る
-  // (上限で打ち切る前に絞るように API に渡す). 外したのはそのときの問題の設定だけで,
+  // 殻で問題を選んでいれば, その問題が記録した学習のプロジェクトの実験に絞る
+  // (上限で打ち切る前に絞るように API に渡す). 外したのはそのときの問題だけで,
   // 殻で選び直すとまた絞る
   const { project } = useStage()
   const [allFor, setAllFor] = useState<string | null>(null)
@@ -95,7 +95,7 @@ export function ExperimentsDialog({
   return (
     <Dialog title="実験の一覧から登録" onClose={onClose}>
       <p className="mb-3 text-xs text-ink-3">
-        ML-Pathfinder で骨組みを書き出した問題の設定のプロジェクトから, {config.intro}
+        問題の設定の段階で学習のプロジェクトを書き出した問題から, {config.intro}
         を新しい順に並べます. 一式は写さずに, 場所だけを覚えます.
       </p>
       {project !== null && (
@@ -105,7 +105,7 @@ export function ExperimentsDialog({
             checked={!filtering}
             onChange={(event) => setAllFor(event.target.checked ? project : null)}
           />
-          全ての問題の設定の実験を出す (出さなければ, 選んだプロジェクト {project}
+          全ての問題の実験を出す (出さなければ, 選んだ問題 {project}
           の実験だけ)
         </label>
       )}
@@ -119,15 +119,15 @@ export function ExperimentsDialog({
       {listing.error && <ErrorBox error={listing.error} />}
       {data && data.experiments.length === 0 && filtering && (
         <p role="status" className="text-sm text-ink-2">
-          選んだプロジェクトの問題の設定が記録したプロジェクトに, 一式を持つ実験がありません.
-          全ての問題の設定の実験を出すか, 「場所で登録」を使います.
+          選んだ問題が記録した学習のプロジェクトに, 一式を持つ実験がありません.
+          全ての問題の実験を出すか, 「場所で登録」を使います.
         </p>
       )}
       {data && data.experiments.length === 0 && !filtering && (
         <p role="status" className="text-sm text-ink-2">
-          一式を持つ実験がありません ({data.projects} 個のプロジェクトを見ました). ML-Pathfinder
-          で骨組みを書き出して学習するか, 「場所で登録」を使います. 問題の設定の置き場:{' '}
-          <span className="font-mono text-xs">{data.problems}</span>
+          一式を持つ実験がありません ({data.projects} 個の学習のプロジェクトを見ました).
+          問題の設定の段階で学習のプロジェクトを書き出して学習するか, 「場所で登録」を使います.
+          問題の設定の段階の置き場: <span className="font-mono text-xs">{data.problems}</span>
         </p>
       )}
       {data && data.experiments.length > 0 && (
@@ -136,7 +136,7 @@ export function ExperimentsDialog({
           <thead className="text-xs text-ink-3">
             <tr className="border-b border-line">
               <th scope="col" className="px-2 py-1 text-left font-normal">
-                問題の設定と実験
+                問題と実験
               </th>
               <th scope="col" className="px-2 py-1 text-left font-normal">
                 一式を作った時刻

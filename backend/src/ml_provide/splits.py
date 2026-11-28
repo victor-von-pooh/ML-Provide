@@ -266,7 +266,7 @@ def search_test_split(entry: dict[str, Any]) -> dict[str, Any]:
     root = (place if place.is_absolute() else project / place).resolve()
     if not root.is_relative_to(project):
         found["reason"] = (
-            "学習のデータセットがプロジェクトの外を指すので選べません"
+            "学習のデータセットが学習のプロジェクトの外を指すので選べません"
         )
         return found
     info = read_yaml(root / "dataset.yaml")
