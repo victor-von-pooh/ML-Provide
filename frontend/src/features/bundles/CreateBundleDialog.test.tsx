@@ -30,11 +30,13 @@ const createBundle = vi.fn((_body: BundleCreateBody) => new Promise<never>(() =>
 
 // 殻で選んだ問題をつなげるか (bad は推論に渡せない問題)
 const projectProblem = vi.fn((project: string) =>
-  Promise.resolve(
-    project === 'bad'
-      ? { usable: false, reason: '問題 bad は推論に渡せません' }
-      : { usable: true, reason: null },
-  ),
+  project === 'slow'
+    ? new Promise<never>(() => {})
+    : Promise.resolve(
+        project === 'bad'
+          ? { usable: false, reason: '問題 bad は推論に渡せません' }
+          : { usable: true, reason: null },
+      ),
 )
 
 vi.mock('../../api/client', async () =>
@@ -98,7 +100,7 @@ describe('学習の結果から作る対話', () => {
 
   it('殻で選んだ問題を, 作る一式につなぐ既定にし, 外せる', async () => {
     renderDialog('aaaa')
-    const link = screen.getByRole('checkbox', { name: /選んだ問題 aaaa をつなぐ/ })
+    const link = await screen.findByRole('checkbox', { name: /選んだ問題 aaaa をつなぐ/ })
     expect(link).toBeChecked()
     const submit = await fillColumns()
     fireEvent.click(submit)
@@ -108,7 +110,17 @@ describe('学習の結果から作る対話', () => {
 
   it('問題のつなぎを外すと, 問題を渡さずに作る', async () => {
     renderDialog('aaaa')
-    fireEvent.click(screen.getByRole('checkbox', { name: /選んだ問題 aaaa をつなぐ/ }))
+    fireEvent.click(await screen.findByRole('checkbox', { name: /選んだ問題 aaaa をつなぐ/ }))
+    fireEvent.click(await fillColumns())
+    await waitFor(() => expect(createBundle).toHaveBeenCalledTimes(1))
+    expect(createBundle.mock.calls[0]?.[0].problem).toBeNull()
+  })
+
+  it('つなげるかを読み終えるまでは, つなぐ欄も理由も出さず, 問題を渡さない', async () => {
+    renderDialog('slow')
+    await waitFor(() => expect(projectProblem).toHaveBeenCalledWith('slow'))
+    expect(screen.queryByRole('checkbox', { name: /をつなぐ/ })).toBeNull()
+    expect(screen.queryByText(/つながずに作ります/)).toBeNull()
     fireEvent.click(await fillColumns())
     await waitFor(() => expect(createBundle).toHaveBeenCalledTimes(1))
     expect(createBundle.mock.calls[0]?.[0].problem).toBeNull()

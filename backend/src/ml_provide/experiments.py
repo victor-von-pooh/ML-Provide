@@ -90,9 +90,9 @@ def origin_ids(
     entry: dict[str, Any], projects: list[dict[str, Any]]
 ) -> list[str]:
     """
-    一式の出どころ (登録の場所か写した元) が, 問題の設定に記録した
-    プロジェクトの出力先の下なら, そのプロジェクトを記録した問題の設定の
-    識別子を返す関数
+    一式の出どころ (登録の場所, 写した元, 作った重みの実験) が, 問題の
+    設定に記録したプロジェクトの出力先の下なら, そのプロジェクトを記録
+    した問題の設定の識別子を返す関数
 
     実験の一覧の絞りと同じ規則 (行の problem_ids) で, 一式の一覧を殻で
     選んだ問題で絞るため
@@ -112,7 +112,7 @@ def origin_ids(
     # 実際のパスどうしの比べ (読めない場所は飛ばす)
     ids: list[str] = []
     places: list[Path] = []
-    for key in ("path", "copied_from"):
+    for key in ("path", "copied_from", "made_from"):
         text = entry.get(key)
         if not isinstance(text, str):
             continue

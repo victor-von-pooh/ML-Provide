@@ -490,7 +490,7 @@ def list_bundles(request: Request) -> list[dict[str, Any]]:
     bundles: list[dict[str, Any]]
         登録と説明 (新しい順). problem_id はつないだ問題が置き場の
         <識別子>/problem.yaml なら識別子, problem_ids は出どころ (登録の
-        場所か写した元) を出力先に持つプロジェクトを記録した問題の設定の
+        場所, 写した元, 作った重みの実験) を出力先に持つプロジェクトを記録した問題の設定の
         識別子 (殻で選んだ問題で絞るため)
     """
     # experiments はこの api を読むので, 関数の中で読む
@@ -620,7 +620,12 @@ def create_bundle(request: Request, body: BundleCreate) -> dict[str, Any]:
         if not dataset and shaped:
             exception.detail = f"{exception.detail} ({NOISE_SHAPE_HINT})"
         raise exception from error
-    entry = store.add(place, body.name, managed=True, bundle_id=bundle_id)
+    # 重みの出どころ (学習の実験) を残す (殻で選んだ問題の一覧の絞りで,
+    # その問題の実験から作った一式を出どころで合わせるため)
+    entry = store.add(
+        place, body.name, managed=True, bundle_id=bundle_id,
+        extra={"made_from": str(Path(body.weights).expanduser().resolve())}
+    )
     # 殻で選んだ問題のつなぎ (つなげなければつながずに作る. problems は
     # この api を読むので, 関数の中で読む)
     note: Optional[str] = None
@@ -631,6 +636,16 @@ def create_bundle(request: Request, body: BundleCreate) -> dict[str, Any]:
         )
     view = bundle_view(entry)
     if body.problem:
+        # つながず, 出どころもその問題の実験でなければ, 絞った一覧に出ない
+        from ml_provide.experiments import known_projects, origin_ids
+        projects = known_projects(request.app.state.problems_dir)
+        if note is not None and body.problem not in origin_ids(
+            entry, projects
+        ):
+            note = (
+                f"{note}. 出どころもこの問題の実験でないので, この問題で"
+                "絞った一式の一覧には出ません (「全ての一式を出す」で出ます)"
+            )
         view["problem_note"] = note
 
     return view
