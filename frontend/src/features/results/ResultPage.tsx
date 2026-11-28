@@ -922,7 +922,7 @@ export function ResultPage() {
   const ranking = data.output_form === 'ranking' && !search
   // 群分けの結果は行ごとの群 (結論は群の要約と学習の群の安定性)
   const grouped = data.output_form === 'cluster'
-  // 異常の度合いの結果は行ごとの度合い (結論は度合いの分布と上位の行, 意思決定は人の確認への振り分け)
+  // 異常の度合いの結果は行ごとの度合い (結論は度合いの分布と上位の行, 意思決定は人の確かめへの振り分け)
   const anomaly = anomalySummary(data)
   const triage = triageSummary(data)
   // 効果の結果は行ごとの効果 (結論は効果の分布と上位の行, 意思決定は効果の上位から配る判断)

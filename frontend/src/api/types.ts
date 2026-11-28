@@ -569,7 +569,7 @@ export interface AnomalyInfo {
   score: string
   /** 度合いに使う列 (前処理の後の列) */
   features: string[]
-  /** 行の id の列 (人の確認の記録が行を指す) */
+  /** 行の id の列 (人の確かめの記録が行を指す) */
   id: string
   /** 人が 1 回に確かめる件数の上限 */
   capacity: number
@@ -622,10 +622,10 @@ export interface TriageSummary {
   left_beyond: number
 }
 
-/** 人の確認の判断 */
+/** 人の確かめの判断 */
 export type Judgment = 'anomaly' | 'normal'
 
-/** 人の確認に回した 1 行 (GET /api/results/{id}/queue) */
+/** 人の確かめに回した 1 行 (GET /api/results/{id}/queue) */
 export interface ReviewQueueRow {
   row: number
   /** 記録に使う行の id (id の列の無い結果は行の位置. id の値の欠けた行は null) */
@@ -641,18 +641,18 @@ export interface ReviewQueueRow {
   reviewed_at: string | null
 }
 
-/** 人の確認の待ち行列 */
+/** 人の確かめの待ち行列 */
 export interface ReviewQueue {
   /** 行の id の列 (無ければ null) */
   id: string | null
-  /** 人の確認に回す件数の上限 (振り分けていなければ null) */
+  /** 人の確かめに回す件数の上限 (振り分けていなければ null) */
   capacity: number | null
-  /** 人の確認を使えない理由 (行の id の重なり. 使えれば null で, 理由があれば rows は空) */
+  /** 人の確かめを使えない理由 (行の id の重なり. 使えれば null で, 理由があれば rows は空) */
   problem?: string | null
   rows: ReviewQueueRow[]
 }
 
-/** 人の確認の記録の 1 件 (ML-Inference の reviews.csv の 1 行) */
+/** 人の確かめの記録の 1 件 (ML-Inference の reviews.csv の 1 行) */
 export interface ReviewRecord {
   id: string
   judgment: string
