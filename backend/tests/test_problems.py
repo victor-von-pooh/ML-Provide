@@ -870,10 +870,13 @@ def test_create_links_project(client: TestClient, tmp_path: Path) -> None:
     ml_quest.save_problem(generate_problem(), problems / "gen")
     paths = write_project(tmp_path / "project")
 
-    def create(name: str, problem: Optional[str]) -> dict[str, Any]:
+    def create(
+        name: str, problem: Optional[str], run: Optional[Path] = None
+    ) -> dict[str, Any]:
         body: dict[str, Any] = {
             "name": name, "spec": str(paths["spec"]),
-            "dataset": str(paths["dataset"]), "weights": str(paths["run"]),
+            "dataset": str(paths["dataset"]),
+            "weights": str(run or paths["run"]),
         }
         if problem is not None:
             body["problem"] = problem
@@ -900,6 +903,33 @@ def test_create_links_project(client: TestClient, tmp_path: Path) -> None:
         made = create(name, problem)
         assert "problem" not in made, name
         assert note is None or note in made["problem_note"], name
+        # 出どころも問題の実験でないので, 絞った一覧に出ないと添える
+        assert note is None or "絞った一式の一覧には出ません" in (
+            made["problem_note"]
+        ), name
+        # 句点は 2 つ並べない
+        assert note is None or not any(
+            mark in made["problem_note"]
+            for mark in (".. 出どころ", "。. 出どころ")
+        ), name
+        assert made["made_from"] == str(paths["run"].resolve())
+
+    # 推論に渡せない問題でも, その問題が記録したプロジェクトの実験から
+    # 作れば, 出どころで絞った一覧に合う (出ないとは添えない)
+    gen_project = tmp_path / "gen-project"
+    gen_run = gen_project / "outputs" / "run" / "1"
+    shutil.copytree(paths["run"], gen_run)
+    ml_quest.save_problem(
+        {**generate_problem(),
+         "project": {"path": str(gen_project.resolve())}},
+        problems / "gen"
+    )
+    made = create("gen-run", "gen", gen_run)
+    assert "推論に渡せません" in made["problem_note"]
+    assert "絞った" not in made["problem_note"]
+    origins = {b["name"]: b["problem_ids"]
+               for b in client.get("/api/bundles").json()}
+    assert origins["gen-run"] == ["gen"] and origins["gen"] == []
 
     # 作る前の確かめ (作る一式は列の予測として, 候補と同じ確かめ)
     for problem, usable in [("one", True), ("gen", False),
@@ -920,7 +950,7 @@ def test_create_links_project(client: TestClient, tmp_path: Path) -> None:
     ids = {b["name"]: b["problem_id"]
            for b in client.get("/api/bundles").json()}
     assert ids == {"linked": "one", "plain": None, "missing": None,
-                   "outside": None, "gen": None}
+                   "outside": None, "gen": None, "gen-run": None}
 
 
 def set_source(
