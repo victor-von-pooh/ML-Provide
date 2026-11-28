@@ -628,10 +628,10 @@ test('作るときに渡した問題の識別子を作った一式につなぎ, 
   }
   const ids: string[] = []
   try {
-    // 推論に渡せる問題 (p1) はつなぎ, 渡せない問題 (p2. 方策の問題で, 受け持ちが列の予測でない) はつながずに作る
+    // 置き場の問題 (p1) はつなぎ, 置き場に無い識別子はつながずに作る
     for (const [name, problem] of [
       ['問題をつないだ領域', 'p1'],
-      ['問題をつながない領域', 'p2'],
+      ['問題をつながない領域', 'missing'],
     ]) {
       const response = await page.request.post('/api/bundles/create', {
         data: { ...body, name, problem },
